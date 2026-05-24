@@ -90,14 +90,16 @@ function getTerminalTheme(isDark: boolean) {
       selectionForeground: '#2d2a26',
       selectionInactiveBackground: '#e5e0d8',
       // ANSI colors - 浅色模式
-      black: '#2d2a26',
+      // 注意：在浅色背景下，white/brightWhite 需要是深色，
+      // 因为 PowerShell 等 shell 会用这些 ANSI 颜色渲染用户输入文本
+      black: '#f5f3ef',
       red: '#c9514a',
       green: '#4a9f4a',
       yellow: '#b58900',
       blue: '#3a7fc9',
       magenta: '#a04a9f',
       cyan: '#3a9f9f',
-      white: '#f5f3ef',
+      white: '#655f58',
       brightBlack: '#6b6560',
       brightRed: '#e55561',
       brightGreen: '#6ab56a',
@@ -105,7 +107,7 @@ function getTerminalTheme(isDark: boolean) {
       brightBlue: '#5a9fe0',
       brightMagenta: '#c06abf',
       brightCyan: '#5abfbf',
-      brightWhite: '#ffffff',
+      brightWhite: '#2d2a26',
     }
   }
 }
