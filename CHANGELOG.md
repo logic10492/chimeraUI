@@ -1,5 +1,18 @@
 # Changelog
 
+## [v0.6.11] - 2026-05-31
+
+- fix: clarify auto approval behavior (e16e7aa)
+- fix: preserve whitespace in split word diff (d0b10dd)
+- fix: highlight streaming code blocks (9198a4d)
+- fix: improve markdown rendering (2a75c1b)
+- perf(chat): stabilize virtualized scroll premeasurement (046019d)
+- fix: refine chat page virtualization (5854671)
+- chore: bump version to 0.6.11-canary.1 (bd0ecd8)
+- fix: stabilize chat scrolling with paged virtualization (a7bb14a)
+- fix: terminal reverse video shows black box in light mode (b902645)
+- fix: terminal ANSI white colors invisible in light mode (5a8a386)
+
 ## [v0.6.11-canary.1] - 2026-05-25 (Pre-release)
 
 - fix: stabilize chat scrolling with paged virtualization (a7bb14a)
