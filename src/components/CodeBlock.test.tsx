@@ -8,8 +8,9 @@ const useInputCapabilitiesMock = vi.fn(() => ({
   hasTouch: false,
   preferTouchUi: false,
 }))
-const useSyntaxHighlightMock = vi.fn((_code: string, _options: unknown) => ({
-  output: '<pre><code>highlighted</code></pre>',
+type HighlightMockOutput = { output: { content: string; color?: string }[][] | null }
+const useSyntaxHighlightMock = vi.fn((_code: string, _options: unknown): HighlightMockOutput => ({
+  output: [[{ content: 'highlighted', color: '#fff' }]],
 }))
 const useInViewMock = vi.fn(() => ({ ref: vi.fn(), inView: false }))
 const themeSnapshot = { codeWordWrap: false }
@@ -51,7 +52,7 @@ describe('CodeBlock', () => {
       preferTouchUi: false,
     })
     useSyntaxHighlightMock.mockClear()
-    useSyntaxHighlightMock.mockReturnValue({ output: '<pre><code>highlighted</code></pre>' })
+    useSyntaxHighlightMock.mockReturnValue({ output: [[{ content: 'highlighted', color: '#fff' }]] })
     useInViewMock.mockReset()
     useInViewMock.mockReturnValue({ ref: vi.fn(), inView: false })
   })
@@ -93,27 +94,58 @@ describe('CodeBlock', () => {
     expect(screen.queryByText('highlighted')).not.toBeInTheDocument()
     expect(useSyntaxHighlightMock).toHaveBeenCalledWith(
       'const value = 1',
-      expect.objectContaining({ enabled: false, lang: 'ts' }),
+      expect.objectContaining({ enabled: false, lang: 'ts', mode: 'tokens' }),
     )
   })
 
-  it('passes highlight debounce delay when visible', () => {
+  it('renders highlighted tokens as selectable plain pre content', () => {
     useInViewMock.mockReturnValue({ ref: vi.fn(), inView: true })
 
-    render(<CodeBlock code="const value = 1" language="ts" highlightDelayMs={48} />)
+    const { container } = render(<CodeBlock code="const value = 1" language="ts" />)
 
+    const pre = container.querySelector('pre')
+    expect(pre).toHaveTextContent('highlighted')
+    expect(pre).not.toHaveAttribute('tabindex')
+    expect(pre?.className).toContain('select-text')
     expect(useSyntaxHighlightMock).toHaveBeenCalledWith(
       'const value = 1',
-      expect.objectContaining({ delayMs: 48, enabled: true, lang: 'ts' }),
+      expect.objectContaining({ enabled: true, lang: 'ts', mode: 'tokens' }),
     )
   })
 
-  it('enables delayed streaming highlight before in-view observation fires', () => {
-    render(<CodeBlock code="const value = 1" language="ts" highlightDelayMs={48} />)
+  it('keeps highlighted prefix while streaming suffix waits for new tokens', () => {
+    useInViewMock.mockReturnValue({ ref: vi.fn(), inView: true })
+    useSyntaxHighlightMock.mockImplementation((highlightCode: string): HighlightMockOutput => {
+      if (highlightCode === 'const') return { output: [[{ content: 'const', color: '#fff' }]] }
+      return { output: null }
+    })
+
+    const { container, rerender } = render(<CodeBlock code="const" language="ts" />)
+
+    rerender(<CodeBlock code="const value" language="ts" />)
+
+    const pre = container.querySelector('pre')
+    expect(pre).toHaveTextContent('const value')
+    expect(pre?.className).toContain('shiki-wrapper')
+  })
+
+  it('enables highlighting when visible', () => {
+    useInViewMock.mockReturnValue({ ref: vi.fn(), inView: true })
+
+    render(<CodeBlock code="const value = 1" language="ts" />)
 
     expect(useSyntaxHighlightMock).toHaveBeenCalledWith(
       'const value = 1',
-      expect.objectContaining({ delayMs: 48, enabled: true, lang: 'ts' }),
+      expect.objectContaining({ delayMs: 0, enabled: true, lang: 'ts', mode: 'tokens' }),
+    )
+  })
+
+  it('can force streaming highlight before in-view observation fires', () => {
+    render(<CodeBlock code="const value = 1" language="ts" forceHighlight />)
+
+    expect(useSyntaxHighlightMock).toHaveBeenCalledWith(
+      'const value = 1',
+      expect.objectContaining({ delayMs: 0, enabled: true, lang: 'ts', mode: 'tokens' }),
     )
   })
 })

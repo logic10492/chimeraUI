@@ -328,7 +328,10 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
 
   const cacheKey = useMemo(() => getCacheKey(code, normalizedLang, resolvedTheme.key), [code, normalizedLang, resolvedTheme.key])
   const outputKey = `${mode}:${cacheKey}`
-  const [outputState, setOutputState] = useState<{ key: string; value: string | HighlightTokens | null } | null>(null)
+  const [outputState, setOutputState] = useState<{ key: string; value: string | HighlightTokens | null } | null>(() => {
+    const cachedResult = mode === 'html' ? htmlCache.get(cacheKey) : tokensCache.get(cacheKey)
+    return cachedResult !== undefined ? { key: outputKey, value: cachedResult } : null
+  })
   const [isLoading, setIsLoading] = useState(false)
   const prevKeyRef = useRef<{ code: string; lang: string; themeKey: string } | null>(null)
 
@@ -352,6 +355,15 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
   }, [cacheKey, code, delayMs, enabled, mode, normalizedLang, outputKey, resolvedTheme.theme])
 
   useEffect(() => {
+    // Even when highlighting is temporarily disabled by viewport/lifecycle state,
+    // keep already-computed results available after layout changes or remounts.
+    const cachedResult = mode === 'html' ? htmlCache.get(cacheKey) : tokensCache.get(cacheKey)
+    if (cachedResult !== undefined) {
+      setOutputState({ key: outputKey, value: cachedResult })
+      setIsLoading(false)
+      return
+    }
+
     if (!enabled) {
       // 禁用时保留上次结果（而非清空），避免 enabled 切换导致无意义的
       // null → value 重渲染循环。调用方 resize 结束后 enabled 恢复为 true，
@@ -367,15 +379,6 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
     prevKeyRef.current = { code, lang: normalizedLang, themeKey: resolvedTheme.key }
 
     const shouldDefer = isThemeOnlyChange
-
-    // 先检查缓存 - 同步返回避免闪烁
-    const cachedResult = mode === 'html' ? htmlCache.get(cacheKey) : tokensCache.get(cacheKey)
-
-    if (cachedResult !== undefined) {
-      setOutputState({ key: outputKey, value: cachedResult })
-      setIsLoading(false)
-      return
-    }
 
     setIsLoading(true)
 

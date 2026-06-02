@@ -32,7 +32,6 @@ const markdownMath = createMathPlugin({ singleDollarTextMath: true })
 const MERMAID_MIN_SCALE = 0.5
 const MERMAID_MAX_SCALE = 3
 const MERMAID_SCALE_STEP = 0.15
-const STREAMING_CODE_HIGHLIGHT_DELAY_MS = 48
 const MERMAID_CONTROL_BUTTON_BASE_CLASS =
   'inline-flex h-8 w-8 items-center justify-center rounded-md bg-bg-300/70 backdrop-blur-md transition-colors duration-150 hover:bg-bg-300/85 disabled:opacity-40 disabled:cursor-not-allowed'
 const MERMAID_CONTROL_BUTTON_CLASS = `${MERMAID_CONTROL_BUTTON_BASE_CLASS} text-text-400 hover:text-text-200`
@@ -624,7 +623,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
               language={blockCode.language}
               variant={isReasoning ? 'reasoning' : 'default'}
               wordwrap={isReasoning}
-              highlightDelayMs={isStreaming ? STREAMING_CODE_HIGHLIGHT_DELAY_MS : 0}
+              forceHighlight={isStreaming}
             />
           </div>
         )

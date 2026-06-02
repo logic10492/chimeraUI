@@ -1,12 +1,34 @@
-import { memo, useCallback, useMemo, useSyncExternalStore } from 'react'
+import { memo, useCallback, useDeferredValue, useMemo, useState, useSyncExternalStore } from 'react'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
-import { useSyntaxHighlight } from '../hooks/useSyntaxHighlight'
+import { useSyntaxHighlight, type HighlightTokens } from '../hooks/useSyntaxHighlight'
 import { themeStore } from '../store/themeStore'
 import { CopyButton } from './ui'
 import { useInView } from '../hooks/useInView'
 
 /** Languages that carry no useful information — hide the label */
 const HIDDEN_LANGS = new Set(['text', 'plain', 'txt', 'plaintext'])
+
+function renderHighlightedTokens(tokens: HighlightTokens) {
+  return tokens.map((line, lineIndex) => (
+    <span key={lineIndex}>
+      {line.map((token, tokenIndex) => (
+        <span key={tokenIndex} style={token.color ? { color: token.color } : undefined}>
+          {token.content}
+        </span>
+      ))}
+      {lineIndex < tokens.length - 1 ? '\n' : null}
+    </span>
+  ))
+}
+
+function renderIncrementalTokens(tokens: HighlightTokens, suffix: string) {
+  return (
+    <>
+      {renderHighlightedTokens(tokens)}
+      {suffix ? <span>{suffix}</span> : null}
+    </>
+  )
+}
 
 interface CodeBlockProps {
   code: string
@@ -19,10 +41,10 @@ interface CodeBlockProps {
   maxHeight?: number
   /** 长行自动换行 */
   wordwrap?: boolean
-  /** During streaming, keep code plain until the block settles to avoid highlight churn. */
+  /** Render plain code and skip syntax highlighting. */
   deferHighlight?: boolean
-  /** Debounce async highlighting while code is still changing. */
-  highlightDelayMs?: number
+  /** Start highlighting even before in-view observation catches up. */
+  forceHighlight?: boolean
 }
 
 export const CodeBlock = memo(function CodeBlock({
@@ -34,12 +56,13 @@ export const CodeBlock = memo(function CodeBlock({
   maxHeight,
   wordwrap,
   deferHighlight = false,
-  highlightDelayMs = 0,
+  forceHighlight = false,
 }: CodeBlockProps) {
   const { codeWordWrap } = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot)
   const { preferTouchUi } = useInputCapabilities()
   const resolvedWordWrap = wordwrap ?? codeWordWrap
   const isReasoning = variant === 'reasoning'
+  const highlightCode = useDeferredValue(code)
 
   // Lazy load highlighting when close to viewport
   const { ref, inView } = useInView({ triggerOnce: true, rootMargin: '200px' })
@@ -49,21 +72,39 @@ export const CodeBlock = memo(function CodeBlock({
     if (language && language !== 'text') return language
 
     // Check for tree structure characters
-    if (code.includes('├──') || code.includes('└──') || (code.includes('│') && code.includes('──'))) {
+    if (
+      highlightCode.includes('├──') ||
+      highlightCode.includes('└──') ||
+      (highlightCode.includes('│') && highlightCode.includes('──'))
+    ) {
       return 'yaml'
     }
 
     return language || 'text'
-  }, [code, language])
+  }, [highlightCode, language])
 
-  const shouldHighlight = !deferHighlight && (inView || highlightDelayMs > 0)
+  const shouldHighlight = !deferHighlight && (inView || forceHighlight)
 
-  const { output: highlightedHtml } = useSyntaxHighlight(code, {
+  const { output: highlightedTokens } = useSyntaxHighlight(highlightCode, {
     lang: effectiveLanguage,
     enabled: shouldHighlight,
-    delayMs: highlightDelayMs,
+    delayMs: 0,
+    mode: 'tokens',
   })
-  const html = deferHighlight ? null : highlightedHtml
+  const tokens = deferHighlight ? null : highlightedTokens
+  const [lastHighlight, setLastHighlight] = useState<{ code: string; tokens: HighlightTokens } | null>(null)
+  if (tokens && lastHighlight?.code !== highlightCode) {
+    setLastHighlight({ code: highlightCode, tokens })
+  }
+  const activeHighlight = deferHighlight ? null : tokens ? { code: highlightCode, tokens } : lastHighlight
+
+  const displayedHighlight =
+    activeHighlight && code.startsWith(activeHighlight.code)
+      ? {
+          tokens: activeHighlight.tokens,
+          suffix: code.slice(activeHighlight.code.length),
+        }
+      : null
 
   const containerStyle = maxHeight ? { ...style, maxHeight } : style
   const showLabel = !isReasoning && language && !HIDDEN_LANGS.has(language.toLowerCase())
@@ -73,17 +114,11 @@ export const CodeBlock = memo(function CodeBlock({
   const wrapClasses = resolvedWordWrap ? 'whitespace-pre-wrap break-words [overflow-wrap:anywhere]' : ''
 
   const scrollClasses = resolvedWordWrap
-    ? 'overflow-y-auto overflow-x-hidden custom-scrollbar'
-    : 'overflow-auto custom-scrollbar'
+    ? 'overflow-y-auto overflow-x-hidden custom-scrollbar select-text'
+    : 'overflow-auto custom-scrollbar select-text'
 
   // Padding: reasoning is tighter; default reserves top for label row and right for copy button
   const contentPad = isReasoning ? 'p-3' : showLabel ? 'pt-0 pb-3.5 px-3.5' : 'p-4'
-  const contentPadShiki = isReasoning
-    ? '[&_pre]:p-3 [&_pre]:m-0'
-    : showLabel
-      ? '[&_pre]:pt-0 [&_pre]:pb-3.5 [&_pre]:px-3.5 [&_pre]:m-0'
-      : '[&_pre]:p-4 [&_pre]:m-0'
-
   const requireTapToRevealCopy = preferTouchUi && !isReasoning && !showLabel
 
   const handleTouchStartCapture = useCallback(
@@ -99,20 +134,23 @@ export const CodeBlock = memo(function CodeBlock({
   const lineHeight = isReasoning ? 'leading-5' : 'leading-6'
   const textColor = isReasoning ? 'text-text-300' : 'text-text-200'
 
-  const content = !html ? (
-    <pre className={`${contentPad} m-0 font-mono ${textColor} ${fontSize} ${lineHeight} ${wrapClasses}`}>
-      <code>{code}</code>
-    </pre>
-  ) : (
-    <div
-      className={`shiki-wrapper ${fontSize} ${lineHeight} ${contentPadShiki} [&_pre]:bg-transparent! [&_code]:font-mono ${
+  const content = displayedHighlight ? (
+    <pre
+      className={`shiki-wrapper m-0 font-mono select-text ${textColor} ${fontSize} ${lineHeight} ${contentPad} ${
         resolvedWordWrap
-          ? '[&_pre]:!whitespace-pre-wrap [&_pre]:break-words [&_pre]:[overflow-wrap:anywhere] [&_code]:!whitespace-pre-wrap [&_code]:break-words [&_code]:[overflow-wrap:anywhere]'
-          : ''
+          ? 'whitespace-pre-wrap break-words [overflow-wrap:anywhere]'
+          : 'whitespace-pre'
       }`}
       suppressHydrationWarning
-      dangerouslySetInnerHTML={{ __html: html as string }}
-    />
+    >
+      <code className="font-mono select-text">
+        {renderIncrementalTokens(displayedHighlight.tokens, displayedHighlight.suffix)}
+      </code>
+    </pre>
+  ) : (
+    <pre className={`${contentPad} m-0 font-mono select-text ${textColor} ${fontSize} ${lineHeight} ${wrapClasses}`}>
+      <code>{code}</code>
+    </pre>
   )
 
   // --- Reasoning: minimal shell ---
