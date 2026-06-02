@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useState, useRef, type ReactNode, type Wh
 import { CloseIcon } from './Icons'
 import { getMaterialIconUrl } from '../utils/materialIcons'
 import { getInternalDragSnapshot, startInternalDrag, subscribeInternalDrag, subscribeInternalDrop } from '../lib/internalDragCore'
+import { useDragEdgeAutoScroll } from '../hooks/useDragEdgeAutoScroll'
 
 export interface PreviewTabsBarItem {
   id: string
@@ -38,10 +39,14 @@ export const PreviewTabsBar = memo(function PreviewTabsBar({
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
 
+  useDragEdgeAutoScroll(tabsScrollRef, {
+    payloadKind: 'preview-tab',
+  })
+
   useEffect(() => {
     return subscribeInternalDrag(() => {
       const active = getInternalDragSnapshot().active
-      if (!active || active.phase !== 'dragging' || active.payload.kind !== 'preview-tab') {
+      if (!active || active.payload.kind !== 'preview-tab') {
         setDraggedId(null)
         setDragOverId(null)
         return
@@ -97,14 +102,12 @@ export const PreviewTabsBar = memo(function PreviewTabsBar({
                 onPointerDown={event => {
                   const target = event.target as HTMLElement
                   if (target.closest('button')) return
-                  setDraggedId(item.id)
-                  setDragOverId(null)
-                  startInternalDrag(event, { kind: 'preview-tab', id: item.id, title: item.title }, { preview: { label: item.title } })
+                  startInternalDrag(event, { kind: 'preview-tab', id: item.id })
                 }}
                 className={
                   isActive
-                    ? `tab-active relative z-10 mx-px flex h-full ${tabWidthClassName} shrink-0 items-center gap-1 bg-bg-100 text-text-100`
-                    : `relative mx-px flex h-[24px] ${tabWidthClassName} shrink-0 items-center gap-1 overflow-hidden rounded-md border-x-[5px] border-transparent bg-transparent text-text-400 hover:bg-bg-200/50 hover:text-text-100 transition-colors ${isDragOver ? 'bg-accent-main-100/8' : ''}`
+                    ? `tab-active relative z-10 mx-px flex h-full ${tabWidthClassName} shrink-0 select-none items-center gap-1 bg-bg-100 text-text-100`
+                    : `relative mx-px flex h-[24px] ${tabWidthClassName} shrink-0 select-none items-center gap-1 overflow-hidden rounded-md border-x-[5px] border-transparent bg-transparent text-text-400 hover:bg-bg-200/50 hover:text-text-100 transition-colors ${isDragOver ? 'bg-accent-main-100/8' : ''}`
                 }
                 title={item.title}
               >
@@ -119,6 +122,7 @@ export const PreviewTabsBar = memo(function PreviewTabsBar({
                       alt=""
                       width={13}
                       height={13}
+                      draggable={false}
                       className="shrink-0"
                       onError={e => {
                         e.currentTarget.style.visibility = 'hidden'

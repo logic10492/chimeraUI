@@ -489,13 +489,6 @@ export function SessionListItem({
         kind: 'session',
         sessionId: session.id,
         directory: session.directory,
-        title: session.title || t('sessions.untitledChat'),
-      },
-      {
-        preview: {
-          label: session.title || t('sessions.untitledChat'),
-          description: session.directory,
-        },
       },
     )
   }
@@ -623,7 +616,7 @@ export function SessionListItem({
               e.stopPropagation()
               handleClick()
             }}
-            className="peer flex min-w-0 flex-1 items-center gap-1.5 bg-transparent border-none p-0 text-left"
+            className="peer flex min-w-0 flex-1 items-center gap-1.5 bg-transparent border-none p-0 text-left select-none"
           >
             <div
               className={`flex min-w-0 flex-1 items-center gap-1.5 transition-[padding] duration-200 ${
@@ -789,7 +782,7 @@ export function SessionListItem({
             e.stopPropagation()
             handleClick()
           }}
-          className="peer flex min-w-0 flex-1 items-start bg-transparent border-none p-0 text-left"
+          className="peer flex min-w-0 flex-1 items-start bg-transparent border-none p-0 text-left select-none"
         >
           <div
             className={`flex-1 min-w-0 transition-[padding] duration-200 ${showActions ? 'pr-[60px]' : 'pr-1 group-hover:pr-[60px]'}`}

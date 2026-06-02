@@ -130,13 +130,10 @@ export function PaneHeader({
       if (target.closest('button, input')) return
       startInternalDrag(
         e,
-        { kind: 'pane', paneId, title },
-        {
-          preview: { label: title },
-        },
+        { kind: 'pane', paneId },
       )
     },
-    [paneId, title],
+    [paneId],
   )
 
   useEffect(() => {
@@ -144,8 +141,7 @@ export function PaneHeader({
       const active = getInternalDragSnapshot().active
       setIsDragOver(
         Boolean(
-          active?.phase === 'dragging' &&
-            active.payload.kind === 'pane' &&
+          active?.payload.kind === 'pane' &&
             active.payload.paneId !== paneId &&
             isPointInsideElement(active.current, headerRef.current),
         ),
@@ -166,7 +162,7 @@ export function PaneHeader({
   return (
     <div
       ref={headerRef}
-      className={`relative h-10 flex items-center justify-between px-2 transition-colors duration-200 shrink-0 z-20 ${
+      className={`relative h-10 flex items-center justify-between px-2 select-none transition-colors duration-200 shrink-0 z-20 ${
         isDragOver ? 'bg-accent-main-100/10' : 'bg-bg-100'
       }`}
       onClick={onFocus}

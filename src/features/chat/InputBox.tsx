@@ -794,8 +794,8 @@ function InputBoxComponent({
 
   // 通用文件上传 — 根据模型能力判断是否接受
   const handleFilesSelected = useCallback(
-    async (files: File[]): Promise<number> => {
-      if (files.length === 0 || !supportsAnyFile || isSubmitting) return 0
+    async (files: File[]) => {
+      if (files.length === 0 || !supportsAnyFile || isSubmitting) return
 
       const nextAttachments: Attachment[] = []
 
@@ -823,8 +823,6 @@ function InputBoxComponent({
       if (nextAttachments.length > 0) {
         setAttachments(prev => [...prev, ...nextAttachments])
       }
-
-      return nextAttachments.length
     },
     [supportsAnyFile, fileCaps, isSubmitting],
   )
@@ -965,7 +963,7 @@ function InputBoxComponent({
   useEffect(() => {
     const updateInternalFileDragState = () => {
       const active = getInternalDragSnapshot().active
-      if (!active || active.phase !== 'dragging' || active.payload.kind !== 'file-mention') {
+      if (!active || active.payload.kind !== 'file-mention') {
         setIsInternalFileDragging(false)
         return
       }

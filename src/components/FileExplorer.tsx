@@ -319,13 +319,7 @@ const FileTreeItem = memo(function FileTreeItem({
         absolute: node.absolute, // 绝对路径
         name: node.name,
       }
-      startInternalDrag(e, { kind: 'file-mention', file: fileData }, {
-        preview: {
-          label: node.name,
-          description: node.path,
-          icon: isDirectory ? 'dir' : 'file',
-        },
-      })
+      startInternalDrag(e, { kind: 'file-mention', file: fileData })
     },
     [node.path, node.absolute, node.name, isDirectory],
   )
@@ -337,11 +331,11 @@ const FileTreeItem = memo(function FileTreeItem({
         onClick={() => onClick(node)}
         className={`
           w-full flex items-center gap-1 px-2 py-0.5 text-left cursor-default
-          hover:bg-bg-200/50 transition-colors text-[length:var(--fs-sm)]
+          select-none hover:bg-bg-200/50 transition-colors text-[length:var(--fs-sm)]
           text-text-300
           ${node.ignored ? 'opacity-50' : ''}
         `}
-        style={{ paddingLeft: `${depth * 12 + 8}px` }}
+        style={{ paddingLeft: `${depth * 12 + 8}px`, touchAction: 'none' }}
       >
         {/* Expand/Collapse Icon */}
         {isDirectory ? (
@@ -358,6 +352,7 @@ const FileTreeItem = memo(function FileTreeItem({
           alt=""
           width={16}
           height={16}
+          draggable={false}
           className="shrink-0"
           loading="lazy"
           decoding="async"

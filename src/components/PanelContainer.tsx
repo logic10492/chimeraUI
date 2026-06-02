@@ -22,6 +22,7 @@ import { updatePtySession } from '../api/pty'
 import { useTheme } from '../hooks'
 import { uiErrorHandler } from '../utils'
 import { getInternalDragSnapshot, startInternalDrag, subscribeInternalDrag, subscribeInternalDrop } from '../lib/internalDragCore'
+import { useDragEdgeAutoScroll } from '../hooks/useDragEdgeAutoScroll'
 
 // ============================================
 // Types
@@ -108,6 +109,10 @@ export const PanelContainer = memo(function PanelContainer({
 
   // Tabs 容器 ref（用于水平滚动）
   const tabsContainerRef = useRef<HTMLDivElement>(null)
+
+  useDragEdgeAutoScroll(tabsContainerRef, {
+    payloadKind: 'panel-tab',
+  })
 
   // Add 菜单状态
   const [addMenuPos, setAddMenuPos] = useState<{ x: number; y: number; align: 'left' | 'right' } | null>(null)
@@ -261,7 +266,7 @@ export const PanelContainer = memo(function PanelContainer({
   useEffect(() => {
     return subscribeInternalDrag(() => {
       const active = getInternalDragSnapshot().active
-      if (!active || active.phase !== 'dragging' || active.payload.kind !== 'panel-tab' || active.payload.position !== position) {
+      if (!active || active.payload.kind !== 'panel-tab' || active.payload.position !== position) {
         setDraggedId(null)
         setDragOverId(null)
         return
@@ -551,9 +556,9 @@ const PanelTabButton = memo(function PanelTabButton({
       if (isEditing) return
       const target = event.target as HTMLElement
       if (target.closest('button, input')) return
-      startInternalDrag(event, { kind: 'panel-tab', position, tabId: tab.id, label }, { preview: { label } })
+      startInternalDrag(event, { kind: 'panel-tab', position, tabId: tab.id })
     },
-    [isEditing, label, position, tab.id],
+    [isEditing, position, tab.id],
   )
 
   return (

@@ -550,7 +550,7 @@ export const ChatPane = memo(function ChatPane({
   useEffect(() => {
     return subscribeInternalDrag(() => {
       const active = getInternalDragSnapshot().active
-      if (!active || active.phase !== 'dragging' || active.payload.kind !== 'session') {
+      if (!active || active.payload.kind !== 'session') {
         resetDropState()
         return
       }

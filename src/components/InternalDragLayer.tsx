@@ -1,23 +1,62 @@
 import { createPortal } from 'react-dom'
-import { useInternalDragSnapshot } from '../lib/internalDragCore'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { getInternalDragPreviewElement, getInternalDragSnapshot, subscribeInternalDrag } from '../lib/internalDragCore'
 
 export function InternalDragLayer() {
-  const { active } = useInternalDragSnapshot()
-  if (!active || active.phase !== 'dragging') return null
+  const [visible, setVisible] = useState(false)
+  const hostRef = useRef<HTMLDivElement>(null)
+  const previewRef = useRef<HTMLElement | null>(null)
+  const active = getInternalDragSnapshot().active
 
-  const width = Math.min(Math.max(active.sourceRect.width, 160), 320)
-  const leftOffset = Math.min(active.offset.x, width - 12)
-  const topOffset = Math.min(active.offset.y, Math.max(active.sourceRect.height, 1) - 6)
+  const updateHost = useCallback(() => {
+    const host = hostRef.current
+    const preview = getInternalDragPreviewElement()
+    if (!host) return
+
+    if (previewRef.current !== preview) {
+      host.replaceChildren()
+      previewRef.current = preview
+      if (preview) host.appendChild(preview)
+    }
+
+    const activeDrag = getInternalDragSnapshot().active
+    if (!activeDrag) {
+      host.replaceChildren()
+      previewRef.current = null
+      return
+    }
+
+    const width = Math.min(Math.max(activeDrag.sourceRect.width, 160), 320)
+    const leftOffset = Math.min(activeDrag.offset.x, width - 12)
+    const topOffset = Math.min(activeDrag.offset.y, Math.max(activeDrag.sourceRect.height, 1) - 6)
+
+    host.style.width = `${width}px`
+    host.style.transform = `translate3d(${activeDrag.current.x - leftOffset}px, ${activeDrag.current.y - topOffset}px, 0)`
+  }, [])
+
+  useEffect(() => {
+    return subscribeInternalDrag(() => {
+      const shouldShow = Boolean(getInternalDragSnapshot().active)
+      setVisible(current => (current === shouldShow ? current : shouldShow))
+      updateHost()
+    })
+  }, [updateHost])
+
+  useLayoutEffect(() => {
+    if (visible) updateHost()
+  }, [updateHost, visible])
+
+  if (!visible || !active) return null
 
   return createPortal(
     <div
+      ref={hostRef}
       className="fixed z-[10000] pointer-events-none opacity-80 shadow-lg"
       style={{
-        left: active.current.x - leftOffset,
-        top: active.current.y - topOffset,
-        width,
+        left: 0,
+        top: 0,
+        willChange: 'transform',
       }}
-      dangerouslySetInnerHTML={{ __html: active.previewHtml }}
     />,
     document.body,
   )

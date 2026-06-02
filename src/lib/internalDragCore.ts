@@ -1,4 +1,4 @@
-import { useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 
 export interface InternalFileMentionPayload {
   kind: 'file-mention'
@@ -14,26 +14,22 @@ export interface InternalSessionPayload {
   kind: 'session'
   sessionId: string
   directory?: string
-  title?: string
 }
 
 export interface InternalPanePayload {
   kind: 'pane'
   paneId: string
-  title?: string
 }
 
 export interface InternalPreviewTabPayload {
   kind: 'preview-tab'
   id: string
-  title?: string
 }
 
 export interface InternalPanelTabPayload {
   kind: 'panel-tab'
   position: 'right' | 'bottom'
   tabId: string
-  label?: string
 }
 
 export type InternalDragPayload =
@@ -48,21 +44,12 @@ export interface InternalDragPoint {
   y: number
 }
 
-export interface InternalDragPreview {
-  label: string
-  description?: string
-  icon?: string
-}
-
 export interface InternalActiveDrag {
-  phase: 'pending' | 'dragging'
   payload: InternalDragPayload
   start: InternalDragPoint
   current: InternalDragPoint
   offset: InternalDragPoint
   sourceRect: DOMRect
-  preview: InternalDragPreview
-  previewHtml: string
 }
 
 export interface InternalDragSnapshot {
@@ -74,27 +61,37 @@ export interface InternalDropEvent {
   point: InternalDragPoint
 }
 
-interface StartInternalDragOptions {
-  preview?: InternalDragPreview
-  threshold?: number
-  allowTouch?: boolean
-}
-
-const DEFAULT_THRESHOLD = 5
+const DEFAULT_THRESHOLD = 2
 const PREVIEW_MAX_WIDTH = 360
 const subscribers = new Set<() => void>()
 const dropSubscribers = new Set<(event: InternalDropEvent) => void>()
 let snapshot: InternalDragSnapshot = { active: null }
+let currentPreview: HTMLElement | null = null
 let restoreUserSelect: string | null = null
 let clickSuppressorArmed = false
+let notifyRaf: number | null = null
 
 function emitChange() {
   subscribers.forEach(listener => listener())
 }
 
-function setActiveDrag(active: InternalActiveDrag | null) {
+function setActiveDrag(active: InternalActiveDrag | null, immediate = false) {
   snapshot = { active }
-  emitChange()
+
+  if (immediate) {
+    if (notifyRaf !== null) {
+      cancelAnimationFrame(notifyRaf)
+      notifyRaf = null
+    }
+    emitChange()
+    return
+  }
+
+  if (notifyRaf !== null) return
+  notifyRaf = requestAnimationFrame(() => {
+    notifyRaf = null
+    emitChange()
+  })
 }
 
 function distance(a: InternalDragPoint, b: InternalDragPoint) {
@@ -130,29 +127,15 @@ function unlockSelection() {
   document.body.classList.remove('internal-drag-active')
 }
 
-function fallbackPreview(payload: InternalDragPayload): InternalDragPreview {
-  switch (payload.kind) {
-    case 'file-mention':
-      return { label: payload.file.name, description: payload.file.path }
-    case 'session':
-      return { label: payload.title || payload.sessionId, description: payload.directory }
-    case 'pane':
-      return { label: payload.title || payload.paneId }
-    case 'preview-tab':
-      return { label: payload.title || payload.id }
-    case 'panel-tab':
-      return { label: payload.label || payload.tabId }
-  }
-}
-
-function clonePreviewHtml(element: HTMLElement): string {
+function clonePreviewElement(element: HTMLElement): HTMLElement {
   const clone = element.cloneNode(true) as HTMLElement
+  const rect = element.getBoundingClientRect()
 
   clone.removeAttribute('id')
   clone.removeAttribute('draggable')
   clone.style.pointerEvents = 'none'
   clone.style.margin = '0'
-  clone.style.width = `${Math.min(element.getBoundingClientRect().width, PREVIEW_MAX_WIDTH)}px`
+  clone.style.width = `${Math.min(rect.width, PREVIEW_MAX_WIDTH)}px`
   clone.style.maxWidth = `${PREVIEW_MAX_WIDTH}px`
   clone.style.boxSizing = 'border-box'
 
@@ -162,7 +145,7 @@ function clonePreviewHtml(element: HTMLElement): string {
     control.disabled = true
   })
 
-  return clone.outerHTML
+  return clone
 }
 
 export function getInternalDragSnapshot(): InternalDragSnapshot {
@@ -183,38 +166,29 @@ export function subscribeInternalDrop(listener: (event: InternalDropEvent) => vo
   }
 }
 
-export function useInternalDragSnapshot() {
-  return useSyncExternalStore(subscribeInternalDrag, getInternalDragSnapshot, getInternalDragSnapshot)
+export function getInternalDragPreviewElement() {
+  return currentPreview
 }
 
 export function startInternalDrag(
   event: ReactPointerEvent<HTMLElement>,
   payload: InternalDragPayload,
-  options: StartInternalDragOptions = {},
 ) {
   if (event.button !== 0 || !event.isPrimary) return
-  if (event.pointerType === 'touch' && !options.allowTouch) return
+  if (event.pointerType === 'touch') return
+
+  event.preventDefault()
 
   const sourceElement = event.currentTarget
   const sourceRect = sourceElement.getBoundingClientRect()
   const start = { x: event.clientX, y: event.clientY }
-  const threshold = options.threshold ?? DEFAULT_THRESHOLD
   const pointerId = event.pointerId
-  let active: InternalActiveDrag = {
-    phase: 'pending',
-    payload,
-    start,
-    current: start,
-    offset: {
-      x: event.clientX - sourceRect.left,
-      y: event.clientY - sourceRect.top,
-    },
-    sourceRect,
-    preview: options.preview ?? fallbackPreview(payload),
-    previewHtml: clonePreviewHtml(sourceElement),
-  }
+  let active: InternalActiveDrag | null = null
 
-  setActiveDrag(active)
+  const offset = {
+    x: event.clientX - sourceRect.left,
+    y: event.clientY - sourceRect.top,
+  }
 
   const cleanup = () => {
     document.removeEventListener('pointermove', handlePointerMove, true)
@@ -234,19 +208,33 @@ export function startInternalDrag(
 
   const cancel = () => {
     cleanup()
-    setActiveDrag(null)
+    currentPreview = null
+    setActiveDrag(null, true)
+  }
+
+  function beginDrag(point: InternalDragPoint) {
+    const previewElement = clonePreviewElement(sourceElement)
+    currentPreview = previewElement
+    active = {
+      payload,
+      start,
+      current: point,
+      offset,
+      sourceRect,
+    }
+
+    lockSelection()
+    setActiveDrag(active, true)
   }
 
   function updatePosition(point: InternalDragPoint) {
-    if (active.phase === 'pending' && distance(start, point) < threshold) return
-
-    if (active.phase === 'pending') {
-      active = { ...active, phase: 'dragging', current: point }
-      lockSelection()
-    } else {
-      active = { ...active, current: point }
+    if (!active) {
+      if (distance(start, point) < DEFAULT_THRESHOLD) return
+      beginDrag(point)
+      return
     }
 
+    active = { ...active, current: point }
     setActiveDrag(active)
   }
 
@@ -257,14 +245,15 @@ export function startInternalDrag(
 
   function handlePointerUp(pointerEvent: PointerEvent) {
     if (pointerEvent.pointerId !== pointerId) return
-    const shouldDrop = active.phase === 'dragging'
+    const shouldDrop = Boolean(active)
     const point = { x: pointerEvent.clientX, y: pointerEvent.clientY }
-    const payloadToDrop = active.payload
+    const payloadToDrop = active?.payload
 
     cleanup()
-    setActiveDrag(null)
+    currentPreview = null
+    setActiveDrag(null, true)
 
-    if (shouldDrop) {
+    if (shouldDrop && payloadToDrop) {
       armClickSuppressor()
       dropSubscribers.forEach(listener => listener({ payload: payloadToDrop, point }))
     }
