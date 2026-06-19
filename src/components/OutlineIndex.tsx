@@ -175,8 +175,8 @@ function applyTickVisual(tick: HTMLElement, state: 'focused' | 'visible' | 'defa
     return
   }
   if (state === 'visible') {
-    tick.style.backgroundColor = 'hsl(var(--text-000))'
-    tick.style.boxShadow = '0 0 3px hsl(var(--text-000) / 0.3)'
+    tick.style.backgroundColor = 'hsl(var(--text-100))'
+    tick.style.boxShadow = '0 0 3px hsl(var(--text-100) / 0.3)'
     return
   }
   tick.style.backgroundColor = 'hsl(var(--border-300))'
