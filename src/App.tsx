@@ -782,7 +782,7 @@ function App() {
             <>
               <div
                 ref={mobilePagerRef}
-                className="mobile-chat-pager absolute inset-0 flex h-full overflow-x-auto overflow-y-hidden bg-bg-100"
+                className="mobile-chat-pager absolute inset-x-0 top-0 -bottom-4 flex overflow-x-auto overflow-y-hidden bg-bg-100 pb-4"
                 style={{
                   scrollSnapType: 'x mandatory',
                   overscrollBehaviorX: 'contain',
@@ -828,7 +828,7 @@ function App() {
                     scrollSnapStop: 'always',
                   }}
                 >
-                  <div className="relative flex h-full flex-col overflow-hidden rounded-xl bg-bg-100 [contain:layout_paint]">
+                  <div className="relative z-10 flex h-full flex-col overflow-hidden rounded-xl bg-bg-100 shadow-[0_0_16px_hsl(var(--always-black)/0.08)] [contain:layout_paint]">
                     <div className={paneLayout.isSplit && !paneLayout.fullscreenPaneId ? 'flex-1 min-h-0 p-2' : 'flex-1 min-h-0'}>
                       <SplitContainer
                         node={paneLayout.root}

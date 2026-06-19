@@ -12,8 +12,21 @@
   will-change: auto;
 }
 
+.mobile-chat-pager {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 .mobile-chat-pager::-webkit-scrollbar {
+  width: 0;
+  height: 0;
   display: none;
+  background: transparent;
+}
+
+.mobile-chat-pager::-webkit-scrollbar-thumb,
+.mobile-chat-pager::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* 导航到消息时保留顶部空间，避免被对话标题栏遮挡。 */
