@@ -170,19 +170,11 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           <div className="flex min-h-0 flex-col" style={{ height: isMobile ? 'calc(var(--app-height) * 0.92)' : 'min(90vh, 820px)' }}>
             {isMobile ? (
               <div className="shrink-0">
-                <div className="flex items-center justify-between px-4 pt-3 pb-2">
-                  <div className="min-w-0">
+                <div className="flex items-center justify-center px-4 pt-3 pb-2">
+                  <div className="text-center">
                     <div className="truncate text-[length:var(--fs-heading-3)] font-semibold text-text-100">{t('config.editorTitle')}</div>
                     {dirty && <div className="mt-0.5 text-[length:var(--fs-xs)] text-warning-100">{t('config.unsaved')}</div>}
                   </div>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    aria-label={t('closeSettings')}
-                    className="-mr-1 rounded-lg p-2 text-text-400 transition-colors hover:text-text-200 active:bg-bg-100"
-                  >
-                    <CloseIcon size={18} />
-                  </button>
                 </div>
                 <div className="relative">
                   <div

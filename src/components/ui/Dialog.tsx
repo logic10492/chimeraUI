@@ -360,7 +360,7 @@ export function Dialog({
                       type="button"
                       onClick={requestClose}
                       aria-label={t('common:close')}
-                      className="p-2 text-text-400 hover:text-text-200 hover:bg-bg-100 rounded-md transition-colors"
+                      className="hidden md:block p-2 text-text-400 hover:text-text-200 hover:bg-bg-100 rounded-md transition-colors"
                       title={t('common:close')}
                     >
                       <CloseIcon size={18} />

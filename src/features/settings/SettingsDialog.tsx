@@ -266,16 +266,8 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
           {/* Sticky Header + Tabs */}
           <div className="shrink-0">
             {/* Title bar */}
-            <div className="flex items-center justify-between px-4 pt-3 pb-2">
+            <div className="flex items-center justify-center px-4 pt-3 pb-2">
               <div className="text-[length:var(--fs-heading-3)] font-semibold text-text-100">{t('title')}</div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label={t('closeSettings')}
-                className="p-2 -mr-1 text-text-400 hover:text-text-200 active:bg-bg-100 rounded-lg transition-colors"
-              >
-                <CloseIcon size={18} />
-              </button>
             </div>
 
             {/* Tab Bar - horizontal scroll with padding for visual safety */}
