@@ -50,7 +50,6 @@ const CloseServiceDialog = lazy(() =>
 
 const MOBILE_PAGER_SCROLL_END_MS = 120
 const MOBILE_RIGHT_PANEL_UNMOUNT_MS = 420
-const MOBILE_PAGER_SETTLED_PX = 2
 
 type MobilePagerPage = 'left' | 'chat' | 'right'
 
@@ -206,12 +205,6 @@ function App() {
   const mobileRightUnmountTimerRef = useRef<number | null>(null)
   const shouldRenderMobileRightPanelRef = useRef(false)
   const [shouldRenderMobileRightPanel, setShouldRenderMobileRightPanel] = useState(false)
-  const mobilePagerInMotionRef = useRef(false)
-
-  const setMobilePagerInMotion = useCallback((inMotion: boolean) => {
-    if (mobilePagerInMotionRef.current === inMotion) return
-    mobilePagerInMotionRef.current = inMotion
-  }, [])
 
   const setMobileRightPanelRendered = useCallback((rendered: boolean) => {
     if (shouldRenderMobileRightPanelRef.current === rendered) return
@@ -245,16 +238,14 @@ function App() {
       const left = getMobilePageScrollLeft(page)
       if (Math.abs(pager.scrollLeft - left) < 1) {
         mobileProgrammaticTargetRef.current = null
-        setMobilePagerInMotion(false)
         pager.scrollTo({ left, behavior: 'auto' })
         return
       }
 
       mobileProgrammaticTargetRef.current = behavior === 'smooth' ? page : null
-      setMobilePagerInMotion(behavior === 'smooth')
       pager.scrollTo({ left, behavior })
     },
-    [getMobilePageScrollLeft, setMobilePagerInMotion],
+    [getMobilePageScrollLeft],
   )
 
   const getNearestMobilePage = useCallback(
@@ -297,20 +288,19 @@ function App() {
     if (!pager) return
 
     const scrollLeft = pager.scrollLeft
-    const activePageLeft = getMobilePageScrollLeft(mobileActivePage)
 
-    // 3D 效果计算：基于当前 scrollLeft 相对于聊天页位置的偏移
     // -1 (滑向左栏) 到 0 (对话页) 到 1 (滑向右栏)
-    const progress = (scrollLeft - mobileChatScrollLeft) / (scrollLeft < mobileChatScrollLeft ? mobileLeftPanelWidth : mobilePageWidth)
-    pager.style.setProperty('--mobile-pager-progress', progress.toString())
+    const rawProgress = (scrollLeft - mobileChatScrollLeft) / (scrollLeft < mobileChatScrollLeft ? mobileLeftPanelWidth : mobilePageWidth)
+    const progress = Math.max(-1, Math.min(1, rawProgress))
+    const absProgress = Math.abs(progress)
+    const rightProgress = Math.max(0, progress)
+    const easedRightProgress = rightProgress * rightProgress
+    const originX = 50 - progress * 50
 
-    if (Math.abs(scrollLeft - activePageLeft) > 1.5) {
-      setMobilePagerInMotion(true)
-    }
-
-    if (!mobilePagerInteractingRef.current && Math.abs(scrollLeft - mobileRightScrollLeft) <= MOBILE_PAGER_SETTLED_PX) {
-      setMobilePagerInMotion(false)
-    }
+    pager.style.setProperty('--mobile-chat-rotate-y', `${progress * 10}deg`)
+    pager.style.setProperty('--mobile-chat-scale', `${1 - absProgress * 0.06}`)
+    pager.style.setProperty('--mobile-chat-offset-x', `${easedRightProgress * -48}px`)
+    pager.style.setProperty('--mobile-chat-transform-origin', `${originX}% 50%`)
 
     if (scrollLeft > mobileChatScrollLeft + 24) {
       ensureMobileRightPanelRendered()
@@ -331,17 +321,13 @@ function App() {
       }
 
       syncMobilePagerState()
-      setMobilePagerInMotion(false)
     }, MOBILE_PAGER_SCROLL_END_MS)
   }, [
     ensureMobileRightPanelRendered,
     getMobilePageScrollLeft,
-    mobileActivePage,
     mobileChatScrollLeft,
     mobileLeftPanelWidth,
     mobilePageWidth,
-    mobileRightScrollLeft,
-    setMobilePagerInMotion,
     syncMobilePagerState,
   ])
 
@@ -360,9 +346,8 @@ function App() {
     mobileScrollEndTimerRef.current = window.setTimeout(() => {
       mobileScrollEndTimerRef.current = null
       syncMobilePagerState()
-      setMobilePagerInMotion(false)
     }, MOBILE_PAGER_SCROLL_END_MS)
-  }, [setMobilePagerInMotion, syncMobilePagerState])
+  }, [syncMobilePagerState])
 
   useLayoutEffect(() => {
     if (!isMobilePanelLayout) {
@@ -377,7 +362,6 @@ function App() {
         pager.scrollLeft = getMobilePageScrollLeft(page)
       }
       mobileProgrammaticTargetRef.current = null
-      mobilePagerInMotionRef.current = false
       mobilePagerInitializedRef.current = true
       return
     }
@@ -422,7 +406,6 @@ function App() {
       if (mobileScrollEndTimerRef.current !== null) window.clearTimeout(mobileScrollEndTimerRef.current)
       if (mobileRightUnmountTimerRef.current !== null) window.clearTimeout(mobileRightUnmountTimerRef.current)
       mobileProgrammaticTargetRef.current = null
-      mobilePagerInMotionRef.current = false
     }
   }, [])
 
@@ -912,7 +895,8 @@ function App() {
                     aria-hidden={mobileActivePage !== 'chat'}
                     inert={mobileActivePage !== 'chat'}
                     style={{
-                      transform: 'translate3d(0, 0, 0) rotateY(calc(var(--mobile-pager-progress, 0) * 12deg)) scale(calc(1 - abs(var(--mobile-pager-progress, 0)) * 0.08))',
+                      transform: 'translate3d(var(--mobile-chat-offset-x, 0px), 0, 0) rotateY(var(--mobile-chat-rotate-y, 0deg)) scale(var(--mobile-chat-scale, 1))',
+                      transformOrigin: 'var(--mobile-chat-transform-origin, 50% 50%)',
                       transformStyle: 'preserve-3d',
                       backfaceVisibility: 'hidden',
                       willChange: 'transform',
