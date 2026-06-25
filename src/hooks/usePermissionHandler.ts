@@ -44,6 +44,19 @@ export interface UsePermissionHandlerResult {
 const MAX_RETRIES = 3
 const RETRY_DELAY = 500
 
+async function isPermissionStillPending(
+  requestId: string,
+  directory?: string,
+  sessionId?: string,
+): Promise<boolean | undefined> {
+  try {
+    const pending = await getPendingPermissions(sessionId, directory)
+    return pending.some(request => request.id === requestId)
+  } catch {
+    return undefined
+  }
+}
+
 async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES, delay = RETRY_DELAY): Promise<T> {
   let lastError: Error | undefined
 
@@ -84,10 +97,21 @@ export function usePermissionHandler(): UsePermissionHandlerResult {
 
       try {
         await withRetry(() => replyPermission(requestId, reply, undefined, directory, sessionId))
-        setPendingPermissionRequests(prev => prev.filter(r => r.id !== requestId))
+        setPendingPermissionRequests(prev =>
+          prev.some(r => r.id === requestId) ? prev.filter(r => r.id !== requestId) : prev,
+        )
         activeSessionStore.resolvePendingRequest(requestId)
         return true
       } catch (error) {
+        const stillPending = await isPermissionStillPending(requestId, directory, sessionId)
+        if (stillPending === false) {
+          setPendingPermissionRequests(prev =>
+            prev.some(r => r.id === requestId) ? prev.filter(r => r.id !== requestId) : prev,
+          )
+          activeSessionStore.resolvePendingRequest(requestId)
+          return true
+        }
+
         permissionErrorHandler('reply after retries', error)
 
         return false

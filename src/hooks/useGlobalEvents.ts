@@ -348,8 +348,14 @@ export function useGlobalEvents(directories?: string[]) {
       latePendingRequests.delete(requestID)
       activeSessionStore.resolvePendingRequest(requestID)
 
-      if (belongsToCurrentSession(sessionID)) {
-        dispatchToConsumers(sessionID, cb => cb.onPermissionReplied?.({ sessionID, requestID }))
+      // Broadcast to ALL consumers regardless of session match.
+      // Each consumer clears its local state by requestID (which is globally unique),
+      // so a no-op for consumers that don't have this request.
+      // This fixes the case where global auto-approve's replyPermission succeeds
+      // but belongsToCurrentSession returns false, leaving stale entries in
+      // pendingPermissionRequests that can never be cleared.
+      for (const { callbacks } of sessionConsumers.values()) {
+        callbacks.onPermissionReplied?.({ sessionID, requestID })
       }
     }
 

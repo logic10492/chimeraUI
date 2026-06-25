@@ -220,6 +220,10 @@ export function useChatSession({
     isReplying,
   } = usePermissionHandler()
 
+  // Prevent infinite retry loops when auto-approve API calls fail
+  // but the server may have already processed the request (lost response).
+  const autoRetriedIdsRef = useRef(new Set<string>())
+
   // Message animations
   const { registerMessage, registerInputBox, animateUndo, animateRedo } = useMessageAnimation()
 
@@ -240,11 +244,25 @@ export function useChatSession({
       if (!autoApproveStore.claimAutoReply(request.id)) return
 
       void handlePermissionReply(request.id, 'once', effectiveDirectory, request.sessionID).then(success => {
-        if (!success) autoApproveStore.releaseAutoReply(request.id)
+        if (!success) {
+          autoApproveStore.releaseAutoReply(request.id)
+          // Retry once on failure. handlePermissionReply already retries 3× via withRetry,
+          // but the server may have processed the request and the response was lost.
+          // Force effect re-run by creating a new array reference.
+          if (!autoRetriedIdsRef.current.has(request.id)) {
+            autoRetriedIdsRef.current.add(request.id)
+            setPendingPermissionRequests(prev => [...prev])
+          }
+        }
       })
     },
-    [effectiveDirectory, handlePermissionReply],
+    [effectiveDirectory, handlePermissionReply, setPendingPermissionRequests],
   )
+
+  // Clear retry tracking on each auto-approve batch
+  useEffect(() => {
+    autoRetriedIdsRef.current.clear()
+  }, [approvePendingOnFullAuto, fullAutoMode])
 
   useEffect(() => {
     if (!routeSessionId || !approvePendingOnFullAuto || fullAutoMode !== 'session') return
@@ -387,7 +405,9 @@ export function useChatSession({
         // 应用内 toast 已在 useGlobalEvents 中统一处理
       },
       onPermissionReplied: (data: { sessionID: string; requestID: string }) => {
-        setPendingPermissionRequests(prev => prev.filter(r => r.id !== data.requestID))
+        setPendingPermissionRequests(prev =>
+          prev.some(r => r.id === data.requestID) ? prev.filter(r => r.id !== data.requestID) : prev,
+        )
       },
       onQuestionAsked: (request: import('../api').ApiQuestionRequest) => {
         setPendingQuestionRequests(prev => {
