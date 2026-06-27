@@ -39,10 +39,36 @@ function getTrailingOpenFenceStart(markdown: string) {
   return openFence?.start
 }
 
-function findStablePrefixEnd(markdown: string) {
-  const boundary = markdown.lastIndexOf('\n\n')
-  if (boundary <= 0) return 0
-  return boundary + 2
+function splitMarkdownBlocks(markdown: string) {
+  const blocks: Array<{ start: number; src: string }> = []
+  let openFence: { char: string; size: number } | null = null
+  let blockStart = 0
+  let offset = 0
+  const lines = markdown.split('\n')
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const text = lines[index] ?? ''
+    const hasLineBreak = index < lines.length - 1
+    const nextOffset = offset + text.length + (hasLineBreak ? 1 : 0)
+    const openMatch = /^[ \t]{0,3}(`{3,}|~{3,})/.exec(text)
+
+    if (openMatch?.[1] && !openFence) {
+      openFence = { char: openMatch[1][0], size: openMatch[1].length }
+    } else if (openFence) {
+      const closePattern = new RegExp(`^[ \\t]{0,3}${openFence.char}{${openFence.size},}[ \\t]*$`)
+      if (closePattern.test(text)) openFence = null
+    }
+
+    if (!openFence && text.trim() === '' && nextOffset > blockStart && nextOffset < markdown.length) {
+      blocks.push({ start: blockStart, src: markdown.slice(blockStart, nextOffset) })
+      blockStart = nextOffset
+    }
+
+    offset = nextOffset
+  }
+
+  if (blockStart < markdown.length) blocks.push({ start: blockStart, src: markdown.slice(blockStart) })
+  return blocks.length > 0 ? blocks : [{ start: 0, src: markdown }]
 }
 
 export function splitMarkdownStream(markdown: string, isStreaming: boolean): MarkdownStreamBlock[] {
@@ -51,24 +77,15 @@ export function splitMarkdownStream(markdown: string, isStreaming: boolean): Mar
   if (hasReferenceDefinitions(markdown)) return [{ key: `live:${hashString(markdown)}`, src: markdown, mode: 'live' }]
 
   const fenceStart = getTrailingOpenFenceStart(markdown)
-  if (fenceStart == null || fenceStart <= 0) {
-    const stablePrefixEnd = findStablePrefixEnd(markdown)
-    if (stablePrefixEnd <= 0 || stablePrefixEnd >= markdown.length) {
-      return [{ key: `live:${hashString(markdown)}`, src: markdown, mode: 'live' }]
+  const blocks = splitMarkdownBlocks(markdown)
+  if (blocks.length === 1) return [{ key: `live:${hashString(markdown)}`, src: markdown, mode: 'live' }]
+
+  return blocks.map((block, index) => {
+    const isLiveTail = index === blocks.length - 1 || (fenceStart != null && block.start >= fenceStart)
+    return {
+      key: `${isLiveTail ? 'live' : 'stable'}:${block.start}:${isLiveTail ? '' : hashString(block.src)}`,
+      src: block.src,
+      mode: isLiveTail ? 'live' : 'full',
     }
-
-    const stableHead = markdown.slice(0, stablePrefixEnd)
-    const liveTail = markdown.slice(stablePrefixEnd)
-    return [
-      { key: `stable:${hashString(stableHead)}`, src: stableHead, mode: 'full' },
-      { key: `live-tail:${stablePrefixEnd}`, src: liveTail, mode: 'live' },
-    ]
-  }
-
-  const stableHead = markdown.slice(0, fenceStart)
-  const liveTail = markdown.slice(fenceStart)
-  return [
-    { key: `stable:${hashString(stableHead)}`, src: stableHead, mode: 'full' },
-    { key: `live-code:${fenceStart}`, src: liveTail, mode: 'live' },
-  ]
+  })
 }

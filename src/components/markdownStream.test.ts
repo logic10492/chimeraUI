@@ -31,6 +31,22 @@ describe('splitMarkdownStream', () => {
     expect(first[1].src).not.toBe(next[1].src)
   })
 
+  it('keeps multiple completed blocks stable while only the tail is live', () => {
+    expect(splitMarkdownStream('one\n\ntwo\n\nthree live', true)).toEqual([
+      expect.objectContaining({ src: 'one\n\n', mode: 'full' }),
+      expect.objectContaining({ src: 'two\n\n', mode: 'full' }),
+      expect.objectContaining({ src: 'three live', mode: 'live' }),
+    ])
+  })
+
+  it('does not split on blank lines inside fenced code blocks', () => {
+    expect(splitMarkdownStream('before\n\n```ts\nconst a = 1\n\nconst b = 2\n```\n\nafter', true)).toEqual([
+      expect.objectContaining({ src: 'before\n\n', mode: 'full' }),
+      expect.objectContaining({ src: '```ts\nconst a = 1\n\nconst b = 2\n```\n\n', mode: 'full' }),
+      expect.objectContaining({ src: 'after', mode: 'live' }),
+    ])
+  })
+
   it('splits stable content from an unfinished trailing code fence while streaming', () => {
     expect(splitMarkdownStream('before\n\n```ts\nconst x = 1', true)).toEqual([
       expect.objectContaining({ src: 'before\n\n', mode: 'full' }),

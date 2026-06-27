@@ -657,6 +657,81 @@ const markdownRehypePlugins = [
   defaultRehypePlugins.harden,
 ]
 
+const STREAM_MIN_COMMIT_INTERVAL_MS = 32
+const STREAM_MAX_COMMIT_INTERVAL_MS = 96
+const STREAM_TAIL_SCALE_CHARS = 256
+const STREAM_FLUSH_CHARS_PER_SECOND = 260
+
+function findMarkdownTailLength(content: string) {
+  const boundary = content.lastIndexOf('\n\n')
+  return boundary === -1 ? content.length : content.length - boundary - 2
+}
+
+function useSmoothMarkdownStream(content: string, enabled: boolean) {
+  const [displayedContent, setDisplayedContent] = useState(content)
+  const displayedRef = useRef(content)
+  const targetRef = useRef(content)
+  const rafRef = useRef<number | null>(null)
+  const lastCommitRef = useRef(0)
+
+  const stop = useCallback(() => {
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+    rafRef.current = null
+  }, [])
+
+  useEffect(() => {
+    if (!enabled) {
+      stop()
+      targetRef.current = content
+      displayedRef.current = content
+      setDisplayedContent(content)
+      return
+    }
+
+    targetRef.current = content
+    if (!content.startsWith(displayedRef.current)) {
+      displayedRef.current = content
+      setDisplayedContent(content)
+      return
+    }
+
+    if (rafRef.current !== null) return
+
+    const tick = (timestamp: number) => {
+      const target = targetRef.current
+      const current = displayedRef.current
+      const backlog = target.length - current.length
+      if (backlog <= 0) {
+        rafRef.current = null
+        return
+      }
+
+      const tailLength = findMarkdownTailLength(current)
+      const minInterval = Math.min(
+        STREAM_MAX_COMMIT_INTERVAL_MS,
+        STREAM_MIN_COMMIT_INTERVAL_MS * (1 + tailLength / STREAM_TAIL_SCALE_CHARS),
+      )
+      if (timestamp - lastCommitRef.current < minInterval) {
+        rafRef.current = requestAnimationFrame(tick)
+        return
+      }
+
+      const elapsedSeconds = Math.max(0.016, Math.min((timestamp - lastCommitRef.current) / 1000, 0.12))
+      const nextChars = Math.max(1, Math.ceil(STREAM_FLUSH_CHARS_PER_SECOND * elapsedSeconds))
+      const nextContent = target.slice(0, current.length + Math.min(backlog, nextChars))
+      lastCommitRef.current = timestamp
+      displayedRef.current = nextContent
+      setDisplayedContent(nextContent)
+      rafRef.current = requestAnimationFrame(tick)
+    }
+
+    rafRef.current = requestAnimationFrame(tick)
+    return stop
+  }, [content, enabled, stop])
+
+  return displayedContent
+}
+
 const MarkdownStreamBlock = memo(function MarkdownStreamBlock({
   src,
   components,
@@ -698,7 +773,9 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   variant = 'default',
 }: MarkdownRendererProps) {
   const isReasoning = variant === 'reasoning'
-  const streamBlocks = useMemo(() => splitMarkdownStream(content, isStreaming), [content, isStreaming])
+  const smoothedContent = useSmoothMarkdownStream(content, isStreaming)
+  const renderedContent = isStreaming ? smoothedContent : content
+  const streamBlocks = useMemo(() => splitMarkdownStream(renderedContent, isStreaming), [renderedContent, isStreaming])
 
   const components = useMemo<Components>(
     () => ({
