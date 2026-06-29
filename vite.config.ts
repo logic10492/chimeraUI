@@ -25,7 +25,7 @@ function katexWoff2Only() {
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: process.env.VITE_BASE_PATH || '/',
+  base: process.env.VITE_BASE_PATH || '/newweb/',
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
