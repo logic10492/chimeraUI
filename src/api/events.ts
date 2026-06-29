@@ -755,6 +755,10 @@ function handleEventForSubscriber(payload: GlobalEvent['payload'], callbacks: Ev
       } satisfies TodoUpdatedPayload)
       break
     }
+    case EventTypes.WORK_BRIEF_UPDATED: {
+      callbacks.onWorkBriefUpdated?.(payload.properties)
+      break
+    }
     case EventTypes.SERVER_CONNECTED:
       callbacks.onServerConnected?.(normalizeServerConnected(payload.properties))
       break

@@ -3,9 +3,9 @@
 // 基于 @opencode-ai/sdk: /config, /project, /provider 相关接口
 // ============================================
 
-import { getSDKClient, unwrap } from './sdk'
+import { apiFetch, getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
-import type { ModelInfo, ApiProject, ApiPath } from './types'
+import type { ModelInfo, ApiProject, ApiPath, ProviderBalanceResult } from './types'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -103,6 +103,14 @@ export async function getDefaultModels(directory?: string): Promise<Record<strin
   )
   const defaults = requireRecord(data.default, 'Invalid OpenCode default model response')
   return Object.fromEntries(Object.entries(defaults).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+}
+
+export async function getProviderBalance(providerId: string, directory?: string): Promise<ProviderBalanceResult> {
+  const response = await apiFetch(
+    `/provider/${encodeURIComponent(providerId)}/balance${directory ? `?directory=${encodeURIComponent(directory)}` : ''}`,
+  )
+  if (!response.ok) throw new Error(`Failed to load provider balance (${response.status})`)
+  return (await response.json()) as ProviderBalanceResult
 }
 
 // ============================================

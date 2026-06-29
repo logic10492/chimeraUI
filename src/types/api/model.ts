@@ -23,3 +23,35 @@ export type ProvidersResponse = SDKConfigProvidersResponse
 export type ProviderAuthMethod = SDKProviderAuthMethod
 
 export type ProviderAuthAuthorization = SDKProviderAuthAuthorization
+
+export type ProviderBalanceStatus = 'available' | 'unavailable' | 'not_configured' | 'unsupported' | 'error'
+
+export type ProviderBalanceResult =
+  | {
+      kind: 'billing'
+      providerID: string
+      status: ProviderBalanceStatus
+      is_available?: boolean
+      balance_infos: Array<{
+        currency: string
+        total_balance: string
+        granted_balance: string
+        topped_up_balance: string
+      }>
+      message?: string
+    }
+  | {
+      kind: 'quota'
+      providerID: string
+      status: ProviderBalanceStatus
+      label?: string
+      plan_type?: string
+      limits: Array<{
+        label: string
+        used_percent: number | string
+        remaining_percent: number | string
+        window_minutes?: number | string
+        resets_at?: number | string
+      }>
+      message?: string
+    }

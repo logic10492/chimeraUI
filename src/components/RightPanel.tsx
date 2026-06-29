@@ -17,6 +17,9 @@ const Terminal = lazy(() => import('./Terminal').then(module => ({ default: modu
 const McpPanel = lazy(() => import('./McpPanel').then(module => ({ default: module.McpPanel })))
 const SkillPanel = lazy(() => import('./SkillPanel').then(module => ({ default: module.SkillPanel })))
 const WorktreePanel = lazy(() => import('./WorktreePanel').then(module => ({ default: module.WorktreePanel })))
+const SessionStatusPanel = lazy(() =>
+  import('./SessionStatusPanel').then(module => ({ default: module.SessionStatusPanel })),
+)
 
 function PanelFallback() {
   const { t } = useTranslation(['components', 'common'])
@@ -30,11 +33,12 @@ function PanelFallback() {
 interface RightPanelProps {
   directory?: string
   sessionId?: string | null
+  providerId?: string
   inline?: boolean
   renderPanelContent?: boolean
 }
 
-export const RightPanel = memo(function RightPanel({ directory, sessionId, inline = false, renderPanelContent = true }: RightPanelProps) {
+export const RightPanel = memo(function RightPanel({ directory, sessionId, providerId, inline = false, renderPanelContent = true }: RightPanelProps) {
   const { t } = useTranslation(['components', 'common'])
   const { rightPanelOpen, rightPanelWidth } = useLayoutStore()
   const { interaction, layout } = useChatViewport()
@@ -95,6 +99,17 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId, inlin
 
       return (
         <>
+          {activeTab.type === 'status' ? (
+            <Suspense fallback={<PanelFallback />}>
+              <SessionStatusPanel
+                sessionId={sessionId}
+                directory={normalizedDirectory}
+                providerId={providerId}
+                active={activeTab.type === 'status'}
+              />
+            </Suspense>
+          ) : null}
+
           {/* Keep files mounted so expanded folders and previews survive tab switches. */}
           <div className={activeTab.type === 'files' ? 'h-full' : 'hidden'}>
             <Suspense fallback={<PanelFallback />}>
@@ -107,8 +122,8 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId, inlin
             </Suspense>
           </div>
 
-          {sessionId ? (
-            <div className={activeTab.type === 'changes' ? 'h-full' : 'hidden'}>
+          {activeTab.type === 'changes' ? (
+            sessionId ? (
               <Suspense fallback={<PanelFallback />}>
                 <ChangesContent
                   activeTab={activeTab}
@@ -117,11 +132,11 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId, inlin
                   isPanelResizing={isPanelResizing}
                 />
               </Suspense>
-            </div>
-          ) : activeTab.type === 'changes' ? (
-            <div className="flex items-center justify-center h-full text-text-400 text-[length:var(--fs-sm)]">
-              {t('rightPanel.noActiveSession')}
-            </div>
+            ) : (
+              <div className="flex items-center justify-center h-full text-text-400 text-[length:var(--fs-sm)]">
+                {t('rightPanel.noActiveSession')}
+              </div>
+            )
           ) : null}
 
           {activeTab.type === 'terminal' ? (
@@ -150,7 +165,7 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId, inlin
         </>
       )
     },
-    [normalizedDirectory, sessionId, isPanelResizing, t],
+    [normalizedDirectory, sessionId, providerId, isPanelResizing, t],
   )
 
   if (inline) {

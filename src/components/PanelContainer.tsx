@@ -11,6 +11,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   TerminalIcon,
+  CircleIcon,
   FolderIcon,
   GitCommitIcon,
   PlugIcon,
@@ -39,6 +40,7 @@ interface PanelContainerProps {
 
 // Tab 图标映射
 const TAB_ICONS: Record<PanelTabType, React.ReactNode> = {
+  status: <CircleIcon size={12} />,
   terminal: <TerminalIcon size={12} />,
   files: <FolderIcon size={12} />,
   changes: <GitCommitIcon size={12} />,
@@ -53,6 +55,8 @@ function getTabLabel(tab: PanelTab, tabs: PanelTab[], t: (key: string) => string
     return tab.title ?? t('terminal.terminal')
   }
   switch (tab.type) {
+    case 'status':
+      return t('panelContainer.status')
     case 'files': {
       if (tab.title) return tab.title
       const fileTabs = tabs.filter(item => item.type === 'files')
@@ -430,6 +434,18 @@ export const PanelContainer = memo(function PanelContainer({
                 <TerminalIcon size={12} />
               </span>
               {t('terminal.terminal')}
+            </button>
+            <button
+              onClick={() => {
+                layoutStore.addStatusTab(position)
+                setAddMenuPos(null)
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
+            >
+              <span className="opacity-60 shrink-0">
+                <CircleIcon size={12} />
+              </span>
+              {t('panelContainer.status')}
             </button>
             <button
               onClick={() => {

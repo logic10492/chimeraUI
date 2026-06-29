@@ -5,6 +5,7 @@ export interface PaneControllerState {
   sessionId: string | null
   effectiveDirectory: string
   contextLimit?: number
+  currentProviderId?: string
   isStreaming: boolean
   newSession: () => void
   archiveSession: () => void
@@ -26,6 +27,7 @@ function isSameController(a: PaneControllerState | undefined, b: PaneControllerS
     a.sessionId === b.sessionId &&
     a.effectiveDirectory === b.effectiveDirectory &&
     a.contextLimit === b.contextLimit &&
+    a.currentProviderId === b.currentProviderId &&
     a.isStreaming === b.isStreaming &&
     a.newSession === b.newSession &&
     a.archiveSession === b.archiveSession &&

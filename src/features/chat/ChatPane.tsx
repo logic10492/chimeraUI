@@ -639,6 +639,7 @@ export const ChatPane = memo(function ChatPane({
   }, [])
 
   const contextLimit = currentModel?.contextLimit
+  const currentProviderId = currentModel?.providerId
 
   const controllerActionsRef = useRef({
     newSession: handleNewSession,
@@ -703,6 +704,7 @@ export const ChatPane = memo(function ChatPane({
       sessionId: routeSessionId,
       effectiveDirectory: effectiveDirectory || '',
       contextLimit,
+      currentProviderId,
       newSession: stableControllerActions.newSession,
       archiveSession: stableControllerActions.archiveSession,
       previousSession: stableControllerActions.previousSession,
@@ -714,7 +716,7 @@ export const ChatPane = memo(function ChatPane({
       toggleFullAuto: stableControllerActions.toggleFullAuto,
       isStreaming,
     })
-  }, [paneId, routeSessionId, effectiveDirectory, contextLimit, stableControllerActions, isStreaming])
+  }, [paneId, routeSessionId, effectiveDirectory, contextLimit, currentProviderId, stableControllerActions, isStreaming])
 
   // ============================================
   // Dialog Collapsed State

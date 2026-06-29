@@ -26,3 +26,13 @@ export type SessionCreateParams = NonNullable<SDKSessionCreateData['query']> & N
 export type SessionUpdateParams = NonNullable<SDKSessionUpdateData['body']>
 
 export type SessionForkParams = NonNullable<SDKSessionForkData['query']> & NonNullable<SDKSessionForkData['body']>
+
+export interface WorkBrief {
+  intent?: string
+  confirmedDecisions: string[]
+  constraints: string[]
+  acceptanceCriteria: string[]
+  openQuestions: string[]
+  relevantEvidence: string[]
+  closeout: string[]
+}

@@ -6,7 +6,7 @@
 export type PanelPosition = 'bottom' | 'right'
 
 // 面板内容类型
-export type PanelTabType = 'terminal' | 'files' | 'changes' | 'mcp' | 'skill' | 'worktree'
+export type PanelTabType = 'status' | 'terminal' | 'files' | 'changes' | 'mcp' | 'skill' | 'worktree'
 type PersistedPanelTabType = Exclude<PanelTabType, 'terminal'>
 
 // 统一的面板标签
@@ -78,7 +78,7 @@ function buildTerminalPanelTab(
 }
 
 // 旧的 RightPanelView 类型 - 兼容
-export type RightPanelView = 'files' | 'changes'
+export type RightPanelView = 'status' | 'files' | 'changes'
 
 interface LayoutState {
   // 统一的面板标签系统
@@ -163,7 +163,7 @@ export interface PersistedTerminalLayoutMap {
 }
 
 const PANEL_POSITIONS: PanelPosition[] = ['bottom', 'right']
-const PERSISTED_PANEL_TAB_TYPES: PersistedPanelTabType[] = ['files', 'changes', 'mcp', 'skill', 'worktree']
+const PERSISTED_PANEL_TAB_TYPES: PersistedPanelTabType[] = ['status', 'files', 'changes', 'mcp', 'skill', 'worktree']
 
 function isPanelPosition(value: unknown): value is PanelPosition {
   return typeof value === 'string' && PANEL_POSITIONS.includes(value as PanelPosition)
@@ -293,13 +293,13 @@ function sanitizePersistedTerminalLayoutMap(raw: unknown): PersistedTerminalLayo
 export class LayoutStore {
   private state: LayoutState = {
     panelTabs: [
-      // 默认 tabs: files 和 changes 在右侧面板
+      { id: 'status', type: 'status', position: 'right' },
       { id: 'files', type: 'files', position: 'right', previewFile: null, previewFiles: [] },
       { id: 'changes', type: 'changes', position: 'right' },
     ],
     activeTabId: {
       bottom: null,
-      right: 'files',
+      right: 'status',
     },
     sidebarExpanded: true,
     sidebarFolderRecents: false,
@@ -315,6 +315,7 @@ export class LayoutStore {
   }
   private subscribers = new Set<Subscriber>()
   private currentTerminalDirectory: string | null = null
+  private rightPanelAutoOpenDismissed = false
 
   private persistPanelLayout() {
     try {
@@ -448,6 +449,7 @@ export class LayoutStore {
           this.state.bottomPanelOpen = restored.bottomPanelOpen
         }
       }
+      this.ensureStatusTab('right')
     } catch {
       // ignore
     }
@@ -586,7 +588,6 @@ export class LayoutStore {
     return this.state.panelTabs.find(t => t.id === activeId && t.position === position) ?? null
   }
 
-  // 设置活动 tab
   setActiveTab(position: PanelPosition, tabId: string) {
     const tab = this.state.panelTabs.find(t => t.id === tabId && t.position === position)
     if (tab) {
@@ -595,7 +596,6 @@ export class LayoutStore {
     }
   }
 
-  // 添加新 tab
   addTab(tab: Omit<PanelTab, 'id'> & { id?: string }, openPanel = true) {
     const id = tab.id ?? `${tab.type}-${Date.now()}`
     const newTab: PanelTab = { ...tab, id }
@@ -609,10 +609,19 @@ export class LayoutStore {
     return id
   }
 
-  /**
-   * 添加单例 tab（同一位置同类型只允许一个）
-   * 如果已存在则激活，否则创建新的
-   */
+  private ensureStatusTab(position: PanelPosition) {
+    const existing = this.state.panelTabs.find(tab => tab.type === 'status' && tab.position === position)
+    if (!existing) {
+      this.state.panelTabs.unshift({ id: position === 'right' ? 'status' : `status-${position}`, type: 'status', position })
+    }
+
+    const activeId = this.state.activeTabId[position]
+    const activeExists = activeId ? this.state.panelTabs.some(tab => tab.id === activeId && tab.position === position) : false
+    if (!activeExists) {
+      this.state.activeTabId[position] = this.state.panelTabs.find(tab => tab.type === 'status' && tab.position === position)?.id ?? null
+    }
+  }
+
   private addSingletonTab(type: PanelTab['type'], position: PanelPosition, fixedId?: string): string {
     const existing = this.state.panelTabs.find(t => t.type === type && t.position === position)
     if (existing) {
@@ -624,48 +633,48 @@ export class LayoutStore {
     return this.addTab({ type, position, ...(fixedId && { id: fixedId }) })
   }
 
-  // 添加 Files 标签
+  addStatusTab(position: PanelPosition) {
+    if (position === 'right') this.rightPanelAutoOpenDismissed = false
+    return this.addSingletonTab('status', position, position === 'right' ? 'status' : `status-${position}`)
+  }
+
   addFilesTab(position: PanelPosition) {
     return this.addTab({ type: 'files', position, previewFile: null, previewFiles: [] })
   }
 
-  // 添加 Changes 标签
   addChangesTab(position: PanelPosition) {
     return this.addTab({ type: 'changes', position })
   }
 
-  // 添加 MCP 标签
   addMcpTab(position: PanelPosition) {
     return this.addSingletonTab('mcp', position, 'mcp')
   }
 
-  // 添加 Skill 标签
   addSkillTab(position: PanelPosition) {
     return this.addSingletonTab('skill', position, 'skill')
   }
 
-  // 添加 Worktree 标签
   addWorktreeTab(position: PanelPosition) {
     return this.addSingletonTab('worktree', position, 'worktree')
   }
 
-  // 移除 tab
   removeTab(tabId: string) {
     const index = this.state.panelTabs.findIndex(t => t.id === tabId)
     if (index === -1) return
 
     const tab = this.state.panelTabs[index]
     const position = tab.position
+    if (tab.type === 'status' && position === 'right') {
+      this.rightPanelAutoOpenDismissed = true
+    }
     this.state.panelTabs.splice(index, 1)
 
-    // 如果关闭的是当前活动 tab，切换到同位置的相邻 tab
     if (this.state.activeTabId[position] === tabId) {
       const remainingTabs = this.getTabsForPosition(position)
       const newIndex = Math.min(index, remainingTabs.length - 1)
       this.state.activeTabId[position] = remainingTabs[newIndex]?.id ?? null
     }
 
-    // 如果该位置没有 tab 了，关闭面板
     if (this.getTabsForPosition(position).length === 0) {
       this.setPanelOpen(position, false)
     }
@@ -673,7 +682,6 @@ export class LayoutStore {
     this.notify()
   }
 
-  // 更新 tab 属性
   updateTab(tabId: string, updates: Partial<Omit<PanelTab, 'id' | 'type'>>) {
     const tab = this.state.panelTabs.find(t => t.id === tabId)
     if (tab) {
@@ -682,34 +690,25 @@ export class LayoutStore {
     }
   }
 
-  // 移动 tab 到另一个位置
   moveTab(tabId: string, toPosition: PanelPosition) {
     const tab = this.state.panelTabs.find(t => t.id === tabId)
     if (!tab || tab.position === toPosition) return
 
     const fromPosition = tab.position
-
-    // 更新位置
     tab.position = toPosition
 
-    // 更新活动状态
-    // 如果原位置的 activeTab 是这个 tab，切换到其他 tab
     if (this.state.activeTabId[fromPosition] === tabId) {
       const remainingTabs = this.getTabsForPosition(fromPosition)
       this.state.activeTabId[fromPosition] = remainingTabs[0]?.id ?? null
     }
 
-    // 新位置设为活动
     this.state.activeTabId[toPosition] = tabId
-
-    // 打开目标面板
     if (toPosition === 'bottom') {
       this.state.bottomPanelOpen = true
     } else {
       this.state.rightPanelOpen = true
     }
 
-    // 如果原位置空了，关闭面板
     if (this.getTabsForPosition(fromPosition).length === 0) {
       if (fromPosition === 'bottom') {
         this.state.bottomPanelOpen = false
@@ -721,7 +720,6 @@ export class LayoutStore {
     this.notify()
   }
 
-  // 重新排序同位置的 tabs
   reorderTabs(position: PanelPosition, draggedId: string, targetId: string) {
     const tabs = this.state.panelTabs
     const draggedIndex = tabs.findIndex(t => t.id === draggedId && t.position === position)
@@ -737,17 +735,12 @@ export class LayoutStore {
     this.notify()
   }
 
-  // ============================================
-  // 兼容旧 API - Right Panel
-  // ============================================
-
-  // 获取当前 rightPanelView (兼容)
   get rightPanelView(): RightPanelView {
     const activeTab = this.getActiveTab('right')
-    if (activeTab?.type === 'files' || activeTab?.type === 'changes') {
+    if (activeTab?.type === 'status' || activeTab?.type === 'files' || activeTab?.type === 'changes') {
       return activeTab.type
     }
-    return 'files'
+    return 'status'
   }
 
   toggleRightPanel(view?: RightPanelView) {
@@ -756,33 +749,51 @@ export class LayoutStore {
       if (view !== currentView) {
         this.setRightPanelView(view)
         this.state.rightPanelOpen = true
+        this.rightPanelAutoOpenDismissed = false
       } else if (this.state.rightPanelOpen) {
         this.state.rightPanelOpen = false
+        this.rightPanelAutoOpenDismissed = true
       } else {
         this.state.rightPanelOpen = true
+        this.rightPanelAutoOpenDismissed = false
       }
+    } else if (this.state.rightPanelOpen) {
+      this.state.rightPanelOpen = false
+      this.rightPanelAutoOpenDismissed = true
     } else {
-      this.state.rightPanelOpen = !this.state.rightPanelOpen
+      this.state.rightPanelOpen = true
+      this.rightPanelAutoOpenDismissed = false
     }
     this.notify()
   }
 
   openRightPanel(view?: RightPanelView) {
     this.state.rightPanelOpen = true
+    this.rightPanelAutoOpenDismissed = false
     if (view) {
       this.setRightPanelView(view)
-    } else {
-      this.notify()
+      return
     }
+    this.notify()
   }
 
   closeRightPanel() {
     this.state.rightPanelOpen = false
+    this.rightPanelAutoOpenDismissed = true
     this.notify()
   }
 
+  openStatusPanel(options?: { automatic?: boolean }) {
+    if (options?.automatic && this.rightPanelAutoOpenDismissed) return false
+    this.ensureStatusTab('right')
+    this.state.activeTabId.right = this.state.panelTabs.find(tab => tab.type === 'status' && tab.position === 'right')?.id ?? null
+    this.state.rightPanelOpen = true
+    if (!options?.automatic) this.rightPanelAutoOpenDismissed = false
+    this.notify()
+    return true
+  }
+
   setRightPanelView(view: RightPanelView) {
-    // 找到该 view 对应的 tab 并激活
     const tab = this.state.panelTabs.find(t => t.type === view && t.position === 'right')
     if (tab) {
       this.state.activeTabId.right = tab.id

@@ -18,7 +18,8 @@ import type {
   EventWorktreeReady as SDKEventWorktreeReady,
   GlobalEvent as SDKGlobalEvent,
   Todo as SDKTodo,
-} from '@opencode-ai/sdk/v2/client'
+  } from '@opencode-ai/sdk/v2/client'
+import type { WorkBrief } from './session'
 import type { Session } from './session'
 import type { Message, Part } from './message'
 import type { PermissionRequest, QuestionRequest } from './permission'
@@ -59,6 +60,8 @@ export type TodoUpdatedPayload = Omit<SDKEventTodoUpdated['properties'], 'todos'
   todos: TodoItem[]
 }
 
+export type WorkBriefUpdatedPayload = { sessionID: string; brief: WorkBrief }
+
 export type WorktreeReadyPayload = SDKEventWorktreeReady['properties']
 
 export type WorktreeFailedPayload = SDKEventWorktreeFailed['properties']
@@ -73,7 +76,7 @@ export interface ServerConnectedPayload {
 // Global Event Type
 // ============================================
 
-export type GlobalEvent = SDKGlobalEvent
+export type GlobalEvent = SDKGlobalEvent | (Omit<SDKGlobalEvent, 'payload'> & { payload: { id: string; type: 'work_brief.updated'; properties: WorkBriefUpdatedPayload } })
 
 /**
  * 事件类型常量
@@ -108,6 +111,7 @@ export const EventTypes = {
   // Todo events
   TODO_UPDATED: 'todo.updated',
 
+  WORK_BRIEF_UPDATED: 'work_brief.updated',
   // TUI events
   TUI_PROMPT_APPEND: 'tui.prompt.append',
   TUI_COMMAND_EXECUTE: 'tui.command.execute',
@@ -142,7 +146,7 @@ export const EventTypes = {
   PTY_UPDATED: 'pty.updated',
   PTY_EXITED: 'pty.exited',
   PTY_DELETED: 'pty.deleted',
-} as const satisfies Record<string, SDKGlobalEvent['payload']['type']>
+} as const satisfies Record<string, GlobalEvent['payload']['type']>
 
 export type EventType = SDKGlobalEvent['payload']['type']
 
@@ -168,6 +172,7 @@ export interface EventCallbacks {
   onQuestionReplied?: (data: QuestionRepliedPayload) => void
   onQuestionRejected?: (data: QuestionRejectedPayload) => void
   onTodoUpdated?: (data: TodoUpdatedPayload) => void
+  onWorkBriefUpdated?: (data: WorkBriefUpdatedPayload) => void
   onProjectUpdated?: (project: Project) => void
   onWorktreeReady?: (data: WorktreeReadyPayload) => void
   onWorktreeFailed?: (data: WorktreeFailedPayload) => void

@@ -34,6 +34,7 @@
     "loadingPanel": "Loading panel..."
   },
   "panelContainer": {
+    "status": "Status",
     "files": "Files",
     "changes": "Changes",
     "mcp": "MCP",
@@ -45,6 +46,25 @@
     "moveToRight": "Move to Right Panel",
     "moveToBottom": "Move to Bottom Panel",
     "mcpServers": "MCP Servers"
+  },
+  "sessionStatus": {
+    "workBrief": "WorkBrief",
+    "intent": "Intent",
+    "openQuestions": "Open questions",
+    "closeout": "Closeout",
+    "decisions": "Decisions",
+    "constraints": "Constraints",
+    "acceptance": "Acceptance",
+    "evidence": "Evidence",
+    "loadingWorkBrief": "Loading WorkBrief...",
+    "noWorkBrief": "No WorkBrief yet",
+    "providerBalance": "Provider Balance",
+    "loadingBalance": "Loading balance...",
+    "failedBalance": "Failed to load balance",
+    "noBalance": "Balance unavailable",
+    "noBalanceSources": "Balance is available for Codex/OpenAI and DeepSeek accounts.",
+    "todo": "Todo",
+    "noTodo": "No todos"
   },
   "sessionChanges": {
     "loadingChanges": "Loading changes...",

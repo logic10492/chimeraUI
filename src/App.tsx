@@ -454,6 +454,11 @@ function App() {
 
   const focusedDirectory = focusedRouteDirectory || ''
 
+  useEffect(() => {
+    if (isMobilePanelLayout || !paneLayout.focusedSessionId) return
+    layoutStore.openStatusPanel({ automatic: true })
+  }, [isMobilePanelLayout, paneLayout.focusedSessionId])
+
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('servers')
   const openSettingsTab = useCallback((tab: SettingsTab) => {
@@ -940,6 +945,7 @@ function App() {
                   <RightPanel
                     directory={focusedDirectory}
                     sessionId={paneLayout.focusedSessionId}
+                    providerId={focusedController?.currentProviderId}
                     inline
                     renderPanelContent={rightPanelOpen || shouldRenderMobileRightPanel}
                   />
@@ -980,7 +986,7 @@ function App() {
                   <BottomPanel directory={focusedDirectory} />
                 </div>
 
-                <RightPanel directory={focusedDirectory} sessionId={paneLayout.focusedSessionId} />
+                <RightPanel directory={focusedDirectory} sessionId={paneLayout.focusedSessionId} providerId={focusedController?.currentProviderId} />
               </div>
             </>
           )}

@@ -28,6 +28,7 @@ export type {
   SessionCreateParams,
   SessionUpdateParams,
   SessionForkParams,
+  WorkBrief,
 } from './session'
 
 // Message types
@@ -69,6 +70,8 @@ export type {
   ProvidersResponse,
   ProviderAuthMethod,
   ProviderAuthAuthorization,
+  ProviderBalanceResult,
+  ProviderBalanceStatus,
 } from './model'
 
 // Permission types
@@ -119,6 +122,7 @@ export type {
   QuestionRejectedPayload,
   TodoItem,
   TodoUpdatedPayload,
+  WorkBriefUpdatedPayload,
   WorktreeReadyPayload,
   WorktreeFailedPayload,
   VcsBranchUpdatedPayload,

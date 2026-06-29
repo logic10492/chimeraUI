@@ -101,7 +101,7 @@ describe('LayoutStore panel and terminal layout', () => {
     expect(notifications).toBe(0)
   })
 
-  it('falls back to a valid right tab when a stale terminal active id disappears after sync', () => {
+  it('falls back to status when a stale terminal active id disappears after sync', () => {
     const store = new LayoutStore()
 
     store.syncTerminalSessions('dir-a', [{ id: 'term-a1', title: 'A1', status: 'connected' }])
@@ -110,7 +110,7 @@ describe('LayoutStore panel and terminal layout', () => {
 
     store.syncTerminalSessions('dir-b', [])
 
-    expect(store.getState().activeTabId.right).toBe('files')
+    expect(store.getState().activeTabId.right).toBe('status')
   })
 
   it('persists terminal snapshots and restores them on the next sync', () => {

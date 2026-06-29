@@ -34,6 +34,7 @@
     "loadingPanel": "加载面板中..."
   },
   "panelContainer": {
+    "status": "状态",
     "files": "文件",
     "changes": "变更",
     "mcp": "MCP",
@@ -45,6 +46,25 @@
     "moveToRight": "移动到右侧面板",
     "moveToBottom": "移动到底部面板",
     "mcpServers": "MCP 服务器"
+  },
+  "sessionStatus": {
+    "workBrief": "WorkBrief",
+    "intent": "目标",
+    "openQuestions": "待解决问题",
+    "closeout": "收尾",
+    "decisions": "决策",
+    "constraints": "约束",
+    "acceptance": "验收",
+    "evidence": "证据",
+    "loadingWorkBrief": "加载 WorkBrief 中...",
+    "noWorkBrief": "暂无 WorkBrief",
+    "providerBalance": "Provider 余额",
+    "loadingBalance": "加载余额中...",
+    "failedBalance": "加载余额失败",
+    "noBalance": "余额不可用",
+    "noBalanceSources": "余额适用于 Codex/OpenAI 和 DeepSeek 账户。",
+    "todo": "Todo",
+    "noTodo": "暂无 Todo"
   },
   "sessionChanges": {
     "loadingChanges": "加载变更中...",

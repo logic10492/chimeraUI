@@ -3,12 +3,12 @@
 // 基于 @opencode-ai/sdk: /session 相关接口
 // ============================================
 
-import { getSDKClient, unwrap } from './sdk'
+import { apiFetch, getSDKClient, unwrap } from './sdk'
 import { normalizeTodoItems } from './todo'
 import { formatPathForApi } from '../utils/directoryUtils'
 import { getSessionMessages } from './message'
 import { normalizeFileDiffs } from '../types/api/file'
-import type { ApiSession, SessionListParams, FileDiff, ApiMessageWithParts, ApiUserMessage } from './types'
+import type { ApiSession, SessionListParams, FileDiff, ApiMessageWithParts, ApiUserMessage, WorkBrief } from './types'
 import type { SessionStatusMap } from '../types/api/session'
 import type { TodoItem } from '../types/api/event'
 
@@ -27,6 +27,14 @@ function normalizeSessionList(value: unknown): ApiSession[] {
 export async function getSessionStatus(directory?: string): Promise<SessionStatusMap> {
   const sdk = getSDKClient()
   return unwrap(await sdk.session.status({ directory: formatPathForApi(directory) }))
+}
+
+export async function getSessionWorkBrief(sessionId: string, directory?: string): Promise<WorkBrief> {
+  const response = await apiFetch(
+    `/session/${encodeURIComponent(sessionId)}/work_brief${directory ? `?directory=${encodeURIComponent(directory)}` : ''}`,
+  )
+  if (!response.ok) throw new Error(`Failed to load WorkBrief (${response.status})`)
+  return (await response.json()) as WorkBrief
 }
 
 /**
