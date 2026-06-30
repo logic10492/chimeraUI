@@ -3,7 +3,7 @@
 // 基于 @opencode-ai/sdk: /session/{sessionID}/message 相关接口
 // ============================================
 
-import { getSDKClient, unwrap } from './sdk'
+import { apiFetch, getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type {
   ApiMessageWithParts,
@@ -52,24 +52,25 @@ function isAgentUserContentPart(part: UserContentSource['parts'][number]): part 
  */
 export async function getSessionMessages(
   sessionId: string,
-  limit?: number,
+  limit = 100,
   directory?: string,
+  options?: { all?: boolean },
 ): Promise<ApiMessageWithParts[]> {
-  const sdk = getSDKClient()
-  return unwrap<ApiMessageWithParts[]>(
-    await sdk.session.messages({
-      sessionID: sessionId,
-      directory: formatPathForApi(directory),
-      limit,
-    }),
-  )
+  const query = new URLSearchParams()
+  const formattedDirectory = formatPathForApi(directory)
+  if (formattedDirectory) query.set('directory', formattedDirectory)
+  if (options?.all) query.set('all', 'true')
+  if (!options?.all) query.set('limit', limit.toString())
+  const response = await apiFetch(`/session/${encodeURIComponent(sessionId)}/message?${query.toString()}`)
+  if (!response.ok) throw new Error(`Failed to load session messages (${response.status})`)
+  return (await response.json()) as ApiMessageWithParts[]
 }
 
 /**
  * 获取 session 的消息数量
  */
 export async function getSessionMessageCount(sessionId: string): Promise<number> {
-  const messages = await getSessionMessages(sessionId)
+  const messages = await getSessionMessages(sessionId, undefined, undefined, { all: true })
   return messages.length
 }
 

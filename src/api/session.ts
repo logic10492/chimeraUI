@@ -6,9 +6,8 @@
 import { apiFetch, getSDKClient, unwrap } from './sdk'
 import { normalizeTodoItems } from './todo'
 import { formatPathForApi } from '../utils/directoryUtils'
-import { getSessionMessages } from './message'
 import { normalizeFileDiffs } from '../types/api/file'
-import type { ApiSession, SessionListParams, FileDiff, ApiMessageWithParts, ApiUserMessage, WorkBrief } from './types'
+import type { ApiSession, SessionListParams, FileDiff, WorkBrief } from './types'
 import type { SessionStatusMap } from '../types/api/session'
 import type { TodoItem } from '../types/api/event'
 
@@ -41,39 +40,26 @@ export async function getSessionWorkBrief(sessionId: string, directory?: string)
  * 获取 session 的 diff
  * 返回可在 UI 中渲染的 SnapshotFileDiff（过滤缺少 file 的异常项）
  */
-export async function getSessionDiff(sessionId: string, directory?: string, messageId?: string): Promise<FileDiff[]> {
-  const sdk = getSDKClient()
-  return normalizeFileDiffs(
-    unwrap(
-      await sdk.session.diff({
-        sessionID: sessionId,
-        directory: formatPathForApi(directory),
-        messageID: messageId,
-      }),
-    ),
-  )
-}
-
-function isUserMessage(message: ApiMessageWithParts): message is ApiMessageWithParts & { info: ApiUserMessage } {
-  return message.info.role === 'user'
+export async function getSessionDiff(
+  sessionId: string,
+  directory?: string,
+  options?: { messageId?: string; lastVisible?: boolean },
+): Promise<FileDiff[]> {
+  const query = new URLSearchParams()
+  const formattedDirectory = formatPathForApi(directory)
+  if (formattedDirectory) query.set('directory', formattedDirectory)
+  if (options?.messageId) query.set('messageID', options.messageId)
+  if (options?.lastVisible) query.set('lastVisible', 'true')
+  const response = await apiFetch(`/session/${encodeURIComponent(sessionId)}/diff?${query.toString()}`)
+  if (!response.ok) throw new Error(`Failed to load session diff (${response.status})`)
+  return normalizeFileDiffs(await response.json())
 }
 
 /**
  * 获取当前可见用户消息对应的本轮 diff
  */
 export async function getLastTurnDiff(sessionId: string, directory?: string): Promise<FileDiff[]> {
-  const [session, messages] = await Promise.all([
-    getSession(sessionId, directory),
-    getSessionMessages(sessionId, undefined, directory),
-  ])
-
-  const userMessages = messages.filter(isUserMessage)
-  const revertMessageId = session.revert?.messageID
-  const visibleUserMessages = revertMessageId
-    ? userMessages.filter(message => message.info.id < revertMessageId)
-    : userMessages
-
-  return normalizeFileDiffs(visibleUserMessages.at(-1)?.info.summary?.diffs)
+  return getSessionDiff(sessionId, directory, { lastVisible: true })
 }
 
 // ============================================
