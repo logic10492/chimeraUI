@@ -2,10 +2,12 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { diffLines } from 'diff'
 import { ChevronDownIcon, ChevronRightIcon } from '../../../components/Icons'
-import type { ToolPart } from '../../../types/message'
+import type { FilePart, ToolPart } from '../../../types/message'
 import { useDelayedRender } from '../../../hooks'
 import { useNow } from '../../../hooks/useNow'
 import { serverStore } from '../../../store/serverStore'
+import { getPartOutput } from '../../../api/message'
+import { messageStore } from '../../../store'
 import { useTheme } from '../../../hooks/useTheme'
 import { formatToolName, formatDuration } from '../../../utils/formatUtils'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
@@ -54,6 +56,27 @@ export const ToolPartView = memo(function ToolPartView({
   const { t } = useTranslation('message')
   const { state, tool: toolName } = part
   const title = state.title || getInputDescription(part) || ''
+  const [lazyOutput, setLazyOutput] = useState<string | null>(null)
+  const [lazyAttachments, setLazyAttachments] = useState<FilePart[] | undefined>(undefined)
+  const effectiveState = useMemo(() => {
+    if (state.status === 'completed' && state.outputTruncated) {
+      if (lazyOutput !== null) {
+        return { ...state, output: lazyOutput, attachments: lazyAttachments ?? state.attachments }
+      }
+    }
+    return state
+  }, [state, lazyOutput, lazyAttachments])
+  const effectivePart = useMemo((): ToolPart =>
+    effectiveState === state ? part : { ...part, state: effectiveState },
+    [part, effectiveState, state])
+  const loadPartOutput = useCallback(async () => {
+    const directory = messageStore.getSessionDirectory(part.sessionID)
+    const result = await getPartOutput(part.sessionID, part.messageID, part.id, directory)
+    if (result) {
+      setLazyOutput(result.output ?? null)
+      setLazyAttachments(result.attachments as unknown as FilePart[])
+    }
+  }, [part.sessionID, part.messageID, part.id])
 
   const isActive = state.status === 'running' || state.status === 'pending'
   const isError = state.status === 'error'
@@ -184,7 +207,7 @@ export const ToolPartView = memo(function ToolPartView({
   const displayPermission = permissionRequest || (permissionResolved ? cachedPermissionRequest : undefined)
 
   // Memoize once — shared by both the descriptive header (diffStats) and ToolBody.
-  const toolData = useMemo(() => extractToolData(part), [part])
+  const toolData = useMemo(() => extractToolData(effectivePart), [effectivePart])
 
   const handleFullscreenChange = useCallback((isFullscreen: boolean) => {
     setIsChildFullscreen(isFullscreen)
@@ -193,7 +216,17 @@ export const ToolPartView = memo(function ToolPartView({
   const bodyContent = (
     <>
       {!hideToolBodyForPermission && (
-        <ToolBody part={part} data={toolData} onFullscreenChange={handleFullscreenChange} />
+        <>
+          {effectivePart.state.outputTruncated && lazyOutput === null && (
+            <button
+              onClick={loadPartOutput}
+              className="text-text-400 hover:text-text-200 text-xs px-3 py-1 rounded border border-border-200/50 hover:border-border-100/50 transition-colors"
+            >
+              Show output{effectivePart.state.outputSize ? ` (${formatBytes(effectivePart.state.outputSize)})` : ''}
+            </button>
+          )}
+          <ToolBody part={effectivePart} data={toolData} onFullscreenChange={handleFullscreenChange} />
+        </>
       )}
       {displayPermission && (
         <div className={hideToolBodyForPermission && !permissionContentHidden ? '' : 'pt-2'}>
@@ -509,6 +542,12 @@ function computeDiffPair(before: string, after: string): { additions: number; de
     if (c.removed) deletions += c.count || 0
   }
   return { additions, deletions }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 // ============================================

@@ -185,6 +185,8 @@ export interface ToolState {
   metadata?: Record<string, unknown>
   attachments?: FilePart[]
   raw?: string
+  outputTruncated?: boolean
+  outputSize?: number
 }
 
 export interface ToolPart extends PartBase {

@@ -54,11 +54,12 @@ export async function getSessionMessages(
   sessionId: string,
   limit = 100,
   directory?: string,
-  options?: { all?: boolean },
+  options?: { all?: boolean; output?: boolean },
 ): Promise<ApiMessageWithParts[]> {
   const query = new URLSearchParams()
   const formattedDirectory = formatPathForApi(directory)
   if (formattedDirectory) query.set('directory', formattedDirectory)
+  if (!options?.output) query.set('output', 'false')
   if (options?.all) query.set('all', 'true')
   if (!options?.all) query.set('limit', limit.toString())
   const response = await apiFetch(`/session/${encodeURIComponent(sessionId)}/message?${query.toString()}`)
@@ -243,4 +244,23 @@ export async function sendMessage(params: SendMessageParams): Promise<SendMessag
 export async function sendMessageAsync(params: SendMessageParams): Promise<void> {
   const sdk = getSDKClient()
   unwrap(await sdk.session.promptAsync(buildPromptParams(params)))
+}
+
+/**
+ * Fetch a single tool part's full output on demand.
+ */
+export async function getPartOutput(
+  sessionId: string,
+  messageId: string,
+  partId: string,
+  directory?: string,
+): Promise<{ output?: string; error?: string; attachments?: ApiFilePart[] } | null> {
+  const query = new URLSearchParams()
+  const formattedDirectory = formatPathForApi(directory)
+  if (formattedDirectory) query.set('directory', formattedDirectory)
+  const response = await apiFetch(
+    `/session/${encodeURIComponent(sessionId)}/message/${encodeURIComponent(messageId)}/part/${encodeURIComponent(partId)}/output?${query.toString()}`,
+  )
+  if (!response.ok) return null
+  return (await response.json()) as { output?: string; error?: string; attachments?: ApiFilePart[] }
 }
