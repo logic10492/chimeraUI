@@ -7,6 +7,7 @@ import { DropdownMenu, MenuItem, IconButton, AnimatedPresence } from '../../../c
 import { ModelSelector, type ModelSelectorHandle } from '../ModelSelector'
 import { useChatViewport } from '../chatViewport'
 import { isTauri, isTauriMobile, extToMime } from '../../../utils/tauri'
+import { findModelByKey } from '../../../utils/modelUtils'
 import type { ApiAgent } from '../../../api/client'
 import type { ModelInfo, FileCapabilities } from '../../../api'
 
@@ -65,6 +66,11 @@ export function InputToolbar({
   const isCompact = presentation.isCompact
   const useBrowserFileInput = !isTauri() || isTauriMobile()
 
+  // 当前模型的上下文限制
+  const currentModelContextLimit = useMemo(() => {
+    if (!selectedModelKey) return undefined
+    return findModelByKey(models, selectedModelKey)?.contextLimit
+  }, [models, selectedModelKey])
   // 根据模型能力计算支持的文件类型
   const caps = fileCapabilities ?? { image: false, pdf: false, audio: false, video: false }
   const supportsAnyFile = caps.image || caps.pdf || caps.audio || caps.video
@@ -494,7 +500,7 @@ export function InputToolbar({
       </div>
       {/* Action Buttons */}
       <div className="flex items-center gap-1">
-        <ContextUsageButton inputContainerRef={inputContainerRef} />
+        <ContextUsageButton inputContainerRef={inputContainerRef} contextLimit={currentModelContextLimit} />
         <AnimatedPresence show={supportsAnyFile}>
           <>
             {/* 浏览器模式下的隐藏文件输入 */}

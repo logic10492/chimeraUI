@@ -7,11 +7,12 @@ import { useSessionStats, useConnectionState, formatTokens, formatCost } from '.
 
 interface ContextUsageButtonProps {
   inputContainerRef?: React.RefObject<HTMLElement | null>
+  contextLimit?: number
 }
 
-export function ContextUsageButton({ inputContainerRef }: ContextUsageButtonProps) {
+export function ContextUsageButton({ inputContainerRef, contextLimit }: ContextUsageButtonProps) {
   const { t } = useTranslation(['chat', 'common'])
-  const stats = useSessionStats()
+  const stats = useSessionStats(contextLimit ?? 200000)
   const connectionState = useConnectionState()
   const [menuOpen, setMenuOpen] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
