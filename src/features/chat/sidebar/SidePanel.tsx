@@ -22,9 +22,9 @@ import {
   CloseIcon,
   SpinnerIcon,
 } from '../../../components/Icons'
-import { useDirectory, useSessionStats, useKeybindingLabel, useGitWorkspaceCatalog, useVcsInfo } from '../../../hooks'
+import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog, useVcsInfo } from '../../../hooks'
 import { useSessionContext } from '../../../contexts/useSessionContext'
-import { useLayoutStore, useMessageStore, childSessionStore } from '../../../store'
+import { useLayoutStore, childSessionStore } from '../../../store'
 import { useBusySessions, useBusyCount } from '../../../store/activeSessionStore'
 import { notificationStore, useNotifications, useUnreadNotificationCount } from '../../../store/notificationStore'
 import { pinnedSessionsStore } from '../../../store/pinnedSessionsStore'
@@ -55,7 +55,6 @@ interface SidePanelProps {
   isMobile?: boolean
   isExpanded?: boolean
   onToggleSidebar: () => void
-  contextLimit?: number
   onOpenSettings?: () => void
 }
 
@@ -108,7 +107,6 @@ export function SidePanel({
   isMobile = false,
   isExpanded = true,
   onToggleSidebar,
-  contextLimit = 200000,
   onOpenSettings,
 }: SidePanelProps) {
   const { t } = useTranslation(['chat', 'common'])
@@ -248,10 +246,7 @@ export function SidePanel({
     }
   }, [projectsExpanded, showLabels])
 
-  // Session stats
-  const { messages } = useMessageStore()
-  const stats = useSessionStats(contextLimit)
-  const hasMessages = messages.length > 0
+
 
   // Active sessions
   const busySessions = useBusySessions()
@@ -1317,8 +1312,6 @@ export function SidePanel({
       <SidebarFooter
         showLabels={showLabels}
         connectionState={connectionState?.state || 'disconnected'}
-        stats={stats}
-        hasMessages={hasMessages}
         onOpenSettings={onOpenSettings}
       />
 

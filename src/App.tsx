@@ -877,7 +877,7 @@ function App() {
                     onNewSession={handleNewSession}
                     onOpen={handleOpenSidebar}
                     onClose={handleCloseSidebar}
-                    contextLimit={focusedController?.contextLimit}
+
                     onOpenSettings={openSettings}
                     projectDialogOpen={projectDialogOpen}
                     onProjectDialogClose={closeProjectDialog}
@@ -963,7 +963,7 @@ function App() {
                 onNewSession={handleNewSession}
                 onOpen={handleOpenSidebar}
                 onClose={handleCloseSidebar}
-                contextLimit={focusedController?.contextLimit}
+
                 onOpenSettings={openSettings}
                 projectDialogOpen={projectDialogOpen}
                 onProjectDialogClose={closeProjectDialog}

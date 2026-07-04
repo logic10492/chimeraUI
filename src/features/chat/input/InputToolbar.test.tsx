@@ -16,6 +16,22 @@ const agents: ApiAgent[] = [
 
 vi.mock('../../../hooks', () => ({
   useIsMobile: () => useIsMobileMock(),
+  useSessionStats: () => ({
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    totalCost: 0,
+    contextUsed: 0,
+    contextLimit: 400000,
+    contextPercent: 0,
+    contextEstimated: false,
+  }),
+  useConnectionState: () => 'connected',
+  formatTokens: (n: number) => `${n}`,
+  formatCost: (n: number) => `$${n.toFixed(2)}`,
 }))
 
 vi.mock('../chatViewport', () => ({
@@ -42,6 +58,17 @@ vi.mock('../../../utils/tauri', () => ({
   },
 }))
 
+vi.mock('../../../api/events', () => ({
+getConnectionInfo: () => ({ state: 'connected', lastEventTime: 0, reconnectAttempt: 0 }),
+subscribeToConnectionState: (fn: (info: { state: string }) => void) => {
+fn({ state: 'connected' })
+return () => {}
+},
+}))
+
+vi.mock('../../../constants/api', () => ({
+  API_BASE_URL: 'http://localhost:4096',
+}))
 vi.mock('@tauri-apps/plugin-dialog', () => ({
   open: (...args: unknown[]) => openMock(...args),
 }))
@@ -87,7 +114,11 @@ vi.mock('../../../components/ui', () => ({
 }))
 
 vi.mock('../ModelSelector', () => ({
-  ModelSelector: () => null,
+ModelSelector: () => null,
+}))
+
+vi.mock('../sidebar/ContextDetailsDialog', () => ({
+  ContextDetailsDialog: () => null,
 }))
 
 describe('InputToolbar file selection', () => {
@@ -205,7 +236,7 @@ describe('InputToolbar file selection', () => {
 
     await waitFor(() => {
       expect(trigger).toHaveAttribute('aria-expanded', 'false')
-      expect(screen.getByRole('button', { name: 'Send message' })).toHaveFocus()
+      expect(screen.getByTitle(/Context:/)).toHaveFocus()
     })
   })
 

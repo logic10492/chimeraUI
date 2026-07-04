@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
 import { ShareDialog } from '../ShareDialog'
-import { ContextDetailsDialog } from './ContextDetailsDialog'
 import {
   CogIcon,
   SunIcon,
@@ -11,76 +10,23 @@ import {
   MaximizeIcon,
   MinimizeIcon,
   ShareIcon,
+  MenuIcon,
 } from '../../../components/Icons'
-import { CircularProgress } from '../../../components/CircularProgress'
-import { formatTokens, formatCost, useTheme } from '../../../hooks'
-import type { SessionStats } from '../../../hooks'
+import { useTheme } from '../../../hooks'
 
-// 状态指示器 - 圆环 + 右下角状态点
-function StatusIndicator({
-  percent,
-  connectionState,
-  size = 24,
-}: {
-  percent: number
-  connectionState: string
-  size?: number
-}) {
-  const clampedPercent = Math.min(Math.max(percent, 0), 100)
-
-  // 进度颜色
-  const progressColor =
-    clampedPercent === 0
-      ? 'text-text-500'
-      : clampedPercent >= 90
-        ? 'text-danger-100'
-        : clampedPercent >= 70
-          ? 'text-warning-100'
-          : 'text-accent-main-100'
-
-  // 连接状态颜色
-  const statusColor =
-    connectionState === 'connected'
-      ? 'bg-success-100'
-      : connectionState === 'connecting'
-        ? 'bg-warning-100 animate-pulse'
-        : connectionState === 'error'
-          ? 'bg-danger-100'
-          : 'bg-text-500'
-
-  return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <CircularProgress
-        progress={clampedPercent / 100}
-        size={size}
-        strokeWidth={3}
-        trackClassName="text-text-100/10"
-        progressClassName={progressColor}
-      />
-
-      {/* 右下角状态点 - 带背景边框以突出显示 */}
-      <div
-        className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-bg-200 ${statusColor}`}
-      />
-    </div>
-  )
-}
 
 export interface SidebarFooterProps {
   showLabels: boolean
   connectionState: string
-  stats: SessionStats
-  hasMessages: boolean
   onOpenSettings?: () => void
 }
 
-export function SidebarFooter({ showLabels, connectionState, stats, hasMessages, onOpenSettings }: SidebarFooterProps) {
+export function SidebarFooter({ showLabels, connectionState, onOpenSettings }: SidebarFooterProps) {
   const { t } = useTranslation(['chat', 'common'])
   const { mode: themeMode, setThemeWithAnimation: onThemeChange, isWideMode, toggleWideMode } = useTheme()
   const [isOpen, setIsOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 260, fromBottom: false })
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
-  const [contextDialogOpen, setContextDialogOpen] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
   const prevShowLabelsRef = useRef(showLabels)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -97,8 +43,6 @@ export function SidebarFooter({ showLabels, connectionState, stats, hasMessages,
       error: 'bg-danger-100',
     }[connectionState] || 'bg-text-500'
 
-  const statsColor =
-    stats.contextPercent >= 90 ? 'bg-danger-100' : stats.contextPercent >= 70 ? 'bg-warning-100' : 'bg-accent-main-100'
 
   // 打开菜单
   const openMenu = useCallback(() => {
@@ -213,46 +157,6 @@ export function SidebarFooter({ showLabels, connectionState, stats, hasMessages,
             transformOrigin: showLabels ? 'bottom left' : 'bottom left',
           }}
         >
-          {/* Context Stats */}
-          <div className="relative p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[length:var(--fs-sm)] font-medium text-text-200">{t('sidebar.contextUsage')}</span>
-              <div className="flex items-center gap-2">
-                <span className="text-[length:var(--fs-sm)] font-mono text-text-400">
-                  {Math.round(stats.contextPercent)}%
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    closeMenu()
-                    setContextDialogOpen(true)
-                  }}
-                  className="
-                shrink-0 h-6 px-2
-                rounded-md border border-border-200/60
-                bg-bg-200/70 hover:bg-bg-300
-                text-[length:var(--fs-xxs)] font-medium text-text-200
-                transition-colors
-              "
-                >
-                  {t('sidebar.viewDetails')}
-                </button>
-              </div>
-            </div>
-            <div className="w-full h-1.5 bg-bg-300 rounded-full overflow-hidden relative mb-2">
-              <div
-                className={`absolute inset-0 ${statsColor} transition-transform duration-500 ease-out origin-left`}
-                style={{ transform: `scaleX(${Math.min(100, stats.contextPercent) / 100})` }}
-              />
-            </div>
-            <div className="flex justify-between text-[length:var(--fs-xxs)] text-text-400 font-mono">
-              <span>
-                {formatTokens(stats.contextUsed)} / {formatTokens(stats.contextLimit)}
-              </span>
-              <span>{formatCost(stats.totalCost)}</span>
-            </div>
-            <div className="pointer-events-none absolute inset-x-3 bottom-0 h-px bg-border-200/30" />
-          </div>
 
           {/* Theme Selector */}
           <div className="relative p-2">
@@ -340,54 +244,23 @@ export function SidebarFooter({ showLabels, connectionState, stats, hasMessages,
   return (
     <div className="shrink-0 pb-[var(--safe-area-inset-bottom)]">
       <div ref={containerRef} className="flex flex-col gap-0.5 mx-2 py-2">
-        {/* 状态/设置触发按钮 */}
+        {/* 设置触发按钮 */}
         <button
           ref={buttonRef}
           onClick={toggleMenu}
           className={`
-            h-8 flex items-center rounded-lg transition-all duration-300 group overflow-hidden
+            h-8 w-8 flex items-center justify-center rounded-lg transition-all duration-300
             ${isOpen ? 'bg-bg-200 text-text-100' : 'text-text-300 hover:text-text-100 hover:bg-bg-200'}
           `}
-          style={{
-            width: showLabels ? '100%' : 32,
-            paddingLeft: showLabels ? 6 : 4, // 收起时为了对齐中心线(16px)，24px圆环需要4px padding (4+12=16)
-            paddingRight: showLabels ? 8 : 4,
-          }}
-          title={`Context: ${formatTokens(hasMessages ? stats.contextUsed : 0)} tokens • ${Math.round(stats.contextPercent)}% • ${formatCost(stats.totalCost)}`}
+          title={t('sidebar.settings')}
         >
-          {/* 状态指示器 */}
-          <StatusIndicator percent={stats.contextPercent} connectionState={connectionState} size={24} />
-
-          {/* 展开时显示详细信息 */}
-          <span
-            className="ml-2 flex-1 flex items-center justify-between min-w-0 transition-opacity duration-300"
-            style={{ opacity: showLabels ? 1 : 0 }}
-          >
-            <span className="text-[length:var(--fs-sm)] font-mono text-text-300 truncate">
-              {hasMessages ? formatTokens(stats.contextUsed) : '0'} / {formatTokens(stats.contextLimit)}
-            </span>
-            <span
-              className={`text-[length:var(--fs-sm)] font-medium ml-2 ${
-                stats.contextPercent >= 90
-                  ? 'text-danger-100'
-                  : stats.contextPercent >= 70
-                    ? 'text-warning-100'
-                    : 'text-text-400'
-              }`}
-            >
-              {Math.round(stats.contextPercent)}%
-            </span>
-          </span>
+          <MenuIcon size={18} />
         </button>
       </div>
 
       {floatingMenu}
       <ShareDialog isOpen={shareDialogOpen} onClose={() => setShareDialogOpen(false)} />
-      <ContextDetailsDialog
-        isOpen={contextDialogOpen}
-        onClose={() => setContextDialogOpen(false)}
-        contextLimit={stats.contextLimit}
-      />
+      <ShareDialog isOpen={shareDialogOpen} onClose={() => setShareDialogOpen(false)} />
     </div>
   )
 }

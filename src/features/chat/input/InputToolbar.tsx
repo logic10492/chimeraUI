@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDownIcon, SendIcon, StopIcon, PaperclipIcon, AgentIcon, ThinkingIcon } from '../../../components/Icons'
+
+import { ContextUsageButton } from './ContextUsageButton'
 import { DropdownMenu, MenuItem, IconButton, AnimatedPresence } from '../../../components/ui'
 import { ModelSelector, type ModelSelectorHandle } from '../ModelSelector'
 import { useChatViewport } from '../chatViewport'
@@ -490,9 +492,9 @@ export function InputToolbar({
           </div>
         </AnimatedPresence>
       </div>
-
       {/* Action Buttons */}
       <div className="flex items-center gap-1">
+        <ContextUsageButton inputContainerRef={inputContainerRef} />
         <AnimatedPresence show={supportsAnyFile}>
           <>
             {/* 浏览器模式下的隐藏文件输入 */}
