@@ -42,6 +42,7 @@ export type { Agent as ApiAgent, AgentPermission as ApiAgentPermission } from '.
 export type { Symbol as SymbolInfo } from '../types/api/file'
 
 import type { Attachment } from '../types/ui'
+import type { ApiScope } from './scope'
 
 export interface RevertedMessage {
   text: string
@@ -58,6 +59,7 @@ export interface SendMessageParams {
   }
   agent?: string
   variant?: string
+  apiScope?: ApiScope
   directory?: string
 }
 

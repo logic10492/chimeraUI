@@ -202,6 +202,10 @@ class ServerStore {
     return this._serversSnapshot
   }
 
+  getServer(serverId: string): ServerConfig | null {
+    return this._serversSnapshot.find(server => server.id === serverId) ?? null
+  }
+
   getStoredServers(): ServerConfig[] {
     return [...this.servers]
   }
@@ -237,24 +241,27 @@ class ServerStore {
    * 获取当前 API Base URL
    */
   getActiveBaseUrl(): string {
-    const server = this.getActiveServer()
-    return server?.url ?? API_BASE_URL
+    return this.getServerBaseUrl(this.getActiveServerId())
+  }
+
+  getServerBaseUrl(serverId: string): string {
+    const server = this.getServer(serverId)
+    if (!server) throw new Error(`Unknown server: ${serverId}`)
+    return server.url
   }
 
   /**
    * 获取当前活动服务器的认证信息
    */
   getActiveAuth(): ServerAuth | null {
-    const server = this.getActiveServer()
-    return server?.auth ?? null
+    return this.getServerAuth(this.getActiveServerId())
   }
 
   /**
    * 获取指定服务器的认证信息
    */
   getServerAuth(serverId: string): ServerAuth | null {
-    const server = this.servers.find(s => s.id === serverId)
-    return server?.auth ?? null
+    return this.getServer(serverId)?.auth ?? null
   }
 
   /**

@@ -18,6 +18,7 @@ export interface PanelTab {
   previewFiles?: PreviewFile[]
   // Terminal 特有属性
   ptyId?: string
+  scopeKey?: string
   title?: string
   shellTitle?: string
   customTitle?: string
@@ -40,6 +41,7 @@ const MAX_RIGHT_PANEL_WIDTH = 1280
 // 兼容旧的 TerminalTab 类型
 export interface TerminalTab {
   id: string // PTY session ID
+  scopeKey?: string
   title: string // 显示标题
   status: 'connecting' | 'connected' | 'disconnected' | 'exited'
   shellTitle?: string
@@ -55,6 +57,18 @@ function getResolvedTerminalTitle(tab: Pick<PanelTab, 'title' | 'shellTitle' | '
   return tab.customTitle ?? tab.title ?? tab.shellTitle ?? 'Terminal'
 }
 
+function getTerminalIdentity(tab: Pick<TerminalTab, 'id' | 'scopeKey'>): string {
+  return `${tab.scopeKey ?? ''}\u0000${tab.id}`
+}
+
+function getTerminalStorageKey(tab: Pick<TerminalTab, 'id' | 'scopeKey'>): string {
+  return tab.scopeKey ? getTerminalIdentity(tab) : tab.id
+}
+
+function getPanelTerminalStorageKey(tab: Pick<PanelTab, 'id' | 'ptyId' | 'scopeKey'>): string {
+  return getTerminalStorageKey({ id: tab.ptyId ?? tab.id, scopeKey: tab.scopeKey })
+}
+
 function buildTerminalPanelTab(
   tab: TerminalTab,
   position: PanelPosition,
@@ -65,6 +79,7 @@ function buildTerminalPanelTab(
     type: 'terminal',
     position,
     ptyId: tab.id,
+    scopeKey: tab.scopeKey,
     title: existing?.title ?? tab.title,
     shellTitle: existing?.shellTitle ?? tab.shellTitle ?? tab.title,
     customTitle: existing?.customTitle ?? tab.customTitle,
@@ -249,43 +264,43 @@ function sanitizePersistedTerminalLayoutMap(raw: unknown): PersistedTerminalLayo
     const rawActiveTabId = entry.activeTabId
     if (!rawOrder || typeof rawOrder !== 'object' || !rawActiveTabId || typeof rawActiveTabId !== 'object') continue
 
-      const order = {
-        bottom: Array.isArray(rawOrder.bottom)
-          ? rawOrder.bottom.filter((id): id is string => typeof id === 'string' && id.length > 0)
-          : [],
-        right: Array.isArray(rawOrder.right)
-          ? rawOrder.right.filter((id): id is string => typeof id === 'string' && id.length > 0)
-          : [],
-      }
+    const order = {
+      bottom: Array.isArray(rawOrder.bottom)
+        ? rawOrder.bottom.filter((id): id is string => typeof id === 'string' && id.length > 0)
+        : [],
+      right: Array.isArray(rawOrder.right)
+        ? rawOrder.right.filter((id): id is string => typeof id === 'string' && id.length > 0)
+        : [],
+    }
 
-      const sessions: Record<string, PersistedTerminalSessionState> = {}
-      const rawSessions = entry.sessions
-      if (rawSessions && typeof rawSessions === 'object') {
-        for (const [id, session] of Object.entries(rawSessions)) {
-          if (!id || !session || typeof session !== 'object') continue
-          const data = session as Partial<PersistedTerminalSessionState>
-          sessions[id] = {
-            title: typeof data.title === 'string' ? data.title : undefined,
-            shellTitle: typeof data.shellTitle === 'string' ? data.shellTitle : undefined,
-            customTitle: typeof data.customTitle === 'string' ? data.customTitle : undefined,
-            buffer: typeof data.buffer === 'string' ? data.buffer : undefined,
-            scrollY: typeof data.scrollY === 'number' ? data.scrollY : undefined,
-            cursor: typeof data.cursor === 'number' ? data.cursor : undefined,
-            rows: typeof data.rows === 'number' ? data.rows : undefined,
-            cols: typeof data.cols === 'number' ? data.cols : undefined,
-          }
+    const sessions: Record<string, PersistedTerminalSessionState> = {}
+    const rawSessions = entry.sessions
+    if (rawSessions && typeof rawSessions === 'object') {
+      for (const [id, session] of Object.entries(rawSessions)) {
+        if (!id || !session || typeof session !== 'object') continue
+        const data = session as Partial<PersistedTerminalSessionState>
+        sessions[id] = {
+          title: typeof data.title === 'string' ? data.title : undefined,
+          shellTitle: typeof data.shellTitle === 'string' ? data.shellTitle : undefined,
+          customTitle: typeof data.customTitle === 'string' ? data.customTitle : undefined,
+          buffer: typeof data.buffer === 'string' ? data.buffer : undefined,
+          scrollY: typeof data.scrollY === 'number' ? data.scrollY : undefined,
+          cursor: typeof data.cursor === 'number' ? data.cursor : undefined,
+          rows: typeof data.rows === 'number' ? data.rows : undefined,
+          cols: typeof data.cols === 'number' ? data.cols : undefined,
         }
       }
-
-      directories[directory] = {
-        order,
-        activeTabId: {
-          bottom: typeof rawActiveTabId.bottom === 'string' ? rawActiveTabId.bottom : null,
-          right: typeof rawActiveTabId.right === 'string' ? rawActiveTabId.right : null,
-        },
-        sessions,
-      }
     }
+
+    directories[directory] = {
+      order,
+      activeTabId: {
+        bottom: typeof rawActiveTabId.bottom === 'string' ? rawActiveTabId.bottom : null,
+        right: typeof rawActiveTabId.right === 'string' ? rawActiveTabId.right : null,
+      },
+      sessions,
+    }
+  }
 
   return { version: 1, directories }
 }
@@ -314,7 +329,7 @@ export class LayoutStore {
     terminalRightClickPaste: false,
   }
   private subscribers = new Set<Subscriber>()
-  private currentTerminalDirectory: string | null = null
+  private currentTerminalLayoutKey: string | null = null
   private rightPanelAutoOpenDismissed = false
 
   private persistPanelLayout() {
@@ -348,21 +363,31 @@ export class LayoutStore {
   }
 
   private persistTerminalLayout() {
-    if (!this.currentTerminalDirectory) return
+    if (!this.currentTerminalLayoutKey) return
 
     try {
       const layoutMap = this.readTerminalLayoutMap()
-      layoutMap.directories[this.currentTerminalDirectory] = {
+      const persistedTabId = (tab: PanelTab) => (tab.type === 'terminal' ? getPanelTerminalStorageKey(tab) : tab.id)
+      const persistedActiveTabId = (position: PanelPosition) => {
+        const activeId = this.state.activeTabId[position]
+        if (!activeId) return null
+        const activeTab = this.state.panelTabs.find(tab => tab.id === activeId && tab.position === position)
+        return activeTab ? persistedTabId(activeTab) : null
+      }
+      layoutMap.directories[this.currentTerminalLayoutKey] = {
         order: {
-          bottom: this.getTabsForPosition('bottom').map(tab => tab.id),
-          right: this.getTabsForPosition('right').map(tab => tab.id),
+          bottom: this.getTabsForPosition('bottom').map(persistedTabId),
+          right: this.getTabsForPosition('right').map(persistedTabId),
         },
-        activeTabId: { ...this.state.activeTabId },
+        activeTabId: {
+          bottom: persistedActiveTabId('bottom'),
+          right: persistedActiveTabId('right'),
+        },
         sessions: Object.fromEntries(
           this.state.panelTabs
             .filter((tab): tab is PanelTab & { type: 'terminal' } => tab.type === 'terminal')
             .map(tab => [
-              tab.id,
+              getPanelTerminalStorageKey(tab),
               {
                 title: tab.title,
                 shellTitle: tab.shellTitle,
@@ -612,13 +637,20 @@ export class LayoutStore {
   private ensureStatusTab(position: PanelPosition) {
     const existing = this.state.panelTabs.find(tab => tab.type === 'status' && tab.position === position)
     if (!existing) {
-      this.state.panelTabs.unshift({ id: position === 'right' ? 'status' : `status-${position}`, type: 'status', position })
+      this.state.panelTabs.unshift({
+        id: position === 'right' ? 'status' : `status-${position}`,
+        type: 'status',
+        position,
+      })
     }
 
     const activeId = this.state.activeTabId[position]
-    const activeExists = activeId ? this.state.panelTabs.some(tab => tab.id === activeId && tab.position === position) : false
+    const activeExists = activeId
+      ? this.state.panelTabs.some(tab => tab.id === activeId && tab.position === position)
+      : false
     if (!activeExists) {
-      this.state.activeTabId[position] = this.state.panelTabs.find(tab => tab.type === 'status' && tab.position === position)?.id ?? null
+      this.state.activeTabId[position] =
+        this.state.panelTabs.find(tab => tab.type === 'status' && tab.position === position)?.id ?? null
     }
   }
 
@@ -786,7 +818,8 @@ export class LayoutStore {
   openStatusPanel(options?: { automatic?: boolean }) {
     if (options?.automatic && this.rightPanelAutoOpenDismissed) return false
     this.ensureStatusTab('right')
-    this.state.activeTabId.right = this.state.panelTabs.find(tab => tab.type === 'status' && tab.position === 'right')?.id ?? null
+    this.state.activeTabId.right =
+      this.state.panelTabs.find(tab => tab.type === 'status' && tab.position === 'right')?.id ?? null
     this.state.rightPanelOpen = true
     if (!options?.automatic) this.rightPanelAutoOpenDismissed = false
     this.notify()
@@ -948,28 +981,56 @@ export class LayoutStore {
   // 兼容旧 API - Terminal Tabs
   // ============================================
 
-  setCurrentTerminalDirectory(directory?: string) {
-    this.currentTerminalDirectory = directory || null
+  private findTerminalTab(id: string, scopeKey?: string) {
+    return this.state.panelTabs.find(
+      tab =>
+        tab.type === 'terminal' &&
+        (tab.ptyId ?? tab.id) === id &&
+        (scopeKey === undefined || tab.scopeKey === scopeKey),
+    )
   }
 
-  syncTerminalSessions(directory: string | undefined, sessions: TerminalTab[]) {
-    this.currentTerminalDirectory = directory || null
+  setCurrentTerminalDirectory(directory?: string, scopeKey?: string) {
+    this.currentTerminalLayoutKey = scopeKey ?? directory ?? null
+  }
 
-    const layoutMap = this.readTerminalLayoutMap()
-    const savedLayout = directory ? layoutMap.directories[directory] : undefined
-    const existingTerminalById = new Map(this.state.panelTabs.filter(tab => tab.type === 'terminal').map(tab => [tab.id, tab]))
-    const sessionById = new Map(
-      sessions.map(session => [
-        session.id,
-        buildTerminalPanelTab(
-          {
-            ...session,
-            ...savedLayout?.sessions?.[session.id],
-          },
-          'bottom',
-          existingTerminalById.get(session.id),
+  syncTerminalSessions(directory: string | undefined, sessions: TerminalTab[], scopeKey?: string) {
+    const layoutKey = scopeKey ?? directory ?? null
+    const scopeChanged = this.currentTerminalLayoutKey !== layoutKey
+    const previousActiveWasTerminal = Object.fromEntries(
+      PANEL_POSITIONS.map(position => [
+        position,
+        this.state.panelTabs.some(
+          tab => tab.id === this.state.activeTabId[position] && tab.position === position && tab.type === 'terminal',
         ),
       ]),
+    ) as Record<PanelPosition, boolean>
+    const layoutMap = this.readTerminalLayoutMap()
+    const savedLayout = layoutKey ? layoutMap.directories[layoutKey] : undefined
+    const scopedSessions = sessions.map(session => ({
+      ...session,
+      scopeKey: session.scopeKey ?? scopeKey,
+    }))
+    const existingTerminalByIdentity = new Map(
+      this.state.panelTabs
+        .filter((tab): tab is PanelTab & { type: 'terminal' } => tab.type === 'terminal')
+        .map(tab => [getTerminalIdentity({ id: tab.ptyId ?? tab.id, scopeKey: tab.scopeKey }), tab]),
+    )
+    const sessionByStorageKey = new Map(
+      scopedSessions.map(session => {
+        const storageKey = getTerminalStorageKey(session)
+        return [
+          storageKey,
+          buildTerminalPanelTab(
+            {
+              ...session,
+              ...savedLayout?.sessions?.[storageKey],
+            },
+            'bottom',
+            existingTerminalByIdentity.get(getTerminalIdentity(session)),
+          ),
+        ]
+      }),
     )
 
     const nonTerminalTabs = this.state.panelTabs.filter(tab => tab.type !== 'terminal')
@@ -989,7 +1050,7 @@ export class LayoutStore {
       }
     }
 
-    const assignedTerminalIds = new Set<string>()
+    const assignedTerminalKeys = new Set<string>()
     const tabsByPosition: Record<PanelPosition, PanelTab[]> = {
       bottom: [],
       right: [],
@@ -1003,47 +1064,46 @@ export class LayoutStore {
           continue
         }
 
-        const terminalTab = sessionById.get(id)
-        if (terminalTab && !assignedTerminalIds.has(id)) {
+        const terminalTab = sessionByStorageKey.get(id)
+        if (terminalTab && !assignedTerminalKeys.has(id)) {
           tabsByPosition[position].push({ ...terminalTab, position })
-          assignedTerminalIds.add(id)
+          assignedTerminalKeys.add(id)
         }
       }
     }
 
-    for (const session of sessions) {
-      if (assignedTerminalIds.has(session.id)) continue
-      tabsByPosition.bottom.push(
-        buildTerminalPanelTab(
-          {
-            ...session,
-            ...savedLayout?.sessions?.[session.id],
-          },
-          'bottom',
-          existingTerminalById.get(session.id),
-        ),
-      )
+    for (const session of scopedSessions) {
+      const storageKey = getTerminalStorageKey(session)
+      if (assignedTerminalKeys.has(storageKey)) continue
+      const terminalTab = sessionByStorageKey.get(storageKey)
+      if (!terminalTab) continue
+      tabsByPosition.bottom.push(terminalTab)
+      assignedTerminalKeys.add(storageKey)
     }
 
     this.state.panelTabs = [...tabsByPosition.right, ...tabsByPosition.bottom]
+    this.currentTerminalLayoutKey = layoutKey
 
     for (const position of PANEL_POSITIONS) {
       const currentActiveId = this.state.activeTabId[position]
-      const hasCurrentActive = currentActiveId
-        ? this.state.panelTabs.some(tab => tab.id === currentActiveId && tab.position === position)
-        : false
+      const hasCurrentActive =
+        (!scopeChanged || !previousActiveWasTerminal[position]) &&
+        (currentActiveId
+          ? this.state.panelTabs.some(tab => tab.id === currentActiveId && tab.position === position)
+          : false)
 
       if (hasCurrentActive) {
         continue
       }
 
-      const savedActiveId = savedLayout?.activeTabId[position]
+      const savedActiveKey = savedLayout?.activeTabId[position]
+      const savedActiveId = savedActiveKey ? (sessionByStorageKey.get(savedActiveKey)?.id ?? savedActiveKey) : null
       const hasSavedActive = savedActiveId
         ? this.state.panelTabs.some(tab => tab.id === savedActiveId && tab.position === position)
         : false
 
       this.state.activeTabId[position] = hasSavedActive
-        ? (savedActiveId ?? null)
+        ? savedActiveId
         : (this.getTabsForPosition(position)[0]?.id ?? null)
     }
 
@@ -1051,42 +1111,55 @@ export class LayoutStore {
   }
 
   addTerminalTab(tab: TerminalTab, openPanel = true, position: PanelPosition = 'bottom') {
-    const existing = this.state.panelTabs.find(t => t.id === tab.id && t.position === position)
-    if (existing) {
-      existing.shellTitle = existing.shellTitle ?? tab.shellTitle ?? tab.title
-      if (!existing.customTitle) {
-        existing.title = tab.title
+    if (tab.scopeKey) {
+      this.currentTerminalLayoutKey = tab.scopeKey
+      this.state.panelTabs = this.state.panelTabs.filter(
+        existing => existing.type !== 'terminal' || existing.scopeKey === tab.scopeKey,
+      )
+      for (const panelPosition of PANEL_POSITIONS) {
+        const activeId = this.state.activeTabId[panelPosition]
+        if (
+          activeId &&
+          !this.state.panelTabs.some(existing => existing.id === activeId && existing.position === panelPosition)
+        ) {
+          this.state.activeTabId[panelPosition] = this.getTabsForPosition(panelPosition)[0]?.id ?? null
+        }
       }
-      existing.status = tab.status
-      existing.ptyId = tab.id
-      this.state.activeTabId[position] = tab.id
+    }
+
+    const existing = this.findTerminalTab(tab.id, tab.scopeKey)
+    if (existing) {
+      Object.assign(existing, buildTerminalPanelTab(tab, existing.position, existing))
+      this.state.activeTabId[existing.position] = existing.id
       if (openPanel) {
-        this.setPanelOpen(position, true)
+        this.setPanelOpen(existing.position, true)
       }
       this.notify()
       return
     }
 
-    this.addTab(
-      buildTerminalPanelTab(tab, position),
-      openPanel,
-    )
+    this.addTab(buildTerminalPanelTab(tab, position), openPanel)
   }
 
-  removeTerminalTab(id: string) {
-    this.removeTab(id)
+  removeTerminalTab(id: string, scopeKey?: string) {
+    const tab = this.findTerminalTab(id, scopeKey)
+    if (tab) this.removeTab(tab.id)
   }
 
-  setActiveTerminal(id: string) {
-    this.setActiveTab('bottom', id)
+  setActiveTerminal(id: string, scopeKey?: string) {
+    const tab = this.findTerminalTab(id, scopeKey)
+    if (tab) this.setActiveTab(tab.position, tab.id)
   }
 
-  updateTerminalTab(id: string, updates: Partial<Omit<TerminalTab, 'id'>>) {
-    this.updateTab(id, updates)
+  updateTerminalTab(id: string, updates: Partial<Omit<TerminalTab, 'id'>>, scopeKey?: string) {
+    const tab = this.findTerminalTab(id, scopeKey)
+    if (!tab) return
+    Object.assign(tab, updates)
+    this.notify()
   }
 
-  updateTerminalShellTitle(id: string, shellTitle: string, manualMode: boolean) {
-    const tab = this.state.panelTabs.find(item => item.id === id && item.type === 'terminal')
+  updateTerminalShellTitle(id: string, shellTitle: string, manualMode: boolean, scopeKey?: string) {
+    const tab = this.findTerminalTab(id, scopeKey)
     if (!tab) return
     tab.shellTitle = shellTitle
     if (!manualMode) {
@@ -1095,16 +1168,20 @@ export class LayoutStore {
     this.notify()
   }
 
-  updateTerminalCustomTitle(id: string, customTitle: string) {
-    const tab = this.state.panelTabs.find(item => item.id === id && item.type === 'terminal')
+  updateTerminalCustomTitle(id: string, customTitle: string, scopeKey?: string) {
+    const tab = this.findTerminalTab(id, scopeKey)
     if (!tab) return
     tab.customTitle = customTitle
     tab.title = customTitle
     this.notify()
   }
 
-  updateTerminalSnapshot(id: string, snapshot: Pick<PanelTab, 'buffer' | 'scrollY' | 'cursor' | 'rows' | 'cols'>) {
-    const tab = this.state.panelTabs.find(item => item.id === id && item.type === 'terminal')
+  updateTerminalSnapshot(
+    id: string,
+    snapshot: Pick<PanelTab, 'buffer' | 'scrollY' | 'cursor' | 'rows' | 'cols'>,
+    scopeKey?: string,
+  ) {
+    const tab = this.findTerminalTab(id, scopeKey)
     if (!tab) return
     if (
       tab.buffer === snapshot.buffer &&
@@ -1127,7 +1204,7 @@ export class LayoutStore {
     let changed = false
     for (const tab of this.state.panelTabs) {
       if (tab.type !== 'terminal') continue
-      const nextTitle = manualMode ? getResolvedTerminalTitle(tab) : tab.shellTitle ?? tab.title ?? 'Terminal'
+      const nextTitle = manualMode ? getResolvedTerminalTitle(tab) : (tab.shellTitle ?? tab.title ?? 'Terminal')
       if (tab.title !== nextTitle) {
         tab.title = nextTitle
         changed = true
@@ -1146,9 +1223,10 @@ export class LayoutStore {
     return this.getTabsForPosition(position)
       .filter(t => t.type === 'terminal')
       .map(t => ({
-        id: t.id,
+        id: t.ptyId ?? t.id,
         title: t.title ?? 'Terminal',
         status: t.status ?? 'connecting',
+        scopeKey: t.scopeKey,
       }))
   }
 
@@ -1156,7 +1234,7 @@ export class LayoutStore {
   get activeTerminalId(): string | null {
     const activeTab = this.getActiveTab('bottom')
     if (activeTab?.type === 'terminal') {
-      return activeTab.id
+      return activeTab.ptyId ?? activeTab.id
     }
     return null
   }

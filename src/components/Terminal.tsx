@@ -11,6 +11,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { getPtyConnectUrl, updatePtySession } from '../api/pty'
+import { apiScopeKey, resolveApiScope, type ApiScope } from '../api/scope'
 import { useTheme } from '../hooks'
 import { layoutStore, useLayoutStore } from '../store/layoutStore'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
@@ -209,7 +210,12 @@ function isNativePasteShortcut(event: KeyboardEvent) {
 function canReadClipboardText() {
   // Ctrl/Cmd+V uses ClipboardEvent.clipboardData, but smart right-click paste must actively call
   // navigator.clipboard.readText(), which browsers only expose in secure contexts.
-  return typeof window !== 'undefined' && window.isSecureContext && typeof navigator !== 'undefined' && !!navigator.clipboard?.readText
+  return (
+    typeof window !== 'undefined' &&
+    window.isSecureContext &&
+    typeof navigator !== 'undefined' &&
+    !!navigator.clipboard?.readText
+  )
 }
 
 function applyStickyModifiers(data: string, sticky: StickyModifiers): string {
@@ -296,13 +302,14 @@ function MobileExtraKeys({ onSend, stickyModifiers, onToggleSticky, onFocusTermi
 
 interface TerminalProps {
   ptyId: string
-  directory?: string
+  apiScope: ApiScope
   isActive: boolean
 }
 
-export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: TerminalProps) {
+export const Terminal = memo(function Terminal({ ptyId, apiScope, isActive }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const terminalDirectoryRef = useRef(directory)
+  const terminalScopeRef = useRef(resolveApiScope(apiScope))
+  const terminalScopeKeyRef = useRef(apiScopeKey(terminalScopeRef.current))
   const [isTouchScrolling, setIsTouchScrolling] = useState(false)
   const [stickyModifiers, setStickyModifiers] = useState<StickyModifiers>(() => createStickyModifiers())
   const terminalRef = useRef<XTerm | null>(null)
@@ -383,9 +390,12 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
     // the render closure. This breaks the infinite cycle:
     //   old terminal cleanup → updateTerminalSnapshot → notify →
     //   re-render → effect deps changed → cleanup → notify → ...
-    const freshTab = layoutStore.getState().panelTabs.find(
-      t => t.id === ptyId && t.type === 'terminal',
-    )
+    const freshTab = layoutStore
+      .getState()
+      .panelTabs.find(
+        tab =>
+          tab.type === 'terminal' && (tab.ptyId ?? tab.id) === ptyId && tab.scopeKey === terminalScopeKeyRef.current,
+      )
     const effectBuffer = typeof freshTab?.buffer === 'string' ? freshTab.buffer : ''
     const effectScrollY = typeof freshTab?.scrollY === 'number' ? freshTab.scrollY : undefined
     const effectCursor =
@@ -409,7 +419,8 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
     let wsConnectTimeout: number | null = null
     let disposeData: { dispose: () => void } | null = null
     let disposeTitle: { dispose: () => void } | null = null
-    const terminalDirectory = terminalDirectoryRef.current
+    const terminalScope = terminalScopeRef.current
+    const terminalScopeKey = terminalScopeKeyRef.current
 
     const touchUi = preferTouchUi
     const theme = getTerminalTheme(isDarkMode())
@@ -577,10 +588,10 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
       logger.log(useNativePtyBridge ? '[Terminal/Tauri] Connected:' : '[Terminal] WebSocket connected:', ptyId)
       if (!mountedRef.current) return
       reconnectAttempt = 0
-      layoutStore.updateTerminalTab(ptyId, { status: 'connected' })
+      layoutStore.updateTerminalTab(ptyId, { status: 'connected' }, terminalScopeKey)
       const { cols, rows } = terminal
       logger.log('[Terminal] Sending size:', cols, 'x', rows)
-      updatePtySession(ptyId, { size: { cols, rows } }, terminalDirectory).catch(() => {})
+      updatePtySession(ptyId, { size: { cols, rows } }, terminalScope).catch(() => {})
     }
 
     const handleDisconnected = ({ code, reason }: { code?: number; reason?: string }) => {
@@ -592,7 +603,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
       )
       resetTransport()
       if (!mountedRef.current) return
-      layoutStore.updateTerminalTab(ptyId, { status: 'disconnected' })
+      layoutStore.updateTerminalTab(ptyId, { status: 'disconnected' }, terminalScopeKey)
 
       if (intentionalClose || code === 1000) {
         terminal.write('\r\n\x1b[90m[Connection closed]\x1b[0m\r\n')
@@ -626,7 +637,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
           .then(({ connectTauriPty }) =>
             connectTauriPty({
               ptyId,
-              directory: terminalDirectory,
+              apiScope: terminalScope,
               cursor,
               onConnected: handleConnected,
               onMessage: chunk => {
@@ -661,39 +672,50 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
             handleDisconnected({ reason: message })
           })
       } else {
-        const wsUrl = getPtyConnectUrl(ptyId, terminalDirectory, { cursor })
-        logger.log('[Terminal] Connecting to:', wsUrl, reconnectAttempt > 0 ? `(reconnect #${reconnectAttempt})` : '')
-        ws = new WebSocket(wsUrl)
-        ws.binaryType = 'arraybuffer'
-        transportSendRef.current = data => {
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(data)
-          }
-        }
-        transportDisconnectRef.current = () => ws?.close()
+        void getPtyConnectUrl(ptyId, terminalScope, { cursor })
+          .then(wsUrl => {
+            if (!mountedRef.current) return
+            logger.log(
+              '[Terminal] Connecting PTY WebSocket:',
+              ptyId,
+              reconnectAttempt > 0 ? `(reconnect #${reconnectAttempt})` : '',
+            )
+            ws = new WebSocket(wsUrl)
+            ws.binaryType = 'arraybuffer'
+            transportSendRef.current = data => {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(data)
+              }
+            }
+            transportDisconnectRef.current = () => ws?.close()
 
-        ws.onopen = handleConnected
+            ws.onopen = handleConnected
 
-        ws.onmessage = event => {
-          if (!mountedRef.current) return
-          const frame = parsePtyFrame(event.data as string | ArrayBuffer)
-          if (!frame) return
-          if (frame.kind === 'control') {
-            cursorRef.current = frame.cursor
-            return
-          }
-          terminal.write(frame.data)
-          cursorRef.current += frame.data.length
-        }
+            ws.onmessage = event => {
+              if (!mountedRef.current) return
+              const frame = parsePtyFrame(event.data as string | ArrayBuffer)
+              if (!frame) return
+              if (frame.kind === 'control') {
+                cursorRef.current = frame.cursor
+                return
+              }
+              terminal.write(frame.data)
+              cursorRef.current += frame.data.length
+            }
 
-        ws.onclose = e => {
-          handleDisconnected({ code: e.code, reason: e.reason })
-        }
+            ws.onclose = event => {
+              handleDisconnected({ code: event.code, reason: event.reason })
+            }
 
-        ws.onerror = e => {
-          logger.log('[Terminal] WebSocket error:', ptyId, e)
-          // onclose 会在 onerror 之后触发，重连逻辑交给 onclose
-        }
+            ws.onerror = event => {
+              logger.log('[Terminal] WebSocket error:', ptyId, event)
+            }
+          })
+          .catch(error => {
+            const message = error instanceof Error ? error.message : String(error)
+            logger.log('[Terminal] Failed to mint PTY connect ticket:', ptyId, message)
+            handleDisconnected({ reason: message })
+          })
       }
 
       disposeData?.dispose()
@@ -720,7 +742,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
 
     disposeTitle = terminal.onTitleChange(title => {
       if (!mountedRef.current) return
-      layoutStore.updateTerminalShellTitle(ptyId, title, manualTerminalTitlesRef.current)
+      layoutStore.updateTerminalShellTitle(ptyId, title, manualTerminalTitlesRef.current, terminalScopeKey)
     })
 
     return () => {
@@ -739,13 +761,17 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
       }
 
       try {
-        layoutStore.updateTerminalSnapshot(ptyId, {
-          buffer: serializeAddon.serialize(),
-          scrollY: terminal.buffer.active.viewportY,
-          cursor: cursorRef.current,
-          rows: terminal.rows,
-          cols: terminal.cols,
-        })
+        layoutStore.updateTerminalSnapshot(
+          ptyId,
+          {
+            buffer: serializeAddon.serialize(),
+            scrollY: terminal.buffer.active.viewportY,
+            cursor: cursorRef.current,
+            rows: terminal.rows,
+            cols: terminal.cols,
+          },
+          terminalScopeKey,
+        )
       } catch {
         // ignore snapshot persistence failures
       }
@@ -766,13 +792,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
       terminalRef.current = null
       fitAddonRef.current = null
     }
-  }, [
-    ptyId,
-    hasBeenActive,
-    clearStickyModifiers,
-    sendTerminalData,
-    preferTouchUi,
-  ])
+  }, [ptyId, hasBeenActive, clearStickyModifiers, sendTerminalData, preferTouchUi])
 
   useEffect(() => {
     const container = containerRef.current
@@ -886,7 +906,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
         if (fitAddonRef.current && terminalRef.current && !isPanelResizingRef.current) {
           fitAddonRef.current.fit()
           const { cols, rows } = terminalRef.current
-          updatePtySession(ptyId, { size: { cols, rows } }, terminalDirectoryRef.current).catch(() => {})
+          updatePtySession(ptyId, { size: { cols, rows } }, terminalScopeRef.current).catch(() => {})
         }
       }, 16)
     }
@@ -965,7 +985,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
           if (!fitAddonRef.current || !terminalRef.current) return
           fitAddonRef.current.fit()
           const { cols, rows } = terminalRef.current
-          updatePtySession(ptyId, { size: { cols, rows } }, terminalDirectoryRef.current).catch(() => {})
+          updatePtySession(ptyId, { size: { cols, rows } }, terminalScopeRef.current).catch(() => {})
         })
       }
     }

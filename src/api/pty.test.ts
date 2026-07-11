@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getActiveAuthMock, getActiveBaseUrlMock, ptyMock } = vi.hoisted(() => ({
-  getActiveAuthMock: vi.fn<() => { username: string; password: string } | null>(() => null),
-  getActiveBaseUrlMock: vi.fn(() => 'http://localhost:4096'),
+const { getActiveServerIdMock, getSDKClientMock, getServerBaseUrlMock, ptyMock } = vi.hoisted(() => ({
+  getActiveServerIdMock: vi.fn(() => 'local'),
+  getSDKClientMock: vi.fn(),
+  getServerBaseUrlMock: vi.fn((serverID: string) =>
+    serverID === 'remote' ? 'https://terminal.example.test/api' : 'http://localhost:4096',
+  ),
   ptyMock: {
+    connectToken: vi.fn(),
     create: vi.fn(),
     get: vi.fn(),
     list: vi.fn(),
@@ -14,7 +18,7 @@ const { getActiveAuthMock, getActiveBaseUrlMock, ptyMock } = vi.hoisted(() => ({
 }))
 
 vi.mock('./sdk', () => ({
-  getSDKClient: () => ({ pty: ptyMock }),
+  getSDKClient: getSDKClientMock,
   unwrap: <T>(result: { data?: T; error?: unknown }) => {
     if (result.error) throw result.error
     return result.data as T
@@ -22,14 +26,16 @@ vi.mock('./sdk', () => ({
 }))
 
 vi.mock('../store/serverStore', () => ({
-  makeBasicAuthHeader: vi.fn(() => 'Basic header-token'),
+  makeBasicAuthHeader: vi.fn(),
   serverStore: {
-    getActiveAuth: getActiveAuthMock,
-    getActiveBaseUrl: getActiveBaseUrlMock,
+    getActiveServerId: getActiveServerIdMock,
+    getServerAuth: vi.fn(() => null),
+    getServerBaseUrl: getServerBaseUrlMock,
   },
 }))
 
 import {
+  buildPtyConnectUrl,
   createPtySession,
   getPtyConnectUrl,
   getPtySession,
@@ -53,8 +59,12 @@ const pty = {
 describe('PTY SDK wrappers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    getActiveAuthMock.mockReturnValue(null)
-    getActiveBaseUrlMock.mockReturnValue('http://localhost:4096')
+    getActiveServerIdMock.mockReturnValue('local')
+    getServerBaseUrlMock.mockImplementation(serverID =>
+      serverID === 'remote' ? 'https://terminal.example.test/api' : 'http://localhost:4096',
+    )
+    getSDKClientMock.mockReturnValue({ pty: ptyMock })
+    ptyMock.connectToken.mockResolvedValue({ data: { ticket: 'ticket-1', expires_in: 30 } })
     ptyMock.create.mockResolvedValue({ data: pty })
     ptyMock.get.mockResolvedValue({ data: pty })
     ptyMock.list.mockResolvedValue({ data: [pty] })
@@ -66,12 +76,27 @@ describe('PTY SDK wrappers', () => {
   it('keeps instance routing directory separate from the create body cwd', async () => {
     await createPtySession({ command: 'zsh', args: ['-l'], cwd: '/body-cwd' }, '/instance-workspace')
 
+    expect(getSDKClientMock).toHaveBeenCalledWith({ serverID: 'local', directory: '/instance-workspace' })
     expect(ptyMock.create).toHaveBeenCalledWith({
       directory: '/instance-workspace',
       command: 'zsh',
       args: ['-l'],
       cwd: '/body-cwd',
     })
+  })
+
+  it('routes remote workspace operations by workspace ID', async () => {
+    const scope = { serverID: 'remote', directory: '/same', workspace: 'workspace-a' }
+
+    await expect(listPtySessions(scope)).resolves.toEqual([pty])
+    await expect(listAvailableShells(scope)).resolves.toEqual([{ path: '/bin/zsh', name: 'zsh', acceptable: true }])
+    await expect(getPtySession('pty-1', scope)).resolves.toEqual(pty)
+    await expect(removePtySession('pty-1', scope)).resolves.toBe(true)
+
+    expect(ptyMock.list).toHaveBeenCalledWith({ workspace: 'workspace-a' })
+    expect(ptyMock.shells).toHaveBeenCalledWith({ workspace: 'workspace-a' })
+    expect(ptyMock.get).toHaveBeenCalledWith({ ptyID: 'pty-1', workspace: 'workspace-a' })
+    expect(ptyMock.remove).toHaveBeenCalledWith({ ptyID: 'pty-1', workspace: 'workspace-a' })
   })
 
   it('passes update dimensions in the SDK size body shape', async () => {
@@ -83,56 +108,66 @@ describe('PTY SDK wrappers', () => {
       size: { cols: 120, rows: 40 },
     })
   })
-
-  it('maps list, shells, get, and remove through the current SDK contract', async () => {
-    await expect(listPtySessions('/instance-workspace')).resolves.toEqual([pty])
-    await expect(listAvailableShells('/instance-workspace')).resolves.toEqual([
-      { path: '/bin/zsh', name: 'zsh', acceptable: true },
-    ])
-    await expect(getPtySession('pty-1', '/instance-workspace')).resolves.toEqual(pty)
-    await expect(removePtySession('pty-1', '/instance-workspace')).resolves.toBe(true)
-
-    expect(ptyMock.list).toHaveBeenCalledWith({ directory: '/instance-workspace' })
-    expect(ptyMock.shells).toHaveBeenCalledWith({ directory: '/instance-workspace' })
-    expect(ptyMock.get).toHaveBeenCalledWith({ ptyID: 'pty-1', directory: '/instance-workspace' })
-    expect(ptyMock.remove).toHaveBeenCalledWith({ ptyID: 'pty-1', directory: '/instance-workspace' })
-  })
 })
 
-describe('browser PTY connect URL', () => {
+describe('PTY connect URL', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    getActiveAuthMock.mockReturnValue(null)
-    getActiveBaseUrlMock.mockReturnValue('http://localhost:4096')
-  })
-
-  it.each([-1, 0, 17])('preserves cursor %s in the query', cursor => {
-    expect(getPtyConnectUrl('pty/id', '/instance workspace', { cursor })).toBe(
-      `ws://localhost:4096/pty/pty/id/connect?directory=%2Finstance%20workspace&cursor=${cursor}`,
+    getActiveServerIdMock.mockReturnValue('local')
+    getServerBaseUrlMock.mockImplementation(serverID =>
+      serverID === 'remote' ? 'https://terminal.example.test/api' : 'http://localhost:4096',
     )
+    getSDKClientMock.mockReturnValue({ pty: ptyMock })
+    ptyMock.connectToken.mockResolvedValue({ data: { ticket: 'ticket-1', expires_in: 30 } })
   })
 
-  it('maps cross-origin browser auth to auth_token and userinfo', () => {
-    getActiveBaseUrlMock.mockReturnValue('https://terminal.example.test/api')
-    getActiveAuthMock.mockReturnValue({ username: 'user name', password: 'p@ss word' })
+  it.each([-1, 0, 17])('preserves cursor %s in a ticketed browser URL', async cursor => {
+    const url = new URL(await getPtyConnectUrl('pty/id', '/instance workspace', { cursor }))
 
-    const url = new URL(getPtyConnectUrl('pty-1', '/workspace', { cursor: 0 }))
+    expect(url.protocol).toBe('ws:')
+    expect(url.pathname).toBe('/pty/pty%2Fid/connect')
+    expect(url.searchParams.get('directory')).toBe('/instance workspace')
+    expect(url.searchParams.get('cursor')).toBe(String(cursor))
+    expect(url.searchParams.get('ticket')).toBe('ticket-1')
+  })
 
+  it('mints a scoped ticket and never exposes long-lived credentials in the browser URL', async () => {
+    const scope = { serverID: 'remote', workspace: 'workspace-a' }
+    const url = new URL(await getPtyConnectUrl('pty-1', scope, { cursor: 0 }))
+
+    expect(ptyMock.connectToken).toHaveBeenCalledWith(
+      { ptyID: 'pty-1', workspace: 'workspace-a' },
+      { headers: { 'x-chimera-ticket': '1' } },
+    )
     expect(url.protocol).toBe('wss:')
-    expect(url.username).toBe('user%20name')
-    expect(url.password).toBe('p%40ss%20word')
     expect(url.pathname).toBe('/api/pty/pty-1/connect')
-    expect(url.searchParams.get('directory')).toBe('/workspace')
-    expect(url.searchParams.get('cursor')).toBe('0')
-    expect(url.searchParams.get('auth_token')).toBe(btoa('user name:p@ss word'))
+    expect(url.searchParams.get('workspace')).toBe('workspace-a')
+    expect(url.searchParams.get('ticket')).toBe('ticket-1')
+    expect(url.searchParams.has('auth_token')).toBe(false)
+    expect(url.username).toBe('')
+    expect(url.password).toBe('')
   })
 
-  it('omits browser auth from the URL when requested by a header-capable transport', () => {
-    getActiveBaseUrlMock.mockReturnValue('https://terminal.example.test')
-    getActiveAuthMock.mockReturnValue({ username: 'chimera', password: 'secret' })
+  it('keeps the header-capable bridge URL credential-free without minting a browser ticket', () => {
+    getServerBaseUrlMock.mockReturnValue('https://terminal.example.test/api/')
+    const url = new URL(buildPtyConnectUrl('pty-1', { serverID: 'remote', directory: '/workspace' }, { cursor: -1 }))
 
-    expect(getPtyConnectUrl('pty-1', '/workspace', { includeAuthInUrl: false, cursor: -1 })).toBe(
-      'wss://terminal.example.test/pty/pty-1/connect?directory=%2Fworkspace&cursor=-1',
+    expect(url.toString()).toBe('wss://terminal.example.test/api/pty/pty-1/connect?directory=%2Fworkspace&cursor=-1')
+    expect(url.searchParams.has('ticket')).toBe(false)
+    expect(ptyMock.connectToken).not.toHaveBeenCalled()
+  })
+
+  it('surfaces ticket mint failures instead of falling back to credential URLs', async () => {
+    ptyMock.connectToken.mockResolvedValue({ error: new Error('ticket denied') })
+
+    await expect(getPtyConnectUrl('pty-1', '/workspace')).rejects.toThrow('ticket denied')
+  })
+
+  it('rejects malformed ticket responses before opening a browser WebSocket', async () => {
+    ptyMock.connectToken.mockResolvedValue({ data: { ticket: '', expires_in: 30 } })
+
+    await expect(getPtyConnectUrl('pty-1', '/workspace')).rejects.toThrow(
+      'PTY connect token response did not include a ticket',
     )
   })
 })

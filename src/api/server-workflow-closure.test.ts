@@ -61,7 +61,8 @@ describe('NewWeb existing-server workflow closure', () => {
     expect(artifact.workflows.find(workflow => workflow.id === 'pty-connect-ticket-migration')).toMatchObject({
       classification: 'reuse',
       phase: 2,
-      status: { server: 'existing', ui: 'deferred' },
+      status: { server: 'existing', ui: 'implemented' },
+      operations: [{ operationId: 'pty.connectToken', currentlyUsed: true }],
     })
     expect(result).toEqual({ workflows: 20, operations: 94 })
   }, 30_000)

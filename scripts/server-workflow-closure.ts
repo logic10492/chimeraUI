@@ -267,7 +267,6 @@ export async function validateServerWorkflowClosure(): Promise<{ workflows: numb
     ['provider-auth-oauth-disconnect', 2],
     ['graph-workflows', 5],
     ['workspace-lifecycle', 2],
-    ['pty-connect-ticket-migration', 2],
   ])
   deferredReusePhases.forEach((phase, id) => {
     const workflow = artifact.workflows.find(item => item.id === id)
@@ -275,6 +274,16 @@ export async function validateServerWorkflowClosure(): Promise<{ workflows: numb
       throw new Error(`${id} must be existing server reuse with deferred Phase ${phase} UI work`)
     }
   })
+
+  const ptyConnectTicket = artifact.workflows.find(workflow => workflow.id === 'pty-connect-ticket-migration')
+  if (
+    ptyConnectTicket?.phase !== 2 ||
+    ptyConnectTicket.classification !== 'reuse' ||
+    ptyConnectTicket.status.server !== 'existing' ||
+    ptyConnectTicket.status.ui !== 'implemented'
+  ) {
+    throw new Error('pty-connect-ticket-migration must be implemented Phase 2 existing-server reuse')
+  }
   const workspaceSymbols = artifact.workflows.find(workflow => workflow.id === 'workspace-symbol-search')
   if (
     workspaceSymbols?.phase !== 5 ||

@@ -1,9 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { channels, getActiveAuthMock, getActiveBaseUrlMock, invokeMock, makeBasicAuthHeaderMock } = vi.hoisted(() => ({
+const {
+  channels,
+  getActiveServerIdMock,
+  getServerAuthMock,
+  getServerBaseUrlMock,
+  invokeMock,
+  makeBasicAuthHeaderMock,
+} = vi.hoisted(() => ({
   channels: [] as Array<{ onmessage?: (message: unknown) => void }>,
-  getActiveAuthMock: vi.fn<() => { username: string; password: string } | null>(() => null),
-  getActiveBaseUrlMock: vi.fn(() => 'https://terminal.example.test'),
+  getActiveServerIdMock: vi.fn(() => 'remote'),
+  getServerAuthMock: vi.fn<(serverID: string) => { username: string; password: string } | null>(() => ({
+    username: 'chimera',
+    password: 'secret',
+  })),
+  getServerBaseUrlMock: vi.fn(() => 'https://terminal.example.test'),
   invokeMock: vi.fn(() => Promise.resolve()),
   makeBasicAuthHeaderMock: vi.fn(() => 'Basic bridge-token'),
 }))
@@ -22,8 +33,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('../store/serverStore', () => ({
   makeBasicAuthHeader: makeBasicAuthHeaderMock,
   serverStore: {
-    getActiveAuth: getActiveAuthMock,
-    getActiveBaseUrl: getActiveBaseUrlMock,
+    getActiveServerId: getActiveServerIdMock,
+    getServerAuth: getServerAuthMock,
+    getServerBaseUrl: getServerBaseUrlMock,
   },
 }))
 
@@ -33,15 +45,16 @@ describe('Tauri PTY bridge transport', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     channels.length = 0
-    getActiveBaseUrlMock.mockReturnValue('https://terminal.example.test')
-    getActiveAuthMock.mockReturnValue({ username: 'chimera', password: 'secret' })
+    getActiveServerIdMock.mockReturnValue('remote')
+    getServerBaseUrlMock.mockReturnValue('https://terminal.example.test')
+    getServerAuthMock.mockReturnValue({ username: 'chimera', password: 'secret' })
     invokeMock.mockResolvedValue(undefined)
   })
 
-  it('uses a header-authenticated URL without browser auth query parameters', async () => {
+  it('uses the selected server scope with header auth and no URL credentials', async () => {
     await connectTauriPty({
       ptyId: 'pty-1',
-      directory: '/instance workspace',
+      apiScope: { serverID: 'remote', directory: '/instance workspace' },
       cursor: -1,
       onConnected: vi.fn(),
       onMessage: vi.fn(),
@@ -49,10 +62,11 @@ describe('Tauri PTY bridge transport', () => {
       onError: vi.fn(),
     })
 
+    expect(getServerAuthMock).toHaveBeenCalledWith('remote')
     expect(makeBasicAuthHeaderMock).toHaveBeenCalledWith({ username: 'chimera', password: 'secret' })
     expect(invokeMock).toHaveBeenCalledWith('bridge_connect', {
       args: {
-        bridgeId: 'pty-1',
+        bridgeId: expect.stringContaining(':pty-1:'),
         url: 'wss://terminal.example.test/pty/pty-1/connect?directory=%2Finstance%20workspace&cursor=-1',
         authHeader: 'Basic bridge-token',
       },
@@ -87,21 +101,72 @@ describe('Tauri PTY bridge transport', () => {
     expect(onError).toHaveBeenCalledWith('bridge warning')
     expect(onDisconnected).not.toHaveBeenCalled()
     expect(invokeMock).toHaveBeenCalledWith('bridge_send', {
-      args: { bridgeId: 'pty-2', data: 'input' },
+      args: { bridgeId: expect.stringContaining(':pty-2:'), data: 'input' },
     })
     expect(invokeMock).toHaveBeenCalledWith('bridge_disconnect', {
-      args: { bridgeId: 'pty-2' },
+      args: { bridgeId: expect.stringContaining(':pty-2:') },
     })
     expect(invokeMock).not.toHaveBeenCalledWith('bridge_send', {
-      args: { bridgeId: 'pty-2', data: 'ignored' },
+      args: { bridgeId: expect.stringContaining(':pty-2:'), data: 'ignored' },
     })
   })
 
-  it('passes null auth when the active server has no password', async () => {
-    getActiveAuthMock.mockReturnValue(null)
+  it('disconnects again if the bridge finishes connecting after close', async () => {
+    const onConnected = vi.fn()
+    const connection = await connectTauriPty({
+      ptyId: 'pty-race',
+      onConnected,
+      onMessage: vi.fn(),
+      onDisconnected: vi.fn(),
+      onError: vi.fn(),
+    })
+    const emit = channels[0].onmessage as (message: unknown) => void
+
+    connection.close()
+    emit({ event: 'connected' })
+
+    expect(onConnected).not.toHaveBeenCalled()
+    const disconnectBridgeIds = invokeMock.mock.calls
+      .filter(([command]) => command === 'bridge_disconnect')
+      .map(([, payload]) => (payload as { args: { bridgeId: string } }).args.bridgeId)
+    expect(disconnectBridgeIds).toHaveLength(2)
+    expect(new Set(disconnectBridgeIds).size).toBe(1)
+  })
+
+  it('isolates native bridge IDs by scope and connection generation', async () => {
+    const callbacks = {
+      onConnected: vi.fn(),
+      onMessage: vi.fn(),
+      onDisconnected: vi.fn(),
+      onError: vi.fn(),
+    }
+
+    await connectTauriPty({
+      ptyId: 'pty-shared',
+      apiScope: { serverID: 'remote', workspace: 'workspace-a' },
+      ...callbacks,
+    })
+    await connectTauriPty({
+      ptyId: 'pty-shared',
+      apiScope: { serverID: 'remote', workspace: 'workspace-b' },
+      ...callbacks,
+    })
+
+    const bridgeIds = invokeMock.mock.calls
+      .filter(([command]) => command === 'bridge_connect')
+      .map(([, payload]) => (payload as { args: { bridgeId: string } }).args.bridgeId)
+    expect(bridgeIds).toHaveLength(2)
+    expect(bridgeIds[0]).toContain('workspace-a')
+    expect(bridgeIds[1]).toContain('workspace-b')
+    expect(bridgeIds[0]).not.toBe(bridgeIds[1])
+  })
+
+  it('passes null auth when the scoped server has no password', async () => {
+    getServerAuthMock.mockReturnValue(null)
 
     await connectTauriPty({
       ptyId: 'pty-3',
+      apiScope: { serverID: 'remote', workspace: 'workspace-a' },
       cursor: 0,
       onConnected: vi.fn(),
       onMessage: vi.fn(),
@@ -111,8 +176,8 @@ describe('Tauri PTY bridge transport', () => {
 
     expect(invokeMock).toHaveBeenCalledWith('bridge_connect', {
       args: {
-        bridgeId: 'pty-3',
-        url: 'wss://terminal.example.test/pty/pty-3/connect?cursor=0',
+        bridgeId: expect.stringContaining(':pty-3:'),
+        url: 'wss://terminal.example.test/pty/pty-3/connect?workspace=workspace-a&cursor=0',
         authHeader: null,
       },
       onEvent: channels[0],

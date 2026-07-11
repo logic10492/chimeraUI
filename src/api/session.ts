@@ -4,8 +4,17 @@
 // ============================================
 
 import { getSDKClient, unwrap } from './sdk'
+import {
+  activeApiScope,
+  apiScopeQuery,
+  rememberSessionApiScope,
+  rememberSessionApiScopes,
+  resolveApiScope,
+  resolveSessionApiScope,
+  type ApiScope,
+  type ApiScopeInput,
+} from './scope'
 import { normalizeTodoItems } from './todo'
-import { formatPathForApi } from '../utils/directoryUtils'
 import { normalizeFileDiffs } from '../types/api/file'
 import type { ApiSession, SessionListParams, FileDiff, WorkBrief } from './types'
 import type { SessionStatusMap } from '../types/api/session'
@@ -16,6 +25,11 @@ function normalizeSessionList(value: unknown): ApiSession[] {
   throw new Error('Invalid OpenCode session list response')
 }
 
+function scopedSession(session: ApiSession, scope: ApiScope): ApiSession {
+  rememberSessionApiScope(session, scope)
+  return session
+}
+
 // ============================================
 // Session Status & Diff
 // ============================================
@@ -23,14 +37,14 @@ function normalizeSessionList(value: unknown): ApiSession[] {
 /**
  * 获取所有 session 的当前状态
  */
-export async function getSessionStatus(directory?: string): Promise<SessionStatusMap> {
-  const sdk = getSDKClient()
-  return unwrap(await sdk.session.status({ directory: formatPathForApi(directory) }))
+export async function getSessionStatus(input?: ApiScopeInput): Promise<SessionStatusMap> {
+  const scope = resolveApiScope(input)
+  return unwrap(await getSDKClient(scope).session.status(apiScopeQuery(scope)))
 }
 
-export async function getSessionWorkBrief(sessionId: string, directory?: string): Promise<WorkBrief> {
-  const sdk = getSDKClient()
-  return unwrap(await sdk.session.workBrief({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+export async function getSessionWorkBrief(sessionId: string, input?: ApiScopeInput): Promise<WorkBrief> {
+  const scope = resolveSessionApiScope(sessionId, input)
+  return unwrap(await getSDKClient(scope).session.workBrief({ sessionID: sessionId, ...apiScopeQuery(scope) }))
 }
 
 /**
@@ -39,15 +53,15 @@ export async function getSessionWorkBrief(sessionId: string, directory?: string)
  */
 export async function getSessionDiff(
   sessionId: string,
-  directory?: string,
+  input?: ApiScopeInput,
   options?: { messageId?: string },
 ): Promise<FileDiff[]> {
-  const sdk = getSDKClient()
+  const scope = resolveSessionApiScope(sessionId, input)
   return normalizeFileDiffs(
     unwrap(
-      await sdk.session.diff({
+      await getSDKClient(scope).session.diff({
         sessionID: sessionId,
-        directory: formatPathForApi(directory),
+        ...apiScopeQuery(scope),
         messageID: options?.messageId,
       }),
     ),
@@ -57,8 +71,8 @@ export async function getSessionDiff(
 /**
  * 获取当前可见用户消息对应的本轮 diff
  */
-export async function getLastTurnDiff(sessionId: string, directory?: string): Promise<FileDiff[]> {
-  return getSessionDiff(sessionId, directory)
+export async function getLastTurnDiff(sessionId: string, input?: ApiScopeInput): Promise<FileDiff[]> {
+  return getSessionDiff(sessionId, input)
 }
 
 // ============================================
@@ -68,28 +82,30 @@ export async function getLastTurnDiff(sessionId: string, directory?: string): Pr
 /**
  * 获取 session 列表
  */
-export async function getSessions(params: SessionListParams = {}): Promise<ApiSession[]> {
-  const sdk = getSDKClient()
-  const { directory, roots, start, search, limit } = params
-  return normalizeSessionList(
+export async function getSessions(params: SessionListParams & { apiScope?: ApiScope } = {}): Promise<ApiSession[]> {
+  const { apiScope, directory, workspace, ...query } = params
+  const scope = apiScope ? resolveApiScope(apiScope) : activeApiScope(directory, workspace)
+  const sessions = normalizeSessionList(
     unwrap(
-      await sdk.session.list({
-        directory: formatPathForApi(directory),
-        roots,
-        start,
-        search,
-        limit,
+      await getSDKClient(scope).session.list({
+        ...apiScopeQuery(scope),
+        ...query,
       }),
     ),
   )
+  rememberSessionApiScopes(sessions, scope)
+  return sessions
 }
 
 /**
  * 获取单个 session
  */
-export async function getSession(sessionId: string, directory?: string): Promise<ApiSession> {
-  const sdk = getSDKClient()
-  return unwrap(await sdk.session.get({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+export async function getSession(sessionId: string, input?: ApiScopeInput): Promise<ApiSession> {
+  const scope = resolveSessionApiScope(sessionId, input)
+  return scopedSession(
+    unwrap(await getSDKClient(scope).session.get({ sessionID: sessionId, ...apiScopeQuery(scope) })),
+    scope,
+  )
 }
 
 /**
@@ -98,18 +114,23 @@ export async function getSession(sessionId: string, directory?: string): Promise
 export async function createSession(
   params: {
     directory?: string
+    workspace?: string
+    apiScope?: ApiScope
     title?: string
     parentID?: string
   } = {},
 ): Promise<ApiSession> {
-  const sdk = getSDKClient()
-  const { directory, title, parentID } = params
-  return unwrap(
-    await sdk.session.create({
-      directory: formatPathForApi(directory),
-      title,
-      parentID,
-    }),
+  const { directory, workspace, apiScope, title, parentID } = params
+  const scope = apiScope ? resolveApiScope(apiScope) : activeApiScope(directory, workspace)
+  return scopedSession(
+    unwrap(
+      await getSDKClient(scope).session.create({
+        ...apiScopeQuery(scope),
+        title,
+        parentID,
+      }),
+    ),
+    scope,
   )
 }
 
@@ -119,24 +140,27 @@ export async function createSession(
 export async function updateSession(
   sessionId: string,
   params: { title?: string; time?: { archived?: number } },
-  directory?: string,
+  input?: ApiScopeInput,
 ): Promise<ApiSession> {
-  const sdk = getSDKClient()
-  return unwrap(
-    await sdk.session.update({
-      sessionID: sessionId,
-      directory: formatPathForApi(directory),
-      ...params,
-    }),
+  const scope = resolveSessionApiScope(sessionId, input)
+  return scopedSession(
+    unwrap(
+      await getSDKClient(scope).session.update({
+        sessionID: sessionId,
+        ...apiScopeQuery(scope),
+        ...params,
+      }),
+    ),
+    scope,
   )
 }
 
 /**
  * 删除 session
  */
-export async function deleteSession(sessionId: string, directory?: string): Promise<boolean> {
-  const sdk = getSDKClient()
-  unwrap(await sdk.session.delete({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+export async function deleteSession(sessionId: string, input?: ApiScopeInput): Promise<boolean> {
+  const scope = resolveSessionApiScope(sessionId, input)
+  unwrap(await getSDKClient(scope).session.delete({ sessionID: sessionId, ...apiScopeQuery(scope) }))
   return true
 }
 
@@ -147,9 +171,9 @@ export async function deleteSession(sessionId: string, directory?: string): Prom
 /**
  * 中止 session
  */
-export async function abortSession(sessionId: string, directory?: string): Promise<boolean> {
-  const sdk = getSDKClient()
-  unwrap(await sdk.session.abort({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+export async function abortSession(sessionId: string, input?: ApiScopeInput): Promise<boolean> {
+  const scope = resolveSessionApiScope(sessionId, input)
+  unwrap(await getSDKClient(scope).session.abort({ sessionID: sessionId, ...apiScopeQuery(scope) }))
   return true
 }
 
@@ -160,54 +184,69 @@ export async function revertMessage(
   sessionId: string,
   messageId: string,
   partId?: string,
-  directory?: string,
+  input?: ApiScopeInput,
 ): Promise<ApiSession> {
-  const sdk = getSDKClient()
-  return unwrap(
-    await sdk.session.revert({
-      sessionID: sessionId,
-      directory: formatPathForApi(directory),
-      messageID: messageId,
-      partID: partId,
-    }),
+  const scope = resolveSessionApiScope(sessionId, input)
+  return scopedSession(
+    unwrap(
+      await getSDKClient(scope).session.revert({
+        sessionID: sessionId,
+        ...apiScopeQuery(scope),
+        messageID: messageId,
+        partID: partId,
+      }),
+    ),
+    scope,
   )
 }
 
 /**
  * 恢复已回退的消息
  */
-export async function unrevertSession(sessionId: string, directory?: string): Promise<ApiSession> {
-  const sdk = getSDKClient()
-  return unwrap(await sdk.session.unrevert({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+export async function unrevertSession(sessionId: string, input?: ApiScopeInput): Promise<ApiSession> {
+  const scope = resolveSessionApiScope(sessionId, input)
+  return scopedSession(
+    unwrap(await getSDKClient(scope).session.unrevert({ sessionID: sessionId, ...apiScopeQuery(scope) })),
+    scope,
+  )
 }
 
 /**
  * 分享 session
  */
-export async function shareSession(sessionId: string, directory?: string): Promise<ApiSession> {
-  const sdk = getSDKClient()
-  return unwrap(await sdk.session.share({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+export async function shareSession(sessionId: string, input?: ApiScopeInput): Promise<ApiSession> {
+  const scope = resolveSessionApiScope(sessionId, input)
+  return scopedSession(
+    unwrap(await getSDKClient(scope).session.share({ sessionID: sessionId, ...apiScopeQuery(scope) })),
+    scope,
+  )
 }
 
 /**
  * 取消分享 session
  */
-export async function unshareSession(sessionId: string, directory?: string): Promise<ApiSession> {
-  const sdk = getSDKClient()
-  return unwrap(await sdk.session.unshare({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+export async function unshareSession(sessionId: string, input?: ApiScopeInput): Promise<ApiSession> {
+  const scope = resolveSessionApiScope(sessionId, input)
+  return scopedSession(
+    unwrap(await getSDKClient(scope).session.unshare({ sessionID: sessionId, ...apiScopeQuery(scope) })),
+    scope,
+  )
 }
 
 /**
  * Fork session
  */
-export async function forkSession(sessionId: string, messageId?: string, directory?: string): Promise<ApiSession> {
-  const sdk = getSDKClient()
-  return unwrap(
-    await sdk.session.fork({
-      sessionID: sessionId,
-      directory: formatPathForApi(directory),
-      messageID: messageId,
-    }),
+export async function forkSession(sessionId: string, messageId?: string, input?: ApiScopeInput): Promise<ApiSession> {
+  const scope = resolveSessionApiScope(sessionId, input)
+  return scopedSession(
+    unwrap(
+      await getSDKClient(scope).session.fork({
+        sessionID: sessionId,
+        ...apiScopeQuery(scope),
+        messageID: messageId,
+      }),
+    ),
+    scope,
   )
 }
 
@@ -217,13 +256,13 @@ export async function forkSession(sessionId: string, messageId?: string, directo
 export async function summarizeSession(
   sessionId: string,
   params: { providerID: string; modelID: string; auto?: boolean },
-  directory?: string,
+  input?: ApiScopeInput,
 ): Promise<boolean> {
-  const sdk = getSDKClient()
+  const scope = resolveSessionApiScope(sessionId, input)
   unwrap(
-    await sdk.session.summarize({
+    await getSDKClient(scope).session.summarize({
       sessionID: sessionId,
-      directory: formatPathForApi(directory),
+      ...apiScopeQuery(scope),
       ...params,
     }),
   )
@@ -233,9 +272,13 @@ export async function summarizeSession(
 /**
  * 获取子 session
  */
-export async function getSessionChildren(sessionId: string, directory?: string): Promise<ApiSession[]> {
-  const sdk = getSDKClient()
-  return unwrap(await sdk.session.children({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+export async function getSessionChildren(sessionId: string, input?: ApiScopeInput): Promise<ApiSession[]> {
+  const scope = resolveSessionApiScope(sessionId, input)
+  const sessions = unwrap<ApiSession[]>(
+    await getSDKClient(scope).session.children({ sessionID: sessionId, ...apiScopeQuery(scope) }),
+  )
+  rememberSessionApiScopes(sessions, scope)
+  return sessions
 }
 
 /**
@@ -247,8 +290,8 @@ export type ApiTodo = TodoItem
  * 获取 session 的 todo 列表
  * SDK 的 Todo 没有 id 字段，用 index+content+status 合成
  */
-export async function getSessionTodos(sessionId: string, directory?: string): Promise<ApiTodo[]> {
-  const sdk = getSDKClient()
-  const todos = unwrap(await sdk.session.todo({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+export async function getSessionTodos(sessionId: string, input?: ApiScopeInput): Promise<ApiTodo[]> {
+  const scope = resolveSessionApiScope(sessionId, input)
+  const todos = unwrap(await getSDKClient(scope).session.todo({ sessionID: sessionId, ...apiScopeQuery(scope) }))
   return normalizeTodoItems(todos)
 }

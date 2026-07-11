@@ -33,6 +33,7 @@ import {
 import { uiErrorHandler, isSameDirectory, collectActiveDirectories } from './utils'
 import { initNotificationSound } from './utils/notificationSoundBridge'
 import { createPtySession } from './api/pty'
+import { activeApiScope, apiScopeKey, resolveSessionApiScope } from './api/scope'
 import type { TerminalTab } from './store/layoutStore'
 import type { SettingsTab } from './features/settings/SettingsDialog'
 import { isTauri, isTauriMobile } from './utils/tauri'
@@ -290,7 +291,8 @@ function App() {
     const scrollLeft = pager.scrollLeft
 
     // -1 (滑向左栏) 到 0 (对话页) 到 1 (滑向右栏)
-    const rawProgress = (scrollLeft - mobileChatScrollLeft) / (scrollLeft < mobileChatScrollLeft ? mobileLeftPanelWidth : mobilePageWidth)
+    const rawProgress =
+      (scrollLeft - mobileChatScrollLeft) / (scrollLeft < mobileChatScrollLeft ? mobileLeftPanelWidth : mobilePageWidth)
     const progress = Math.max(-1, Math.min(1, rawProgress))
     const absProgress = Math.abs(progress)
     const rightProgress = Math.max(0, progress)
@@ -450,7 +452,14 @@ function App() {
     if (sidebarExpanded) setSidebarExpanded(false)
     scrollMobilePagerTo('right')
     layoutStore.openRightPanel()
-  }, [ensureMobileRightPanelRendered, isMobilePanelLayout, rightPanelOpen, scrollMobilePagerTo, setSidebarExpanded, sidebarExpanded])
+  }, [
+    ensureMobileRightPanelRendered,
+    isMobilePanelLayout,
+    rightPanelOpen,
+    scrollMobilePagerTo,
+    setSidebarExpanded,
+    sidebarExpanded,
+  ])
 
   const focusedDirectory = focusedRouteDirectory || ''
 
@@ -530,9 +539,14 @@ function App() {
 
   const handleNewTerminal = useCallback(async () => {
     try {
-      const pty = await createPtySession({ cwd: focusedDirectory }, focusedDirectory)
+      const activeScope = activeApiScope(focusedDirectory)
+      const scope = paneLayout.focusedSessionId
+        ? resolveSessionApiScope(paneLayout.focusedSessionId, activeScope)
+        : activeScope
+      const pty = await createPtySession({ cwd: focusedDirectory }, scope)
       const tab: TerminalTab = {
         id: pty.id,
+        scopeKey: apiScopeKey(scope),
         title: pty.title || t('components:terminal.terminal'),
         status: 'connecting',
       }
@@ -540,7 +554,7 @@ function App() {
     } catch (error) {
       uiErrorHandler('create terminal', error)
     }
-  }, [focusedDirectory, t])
+  }, [focusedDirectory, paneLayout.focusedSessionId, t])
 
   const keybindingHandlers = useMemo<KeybindingHandlers>(
     () => ({
@@ -877,7 +891,6 @@ function App() {
                     onNewSession={handleNewSession}
                     onOpen={handleOpenSidebar}
                     onClose={handleCloseSidebar}
-
                     onOpenSettings={openSettings}
                     projectDialogOpen={projectDialogOpen}
                     onProjectDialogClose={closeProjectDialog}
@@ -900,14 +913,17 @@ function App() {
                     aria-hidden={mobileActivePage !== 'chat'}
                     inert={mobileActivePage !== 'chat'}
                     style={{
-                      transform: 'translate3d(var(--mobile-chat-offset-x, 0px), 0, 0) rotateY(var(--mobile-chat-rotate-y, 0deg)) scale(var(--mobile-chat-scale, 1))',
+                      transform:
+                        'translate3d(var(--mobile-chat-offset-x, 0px), 0, 0) rotateY(var(--mobile-chat-rotate-y, 0deg)) scale(var(--mobile-chat-scale, 1))',
                       transformOrigin: 'var(--mobile-chat-transform-origin, 50% 50%)',
                       transformStyle: 'preserve-3d',
                       backfaceVisibility: 'hidden',
                       willChange: 'transform',
                     }}
                   >
-                    <div className={`flex-1 min-h-0 px-4 ${paneLayout.isSplit && !paneLayout.fullscreenPaneId ? 'py-2' : ''}`}>
+                    <div
+                      className={`flex-1 min-h-0 px-4 ${paneLayout.isSplit && !paneLayout.fullscreenPaneId ? 'py-2' : ''}`}
+                    >
                       <SplitContainer
                         node={paneLayout.root}
                         renderLeaf={renderPaneLeaf}
@@ -963,7 +979,6 @@ function App() {
                 onNewSession={handleNewSession}
                 onOpen={handleOpenSidebar}
                 onClose={handleCloseSidebar}
-
                 onOpenSettings={openSettings}
                 projectDialogOpen={projectDialogOpen}
                 onProjectDialogClose={closeProjectDialog}
@@ -975,7 +990,11 @@ function App() {
                   className="flex-1 flex flex-col min-w-0 overflow-hidden"
                   style={{ minWidth: `${CHAT_SURFACE_MIN_WIDTH}px` }}
                 >
-                  <div className={paneLayout.isSplit && !paneLayout.fullscreenPaneId ? 'flex-1 min-h-0 p-2' : 'flex-1 min-h-0'}>
+                  <div
+                    className={
+                      paneLayout.isSplit && !paneLayout.fullscreenPaneId ? 'flex-1 min-h-0 p-2' : 'flex-1 min-h-0'
+                    }
+                  >
                     <SplitContainer
                       node={paneLayout.root}
                       renderLeaf={renderPaneLeaf}
@@ -986,7 +1005,11 @@ function App() {
                   <BottomPanel directory={focusedDirectory} />
                 </div>
 
-                <RightPanel directory={focusedDirectory} sessionId={paneLayout.focusedSessionId} providerId={focusedController?.currentProviderId} />
+                <RightPanel
+                  directory={focusedDirectory}
+                  sessionId={paneLayout.focusedSessionId}
+                  providerId={focusedController?.currentProviderId}
+                />
               </div>
             </>
           )}

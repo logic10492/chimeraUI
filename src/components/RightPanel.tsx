@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useLayoutStore, layoutStore, type PanelTab } from '../store/layoutStore'
 import { PanelContainer } from './PanelContainer'
 import { createPtySession, removePtySession } from '../api/pty'
+import { activeApiScope, apiScopeKey, resolveSessionApiScope, type ApiScope } from '../api/scope'
 import type { TerminalTab } from '../store/layoutStore'
 import { ResizablePanel } from './ui/ResizablePanel'
 import { logger } from '../utils/logger'
@@ -38,11 +39,21 @@ interface RightPanelProps {
   renderPanelContent?: boolean
 }
 
-export const RightPanel = memo(function RightPanel({ directory, sessionId, providerId, inline = false, renderPanelContent = true }: RightPanelProps) {
+export const RightPanel = memo(function RightPanel({
+  directory,
+  sessionId,
+  providerId,
+  inline = false,
+  renderPanelContent = true,
+}: RightPanelProps) {
   const { t } = useTranslation(['components', 'common'])
   const { rightPanelOpen, rightPanelWidth } = useLayoutStore()
   const { interaction, layout } = useChatViewport()
   const normalizedDirectory = directory ? normalizeToForwardSlash(directory) : undefined
+  const getTerminalScope = useCallback(() => {
+    const activeScope = activeApiScope(normalizedDirectory)
+    return sessionId ? resolveSessionApiScope(sessionId, activeScope) : activeScope
+  }, [sessionId, normalizedDirectory])
 
   // 追踪面板 resize 状态
   const [isPanelResizing, setIsPanelResizing] = useState(false)
@@ -61,22 +72,24 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId, provi
   const handleCloseTerminal = useCallback(
     async (ptyId: string) => {
       try {
-        await removePtySession(ptyId, normalizedDirectory)
+        await removePtySession(ptyId, getTerminalScope())
       } catch {
         // ignore cleanup errors
       }
     },
-    [normalizedDirectory],
+    [getTerminalScope],
   )
 
   // 创建新终端
   const handleNewTerminal = useCallback(async () => {
     try {
-      logger.log('[RightPanel] Creating PTY session, directory:', normalizedDirectory)
-      const pty = await createPtySession({ cwd: normalizedDirectory }, normalizedDirectory)
+      const scope = getTerminalScope()
+      logger.log('[RightPanel] Creating PTY session for scope:', apiScopeKey(scope))
+      const pty = await createPtySession({ cwd: normalizedDirectory }, scope)
       logger.log('[RightPanel] PTY created:', pty)
       const tab: TerminalTab = {
         id: pty.id,
+        scopeKey: apiScopeKey(scope),
         title: pty.title || 'Terminal',
         status: 'connecting',
       }
@@ -84,7 +97,7 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId, provi
     } catch (error) {
       uiErrorHandler('create terminal', error)
     }
-  }, [normalizedDirectory])
+  }, [getTerminalScope, normalizedDirectory])
 
   // 渲染内容
   const renderContent = useCallback(
@@ -141,7 +154,7 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId, provi
 
           {activeTab.type === 'terminal' ? (
             <Suspense fallback={<PanelFallback />}>
-              <TerminalContent activeTab={activeTab} directory={normalizedDirectory} />
+              <TerminalContent activeTab={activeTab} apiScope={getTerminalScope()} />
             </Suspense>
           ) : null}
 
@@ -165,7 +178,7 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId, provi
         </>
       )
     },
-    [normalizedDirectory, sessionId, providerId, isPanelResizing, t],
+    [getTerminalScope, normalizedDirectory, sessionId, providerId, isPanelResizing, t],
   )
 
   if (inline) {
@@ -175,6 +188,7 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId, provi
           <PanelContainer
             position="right"
             directory={normalizedDirectory}
+            terminalApiScope={getTerminalScope()}
             onNewTerminal={handleNewTerminal}
             onCloseTerminal={handleCloseTerminal}
             forceOpen
@@ -200,6 +214,7 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId, provi
       <PanelContainer
         position="right"
         directory={normalizedDirectory}
+        terminalApiScope={getTerminalScope()}
         onNewTerminal={handleNewTerminal}
         onCloseTerminal={handleCloseTerminal}
       >
@@ -215,19 +230,22 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId, provi
 
 interface TerminalContentProps {
   activeTab: PanelTab
-  directory?: string
+  apiScope: ApiScope
 }
 
-const TerminalContent = memo(function TerminalContent({ activeTab, directory }: TerminalContentProps) {
+const TerminalContent = memo(function TerminalContent({ activeTab, apiScope }: TerminalContentProps) {
   const { panelTabs } = useLayoutStore()
+  const scopeKey = apiScopeKey(apiScope)
 
-  // 获取所有 right 位置的 terminal tabs
-  const terminalTabs = panelTabs.filter(t => t.position === 'right' && t.type === 'terminal')
+  // 获取当前 scope 的 right terminal tabs
+  const terminalTabs = panelTabs.filter(
+    tab => tab.position === 'right' && tab.type === 'terminal' && tab.scopeKey === scopeKey,
+  )
 
   return (
     <>
       {terminalTabs.map(tab => (
-        <Terminal key={tab.id} ptyId={tab.id} directory={directory} isActive={tab.id === activeTab.id} />
+        <Terminal key={`${scopeKey}:${tab.id}`} ptyId={tab.id} apiScope={apiScope} isActive={tab.id === activeTab.id} />
       ))}
     </>
   )

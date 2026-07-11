@@ -5,6 +5,7 @@ import { PanelContainer } from './PanelContainer'
 import { layoutStore, useLayoutStore, type TerminalTab, type PanelTab } from '../store/layoutStore'
 import { serverStore } from '../store/serverStore'
 import { createPtySession, removePtySession, listPtySessions } from '../api/pty'
+import { activeApiScope, apiScopeKey, resolveSessionApiScope, type ApiScope } from '../api/scope'
 import { useMessageStore } from '../store'
 import { ResizablePanel } from './ui/ResizablePanel'
 import { logger } from '../utils/logger'
@@ -44,10 +45,10 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
 
   const [isRestoring, setIsRestoring] = useState(false)
   const normalizedDirectory = directory ? normalizeToForwardSlash(directory) : undefined
-
-  useEffect(() => {
-    layoutStore.setCurrentTerminalDirectory(normalizedDirectory)
-  }, [normalizedDirectory])
+  const getTerminalScope = useCallback(() => {
+    const activeScope = activeApiScope(normalizedDirectory)
+    return sessionId ? resolveSessionApiScope(sessionId, activeScope) : activeScope
+  }, [sessionId, normalizedDirectory])
 
   // 追踪面板 resize 状态
   const [isPanelResizing, setIsPanelResizing] = useState(false)
@@ -62,32 +63,35 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
     }
   }, [])
 
-  // 目录变化时（包括全局模式），重新拉取该目录的 PTY 会话
-  const prevDirectoryRef = useRef<string | undefined>(undefined)
-  const hasRestoredDirectoryRef = useRef(false)
+  // scope 变化时（包括 server、workspace、directory），重新拉取对应 PTY 会话
+  const prevScopeKeyRef = useRef<string | undefined>(undefined)
+  const hasRestoredScopeRef = useRef(false)
   const restoreRequestIdRef = useRef(0)
   useEffect(() => {
-    // 目录没变就不重复拉取
-    if (hasRestoredDirectoryRef.current && prevDirectoryRef.current === normalizedDirectory) return
-    hasRestoredDirectoryRef.current = true
-    prevDirectoryRef.current = normalizedDirectory
+    const scopeKey = apiScopeKey(getTerminalScope())
+    if (hasRestoredScopeRef.current && prevScopeKeyRef.current === scopeKey) return
+    hasRestoredScopeRef.current = true
+    prevScopeKeyRef.current = scopeKey
 
     const restoreSessions = async (requestId: number) => {
+      const scope = getTerminalScope()
+      const scopeKey = apiScopeKey(scope)
       try {
         setIsRestoring(true)
 
-        // 拉取新目录下的 PTY 会话
-        const sessions = await listPtySessions(normalizedDirectory)
+        const sessions = await listPtySessions(scope)
         if (restoreRequestIdRef.current !== requestId) return
-        logger.log('[BottomPanel] PTY sessions for', normalizedDirectory, ':', sessions)
+        logger.log('[BottomPanel] PTY sessions for scope', scopeKey, ':', sessions)
 
         layoutStore.syncTerminalSessions(
           normalizedDirectory,
           sessions.map(pty => ({
             id: pty.id,
+            scopeKey,
             title: pty.title || 'Terminal',
             status: pty.status === 'running' ? 'connecting' : 'exited',
           })),
+          scopeKey,
         )
       } catch (error) {
         uiErrorHandler('restore terminal sessions', error)
@@ -100,18 +104,22 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
 
     void restoreSessions(++restoreRequestIdRef.current)
     return serverStore.onServerChange(() => {
+      const nextScopeKey = apiScopeKey(getTerminalScope())
+      prevScopeKeyRef.current = nextScopeKey
       void restoreSessions(++restoreRequestIdRef.current)
     })
-  }, [normalizedDirectory])
+  }, [getTerminalScope, normalizedDirectory])
 
   // 创建新终端
   const handleNewTerminal = useCallback(async () => {
     try {
-      logger.log('[BottomPanel] Creating PTY session, directory:', normalizedDirectory)
-      const pty = await createPtySession({ cwd: normalizedDirectory }, normalizedDirectory)
+      const scope = getTerminalScope()
+      logger.log('[BottomPanel] Creating PTY session for scope:', apiScopeKey(scope))
+      const pty = await createPtySession({ cwd: normalizedDirectory }, scope)
       logger.log('[BottomPanel] PTY created:', pty)
       const tab: TerminalTab = {
         id: pty.id,
+        scopeKey: apiScopeKey(scope),
         title: pty.title || 'Terminal',
         status: 'connecting',
       }
@@ -119,18 +127,17 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
     } catch (error) {
       uiErrorHandler('create terminal', error)
     }
-  }, [normalizedDirectory])
+  }, [getTerminalScope, normalizedDirectory])
 
-  // 关闭终端
   const handleCloseTerminal = useCallback(
     async (ptyId: string) => {
       try {
-        await removePtySession(ptyId, normalizedDirectory)
+        await removePtySession(ptyId, getTerminalScope())
       } catch {
         // ignore - may already be closed
       }
     },
-    [normalizedDirectory],
+    [getTerminalScope],
   )
 
   // 渲染内容
@@ -164,7 +171,11 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
         <>
           {activeTab.type === 'status' ? (
             <Suspense fallback={<PanelFallback />}>
-              <SessionStatusPanel sessionId={sessionId} directory={normalizedDirectory} active={activeTab.type === 'status'} />
+              <SessionStatusPanel
+                sessionId={sessionId}
+                directory={normalizedDirectory}
+                active={activeTab.type === 'status'}
+              />
             </Suspense>
           ) : null}
 
@@ -199,7 +210,7 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
 
           {activeTab.type === 'terminal' ? (
             <Suspense fallback={<PanelFallback />}>
-              <TerminalContent activeTab={activeTab} directory={directory} />
+              <TerminalContent activeTab={activeTab} apiScope={getTerminalScope()} />
             </Suspense>
           ) : null}
 
@@ -223,7 +234,7 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
         </>
       )
     },
-    [isRestoring, handleNewTerminal, directory, normalizedDirectory, sessionId, isPanelResizing, t],
+    [isRestoring, handleNewTerminal, getTerminalScope, normalizedDirectory, sessionId, isPanelResizing, t],
   )
 
   return (
@@ -240,6 +251,7 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
       <PanelContainer
         position="bottom"
         directory={normalizedDirectory}
+        terminalApiScope={getTerminalScope()}
         onNewTerminal={handleNewTerminal}
         onCloseTerminal={handleCloseTerminal}
       >
@@ -255,19 +267,22 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
 
 interface TerminalContentProps {
   activeTab: PanelTab
-  directory?: string
+  apiScope: ApiScope
 }
 
-const TerminalContent = memo(function TerminalContent({ activeTab, directory }: TerminalContentProps) {
+const TerminalContent = memo(function TerminalContent({ activeTab, apiScope }: TerminalContentProps) {
   const { panelTabs } = useLayoutStore()
+  const scopeKey = apiScopeKey(apiScope)
 
-  // 获取所有 bottom 位置的 terminal tabs
-  const terminalTabs = panelTabs.filter(t => t.position === 'bottom' && t.type === 'terminal')
+  // 获取当前 scope 的 bottom terminal tabs
+  const terminalTabs = panelTabs.filter(
+    tab => tab.position === 'bottom' && tab.type === 'terminal' && tab.scopeKey === scopeKey,
+  )
 
   return (
     <>
       {terminalTabs.map(tab => (
-        <Terminal key={tab.id} ptyId={tab.id} directory={directory} isActive={tab.id === activeTab.id} />
+        <Terminal key={`${scopeKey}:${tab.id}`} ptyId={tab.id} apiScope={apiScope} isActive={tab.id === activeTab.id} />
       ))}
     </>
   )

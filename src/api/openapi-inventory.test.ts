@@ -23,7 +23,7 @@ describe('NewWeb API call inventory', () => {
       method: 'GET',
       path: '/pty/{ptyID}/connect',
       query: {
-        raw: ['auth_token', 'cursor', 'directory'],
+        raw: ['cursor', 'ticket'],
         middleware: ['auth_token'],
       },
     })

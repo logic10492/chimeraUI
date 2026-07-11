@@ -13,6 +13,7 @@
 
 import { useCallback, useSyncExternalStore } from 'react'
 import type { SessionStatus, SessionStatusMap } from '../types/api/session'
+import { serverStore } from './serverStore'
 
 // ============================================
 // Types
@@ -30,6 +31,8 @@ export interface ActiveSessionEntry {
   status: SessionStatus
   title?: string
   directory?: string
+  serverID?: string
+  workspaceID?: string
   /** session 当前等待的用户操作 */
   pendingAction?: {
     type: 'permission' | 'question'
@@ -37,10 +40,12 @@ export interface ActiveSessionEntry {
   }
 }
 
-interface SessionMetaEntry {
+export interface SessionMetaEntry {
   sessionId: string
   title?: string
   directory?: string
+  serverID?: string
+  workspaceID?: string
 }
 
 interface ActiveSessionState {
@@ -48,6 +53,7 @@ interface ActiveSessionState {
   initialized: boolean
 }
 
+type SessionMeta = Omit<SessionMetaEntry, 'sessionId' | 'serverID'> & { serverID: string }
 type Subscriber = () => void
 
 // ============================================
@@ -61,8 +67,8 @@ class ActiveSessionStore {
   }
   private subscribers = new Set<Subscriber>()
 
-  // session 元信息缓存（title, directory）
-  private sessionMeta = new Map<string, { title?: string; directory?: string }>()
+  // session 元信息缓存（sessionID → serverID → metadata）
+  private sessionMeta = new Map<string, Map<string, SessionMeta>>()
 
   // 未回复的 permission/question 请求 — requestId → PendingRequest
   private pendingRequests = new Map<string, PendingRequest>()
@@ -87,10 +93,11 @@ class ActiveSessionStore {
   }
 
   private recomputeDerived() {
+    const activeServerID = serverStore.getActiveServerId()
     const entries = Object.entries(this.state.statusMap)
       .filter(([, status]) => status.type === 'busy' || status.type === 'retry')
       .map(([sessionId, status]) => {
-        const meta = this.sessionMeta.get(sessionId)
+        const meta = this.sessionMeta.get(sessionId)?.get(activeServerID)
         // 从自身 pendingRequests 查 pending action
         const pending = this.findPendingForSession(sessionId)
         return {
@@ -98,6 +105,8 @@ class ActiveSessionStore {
           status,
           title: meta?.title,
           directory: meta?.directory,
+          serverID: meta?.serverID,
+          workspaceID: meta?.workspaceID,
           pendingAction: pending ? { type: pending.type, description: pending.description } : undefined,
         } as ActiveSessionEntry
       })
@@ -292,7 +301,7 @@ class ActiveSessionStore {
     this.notify()
   }
 
-  removeSession(sessionId: string) {
+  removeSession(sessionId: string, serverID = serverStore.getActiveServerId()) {
     let changed = false
     let nextMap = this.state.statusMap
 
@@ -309,7 +318,11 @@ class ActiveSessionStore {
     }
 
     if (this.deferredIdleSessions.delete(sessionId)) changed = true
-    if (this.sessionMeta.delete(sessionId)) changed = true
+    const metadataByServer = this.sessionMeta.get(sessionId)
+    if (metadataByServer?.delete(serverID)) {
+      if (metadataByServer.size === 0) this.sessionMeta.delete(sessionId)
+      changed = true
+    }
 
     if (!changed) return
     this.state = { ...this.state, statusMap: nextMap }
@@ -320,12 +333,25 @@ class ActiveSessionStore {
   // Session 元信息管理
   // ============================================
 
-  setSessionMeta(sessionId: string, title?: string, directory?: string) {
-    const existing = this.sessionMeta.get(sessionId)
-    const newTitle = title ?? existing?.title
-    const newDir = directory ?? existing?.directory
-    if (newTitle !== existing?.title || newDir !== existing?.directory) {
-      this.sessionMeta.set(sessionId, { title: newTitle, directory: newDir })
+  setSessionMeta(sessionId: string, title?: string, directory?: string, serverID?: string, workspaceID?: string) {
+    const scopedServerID = serverID ?? serverStore.getActiveServerId()
+    const metadataByServer = this.sessionMeta.get(sessionId) ?? new Map<string, SessionMeta>()
+    const existing = metadataByServer.get(scopedServerID)
+    const replaceScope = serverID !== undefined
+    const next = {
+      title: title ?? existing?.title,
+      directory: replaceScope ? directory : (directory ?? existing?.directory),
+      serverID: scopedServerID,
+      workspaceID: replaceScope ? workspaceID : (workspaceID ?? existing?.workspaceID),
+    }
+    if (
+      next.title !== existing?.title ||
+      next.directory !== existing?.directory ||
+      next.serverID !== existing?.serverID ||
+      next.workspaceID !== existing?.workspaceID
+    ) {
+      metadataByServer.set(scopedServerID, next)
+      this.sessionMeta.set(sessionId, metadataByServer)
       this.notify()
     }
   }
@@ -334,12 +360,25 @@ class ActiveSessionStore {
     let changed = false
 
     for (const entry of entries) {
-      const existing = this.sessionMeta.get(entry.sessionId)
-      const newTitle = entry.title ?? existing?.title
-      const newDir = entry.directory ?? existing?.directory
+      const scopedServerID = entry.serverID ?? serverStore.getActiveServerId()
+      const metadataByServer = this.sessionMeta.get(entry.sessionId) ?? new Map<string, SessionMeta>()
+      const existing = metadataByServer.get(scopedServerID)
+      const replaceScope = entry.serverID !== undefined
+      const next = {
+        title: entry.title ?? existing?.title,
+        directory: replaceScope ? entry.directory : (entry.directory ?? existing?.directory),
+        serverID: scopedServerID,
+        workspaceID: replaceScope ? entry.workspaceID : (entry.workspaceID ?? existing?.workspaceID),
+      }
 
-      if (newTitle !== existing?.title || newDir !== existing?.directory) {
-        this.sessionMeta.set(entry.sessionId, { title: newTitle, directory: newDir })
+      if (
+        next.title !== existing?.title ||
+        next.directory !== existing?.directory ||
+        next.serverID !== existing?.serverID ||
+        next.workspaceID !== existing?.workspaceID
+      ) {
+        metadataByServer.set(scopedServerID, next)
+        this.sessionMeta.set(entry.sessionId, metadataByServer)
         changed = true
       }
     }
@@ -349,8 +388,16 @@ class ActiveSessionStore {
     }
   }
 
-  getSessionMeta(sessionId: string) {
-    return this.sessionMeta.get(sessionId)
+  getSessionMeta(sessionId: string, serverID?: string) {
+    const metadataByServer = this.sessionMeta.get(sessionId)
+    if (!metadataByServer) return undefined
+    if (serverID) return metadataByServer.get(serverID)
+    if (metadataByServer.size === 1) return metadataByServer.values().next().value
+    return undefined
+  }
+
+  getSessionMetaServerIDs(sessionId: string): string[] {
+    return [...(this.sessionMeta.get(sessionId)?.keys() ?? [])]
   }
 
   getBusySessions(): ActiveSessionEntry[] {

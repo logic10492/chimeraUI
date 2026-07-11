@@ -4,7 +4,7 @@
 // ============================================
 
 import { getSDKClient, unwrap } from './sdk'
-import { formatPathForApi } from '../utils/directoryUtils'
+import { apiScopeQuery, resolveSessionApiScope, type ApiScope, type ApiScopeInput } from './scope'
 import type {
   ApiMessageWithParts,
   AgentPartInput,
@@ -53,14 +53,14 @@ function isAgentUserContentPart(part: UserContentSource['parts'][number]): part 
 export async function getSessionMessages(
   sessionId: string,
   limit = 100,
-  directory?: string,
+  input?: ApiScopeInput,
   options?: { before?: string },
 ): Promise<ApiMessageWithParts[]> {
-  const sdk = getSDKClient()
+  const scope = resolveSessionApiScope(sessionId, input)
   return unwrap<ApiMessageWithParts[]>(
-    await sdk.session.messages({
+    await getSDKClient(scope).session.messages({
       sessionID: sessionId,
-      directory: formatPathForApi(directory),
+      ...apiScopeQuery(scope),
       limit,
       before: options?.before,
     }),
@@ -70,8 +70,8 @@ export async function getSessionMessages(
 /**
  * 获取 session 的消息数量
  */
-export async function getSessionMessageCount(sessionId: string): Promise<number> {
-  const messages = await getSessionMessages(sessionId, 0)
+export async function getSessionMessageCount(sessionId: string, input?: ApiScopeInput): Promise<number> {
+  const messages = await getSessionMessages(sessionId, 0, input)
   return messages.length
 }
 
@@ -165,9 +165,8 @@ function toFileUrl(path: string): string {
 /**
  * 构建 SDK 发送消息所需的参数
  */
-function buildPromptParams(params: SendMessageParams): PromptParams {
-  const { sessionId, text, attachments, model, agent, variant, directory } = params
-
+function buildPromptParams(params: SendMessageParams, scope: ApiScope): PromptParams {
+  const { sessionId, text, attachments, model, agent, variant } = params
   const parts: NonNullable<PromptParams['parts']> = []
 
   // 文本 part
@@ -222,7 +221,7 @@ function buildPromptParams(params: SendMessageParams): PromptParams {
 
   return {
     sessionID: sessionId,
-    directory: formatPathForApi(directory),
+    ...apiScopeQuery(scope),
     parts,
     model,
     agent,
@@ -234,16 +233,16 @@ function buildPromptParams(params: SendMessageParams): PromptParams {
  * 同步发送消息（等待完成）
  */
 export async function sendMessage(params: SendMessageParams): Promise<SendMessageResponse> {
-  const sdk = getSDKClient()
-  return unwrap<SendMessageResponse>(await sdk.session.prompt(buildPromptParams(params)))
+  const scope = resolveSessionApiScope(params.sessionId, params.apiScope ?? params.directory)
+  return unwrap<SendMessageResponse>(await getSDKClient(scope).session.prompt(buildPromptParams(params, scope)))
 }
 
 /**
  * 异步发送消息 — 立即返回，AI 响应通过 SSE 推送
  */
 export async function sendMessageAsync(params: SendMessageParams): Promise<void> {
-  const sdk = getSDKClient()
-  unwrap(await sdk.session.promptAsync(buildPromptParams(params)))
+  const scope = resolveSessionApiScope(params.sessionId, params.apiScope ?? params.directory)
+  unwrap(await getSDKClient(scope).session.promptAsync(buildPromptParams(params, scope)))
 }
 
 /**
@@ -253,14 +252,14 @@ export async function getPartOutput(
   sessionId: string,
   messageId: string,
   partId: string,
-  directory?: string,
+  input?: ApiScopeInput,
 ): Promise<{ output?: string; error?: string; attachments?: ApiFilePart[] } | null> {
-  const sdk = getSDKClient()
+  const scope = resolveSessionApiScope(sessionId, input)
   const message = unwrap<ApiMessageWithParts>(
-    await sdk.session.message({
+    await getSDKClient(scope).session.message({
       sessionID: sessionId,
       messageID: messageId,
-      directory: formatPathForApi(directory),
+      ...apiScopeQuery(scope),
     }),
   )
   const part = message.parts.find(item => item.id === partId)

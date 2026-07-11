@@ -816,18 +816,21 @@
       "title": "PTY connect-ticket migration",
       "classification": "reuse",
       "phase": 2,
-      "status": { "server": "existing", "ui": "deferred" },
+      "status": { "server": "existing", "ui": "implemented" },
       "operations": [
         {
           "operationId": "pty.connectToken",
           "method": "POST",
           "path": "/pty/{ptyID}/connect-token",
           "transport": "sdk",
-          "currentlyUsed": false
+          "currentlyUsed": true
         }
       ],
-      "closure": { "files": [], "tests": [] },
-      "notes": "Explicitly Phase 2, not Phase 0; the server operation already exists and only the NewWeb migration is deferred."
+      "closure": {
+        "files": ["src/api/pty.ts", "src/api/ptyBridge.ts", "src/components/Terminal.tsx"],
+        "tests": ["src/api/pty.test.ts", "src/api/ptyBridge.test.ts"]
+      },
+      "notes": "Phase 2 migration now mints a short-lived browser ticket before WebSocket connect; Tauri keeps header-capable bridge auth."
     }
   ]
 }

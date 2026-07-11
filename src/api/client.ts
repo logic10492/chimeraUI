@@ -23,6 +23,7 @@ function requireArray<T = unknown>(value: unknown, message: string): T[] {
 
 // Re-export all types
 export * from './types'
+export * from './scope'
 
 // Re-export from Attachment feature
 export { fromFilePart, fromAgentPart } from '../features/attachment'
@@ -76,7 +77,8 @@ export async function getActiveModels(directory?: string): Promise<ModelInfo[]> 
           id: modelId,
           name: typeof model.name === 'string' ? model.name : modelId,
           providerId: typeof provider.id === 'string' ? provider.id : '',
-          providerName: typeof provider.name === 'string' ? provider.name : typeof provider.id === 'string' ? provider.id : '',
+          providerName:
+            typeof provider.name === 'string' ? provider.name : typeof provider.id === 'string' ? provider.id : '',
           family: typeof model.family === 'string' ? model.family : '',
           contextLimit: typeof limit.context === 'number' ? limit.context : 0,
           outputLimit: typeof limit.output === 'number' ? limit.output : 0,
@@ -102,7 +104,9 @@ export async function getDefaultModels(directory?: string): Promise<Record<strin
     'Invalid OpenCode providers response',
   )
   const defaults = requireRecord(data.default, 'Invalid OpenCode default model response')
-  return Object.fromEntries(Object.entries(defaults).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+  return Object.fromEntries(
+    Object.entries(defaults).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  )
 }
 
 export async function getProviderBalance(providerId: string, directory?: string): Promise<ProviderBalanceResult> {
@@ -128,7 +132,10 @@ export async function getCurrentProject(directory?: string): Promise<ApiProject>
  */
 export async function getProjects(directory?: string): Promise<ApiProject[]> {
   const sdk = getSDKClient()
-  return requireArray<ApiProject>(unwrap(await sdk.project.list({ directory: formatPathForApi(directory) })), 'Invalid OpenCode project list response')
+  return requireArray<ApiProject>(
+    unwrap(await sdk.project.list({ directory: formatPathForApi(directory) })),
+    'Invalid OpenCode project list response',
+  )
 }
 
 /**

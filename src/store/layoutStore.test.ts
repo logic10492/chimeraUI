@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LayoutStore } from './layoutStore'
 
 const STORAGE_KEY_PANEL_LAYOUT = 'opencode-panel-layout'
+const SCOPE_A = '["server-a","workspace","workspace-a"]'
+const SCOPE_B = '["server-b","workspace","workspace-b"]'
+const terminalStorageKey = (scopeKey: string, ptyId: string) => `${scopeKey}\u0000${ptyId}`
 
 describe('LayoutStore panel and terminal layout', () => {
   beforeEach(() => {
@@ -144,6 +147,58 @@ describe('LayoutStore panel and terminal layout', () => {
       rows: 24,
       cols: 80,
     })
+  })
+
+  it('isolates terminal layout and snapshots when PTY IDs collide across scopes', () => {
+    const store = new LayoutStore()
+    const snapshotA = { buffer: 'scope-a', scrollY: 1, cursor: 7, rows: 24, cols: 80 }
+    const snapshotB = { buffer: 'scope-b', scrollY: 2, cursor: 8, rows: 30, cols: 100 }
+
+    store.syncTerminalSessions('/same', [{ id: 'shared', scopeKey: SCOPE_A, title: 'A', status: 'connected' }], SCOPE_A)
+    store.updateTerminalSnapshot('shared', snapshotA, SCOPE_A)
+    store.moveTab('shared', 'right')
+
+    store.syncTerminalSessions('/same', [{ id: 'shared', scopeKey: SCOPE_B, title: 'B', status: 'connected' }], SCOPE_B)
+    expect(store.getTerminalTabs('bottom')).toEqual([expect.objectContaining({ id: 'shared', scopeKey: SCOPE_B })])
+    expect(store.getTerminalTabs('right')).toEqual([])
+    expect(store.getState().panelTabs.find(tab => tab.type === 'terminal')?.buffer).toBeUndefined()
+
+    store.updateTerminalSnapshot('shared', snapshotA, SCOPE_A)
+    expect(store.getState().panelTabs.find(tab => tab.type === 'terminal')?.buffer).toBeUndefined()
+    store.updateTerminalSnapshot('shared', snapshotB, SCOPE_B)
+
+    store.syncTerminalSessions('/same', [{ id: 'shared', scopeKey: SCOPE_A, title: 'A', status: 'connected' }], SCOPE_A)
+    expect(store.getTerminalTabs('right')).toEqual([expect.objectContaining({ id: 'shared', scopeKey: SCOPE_A })])
+    expect(store.getState().panelTabs.find(tab => tab.type === 'terminal')).toMatchObject(snapshotA)
+
+    store.syncTerminalSessions('/same', [{ id: 'shared', scopeKey: SCOPE_B, title: 'B', status: 'connected' }], SCOPE_B)
+    expect(store.getState().panelTabs.find(tab => tab.type === 'terminal')).toMatchObject(snapshotB)
+
+    const persisted = JSON.parse(localStorage.getItem('opencode-terminal-layout') ?? 'null')
+    expect(persisted.directories[SCOPE_A].sessions[terminalStorageKey(SCOPE_A, 'shared')]).toMatchObject(snapshotA)
+    expect(persisted.directories[SCOPE_B].sessions[terminalStorageKey(SCOPE_B, 'shared')]).toMatchObject(snapshotB)
+  })
+
+  it('replaces a colliding PTY from another scope without retaining transient state', () => {
+    const store = new LayoutStore()
+
+    store.addTerminalTab({ id: 'shared', scopeKey: SCOPE_A, title: 'A', status: 'connected' })
+    store.updateTerminalSnapshot('shared', { buffer: 'scope-a', scrollY: 1, cursor: 7, rows: 24, cols: 80 }, SCOPE_A)
+    store.updateTerminalCustomTitle('shared', 'Renamed A', SCOPE_A)
+
+    store.addTerminalTab({ id: 'shared', scopeKey: SCOPE_B, title: 'B', status: 'connecting' })
+
+    const terminals = store.getState().panelTabs.filter(tab => tab.type === 'terminal')
+    expect(terminals).toHaveLength(1)
+    expect(terminals[0]).toMatchObject({
+      id: 'shared',
+      ptyId: 'shared',
+      scopeKey: SCOPE_B,
+      title: 'B',
+      status: 'connecting',
+    })
+    expect(terminals[0].buffer).toBeUndefined()
+    expect(terminals[0].customTitle).toBeUndefined()
   })
 
   it('persists terminal clipboard interaction preferences', () => {

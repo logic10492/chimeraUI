@@ -169,11 +169,12 @@ function removePendingByRequestId<T extends { id: string }>(
 }
 
 async function fetchActiveScopeData(directories?: string[]) {
+  const serverID = serverStore.getActiveServerId()
   const scopes = directories && directories.length > 0 ? directories : [undefined]
   const results = await Promise.all(
     scopes.map(async directory => {
       const [statusMap, permissions, questions] = await Promise.all([
-        getSessionStatus(directory).catch(() => ({}) as SessionStatusMap),
+        getSessionStatus({ serverID, directory }).catch(() => ({}) as SessionStatusMap),
         getPendingPermissions(undefined, directory).catch(() => []),
         getPendingQuestions(undefined, directory).catch(() => []),
       ])
@@ -185,27 +186,27 @@ async function fetchActiveScopeData(directories?: string[]) {
   const mergedStatusMap: SessionStatusMap = {}
   const permissionMap = new Map<string, ApiPermissionRequest>()
   const questionMap = new Map<string, ApiQuestionRequest>()
-  const sessionMetaEntries: Array<{ sessionId: string; directory?: string }> = []
+  const sessionMetaEntries: Array<{ sessionId: string; directory?: string; serverID: string }> = []
 
   results.forEach(({ directory, statusMap, permissions, questions }) => {
     Object.assign(mergedStatusMap, statusMap)
 
     if (directory) {
       Object.keys(statusMap).forEach(sessionId => {
-        sessionMetaEntries.push({ sessionId, directory })
+        sessionMetaEntries.push({ sessionId, directory, serverID })
       })
     }
 
     permissions.forEach(permission => {
       if (directory) {
-        sessionMetaEntries.push({ sessionId: permission.sessionID, directory })
+        sessionMetaEntries.push({ sessionId: permission.sessionID, directory, serverID })
       }
       permissionMap.set(permission.id, permission)
     })
 
     questions.forEach(question => {
       if (directory) {
-        sessionMetaEntries.push({ sessionId: question.sessionID, directory })
+        sessionMetaEntries.push({ sessionId: question.sessionID, directory, serverID })
       }
       questionMap.set(question.id, question)
     })
@@ -324,7 +325,12 @@ export function useGlobalEvents(directories?: string[]) {
               ? !currentDirectories || currentDirectories.length === 0 || currentDirectories.includes(pending.directory)
               : pending.scopeKey === currentScopeKey
             if (!matchesScope) continue
-            activeSessionStore.addPendingRequest(pending.requestId, pending.sessionId, pending.type, pending.description)
+            activeSessionStore.addPendingRequest(
+              pending.requestId,
+              pending.sessionId,
+              pending.type,
+              pending.description,
+            )
           }
           activeSessionStore.setSessionMetaBulk(sessionMetaEntries)
         })
@@ -364,7 +370,8 @@ export function useGlobalEvents(directories?: string[]) {
     const approveGlobalPendingPermissions = () => {
       if (!autoApproveStore.approvePendingOnFullAuto || autoApproveStore.fullAutoMode !== 'global') return
 
-      const directoriesToFetch = directoriesRef.current && directoriesRef.current.length > 0 ? directoriesRef.current : [undefined]
+      const directoriesToFetch =
+        directoriesRef.current && directoriesRef.current.length > 0 ? directoriesRef.current : [undefined]
 
       void Promise.all(
         directoriesToFetch.map(async directory => {
@@ -438,7 +445,13 @@ export function useGlobalEvents(directories?: string[]) {
         }
 
         // 更新 session meta 供 active tab 使用
-        activeSessionStore.setSessionMeta(session.id, session.title, session.directory)
+        activeSessionStore.setSessionMeta(
+          session.id,
+          session.title,
+          session.directory,
+          serverStore.getActiveServerId(),
+          session.workspaceID,
+        )
 
         // 清理过期缓存
         cleanupExpired(pendingPermissions)
@@ -478,7 +491,13 @@ export function useGlobalEvents(directories?: string[]) {
 
       onSessionUpdated: session => {
         // 更新 session meta 供 active tab 使用
-        activeSessionStore.setSessionMeta(session.id, session.title, session.directory)
+        activeSessionStore.setSessionMeta(
+          session.id,
+          session.title,
+          session.directory,
+          serverStore.getActiveServerId(),
+          session.workspaceID,
+        )
         if (session.parentID) {
           childSessionStore.registerChildSession(session)
         }

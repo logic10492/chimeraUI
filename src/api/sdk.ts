@@ -10,6 +10,7 @@
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2/client'
 import { serverStore, makeBasicAuthHeader } from '../store/serverStore'
 import { isTauri } from '../utils/tauri'
+import { resolveApiScope, type ApiScopeInput } from './scope'
 
 // Tauri fetch 缓存
 let _tauriFetch: typeof globalThis.fetch | null = null
@@ -35,7 +36,11 @@ function createAbortError(message: string) {
   return new DOMException(message, 'AbortError')
 }
 
-async function trackedFetch(input: RequestInfo | URL, init: RequestInit | undefined, generation: number): Promise<Response> {
+async function trackedFetch(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  generation: number,
+): Promise<Response> {
   const controller = new AbortController()
   const externalSignal = init?.signal
   const abortFromExternal = () => controller.abort(externalSignal?.reason)
@@ -71,20 +76,18 @@ export function abortInFlightApiRequests(reason = 'Server endpoint changed'): vo
   _apiRequestControllers.clear()
 }
 
-// Client 缓存：按 "baseUrl + authHash" 缓存实例，避免重复创建
-let _cachedClient: OpencodeClient | null = null
-let _cachedKey = ''
+// Client 缓存：按 server identity + endpoint + auth 缓存实例，避免跨 server 复用
+const _cachedClients = new Map<string, OpencodeClient>()
 
-function buildCacheKey(): string {
-  const baseUrl = serverStore.getActiveBaseUrl()
-  const auth = serverStore.getActiveAuth()
+function buildCacheKey(serverID: string, baseUrl: string): string {
+  const auth = serverStore.getServerAuth(serverID)
   const authPart = auth?.password ? `${auth.username}:${auth.password}` : ''
-  return `${baseUrl}|${authPart}`
+  return `${serverID}|${baseUrl}|${authPart}`
 }
 
-function buildHeaders(): Record<string, string> {
+function buildHeaders(serverID: string): Record<string, string> {
   const headers: Record<string, string> = {}
-  const auth = serverStore.getActiveAuth()
+  const auth = serverStore.getServerAuth(serverID)
   if (auth?.password) {
     headers['Authorization'] = makeBasicAuthHeader(auth)
   }
@@ -95,45 +98,41 @@ function buildHeaders(): Record<string, string> {
  * 同步获取 SDK client（浏览器环境 or tauri fetch 已加载）
  * 如果 tauri fetch 还没加载完，先用原生 fetch
  */
-export function getSDKClient(): OpencodeClient {
-  const key = buildCacheKey()
-  if (_cachedClient && _cachedKey === key) {
-    return _cachedClient
-  }
+export function getSDKClient(input?: ApiScopeInput): OpencodeClient {
+  const scope = resolveApiScope(input)
+  const baseUrl = serverStore.getServerBaseUrl(scope.serverID)
+  const key = buildCacheKey(scope.serverID, baseUrl)
+  const cached = _cachedClients.get(key)
+  if (cached) return cached
 
-  const baseUrl = serverStore.getActiveBaseUrl()
-  const headers = buildHeaders()
   const generation = _apiRequestGeneration
-
-  _cachedClient = createOpencodeClient({
+  const client = createOpencodeClient({
     baseUrl,
-    headers,
-    fetch: (input, init) => trackedFetch(input, init, generation),
+    headers: buildHeaders(scope.serverID),
+    fetch: (request, init) => trackedFetch(request, init, generation),
   })
-  _cachedKey = key
-  return _cachedClient
+  _cachedClients.set(key, client)
+  return client
 }
 
 /**
  * 异步获取 SDK client（确保 tauri fetch 已加载）
  * 在应用初始化时应该先调一次这个
  */
-export async function getSDKClientAsync(): Promise<OpencodeClient> {
+export async function getSDKClientAsync(input?: ApiScopeInput): Promise<OpencodeClient> {
   if (isTauri()) {
     await getTauriFetch()
   }
   // 使 cache 失效以便用新的 tauri fetch 重建
-  _cachedClient = null
-  _cachedKey = ''
-  return getSDKClient()
+  _cachedClients.clear()
+  return getSDKClient(input)
 }
 
 /**
- * 强制重建 client（服务器切换时调用）
+ * 强制重建 client（服务器配置变化时调用）
  */
 export function invalidateSDKClient(): void {
-  _cachedClient = null
-  _cachedKey = ''
+  _cachedClients.clear()
 }
 
 /**

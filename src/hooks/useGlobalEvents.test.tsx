@@ -33,7 +33,9 @@ const {
   clearPaneSessionMock,
 } = vi.hoisted(() => ({
   subscribeToEventsMock: vi.fn(),
-  getSessionStatusMock: vi.fn<(directory?: string) => Promise<Record<string, { type: string }>>>(() => Promise.resolve({})),
+  getSessionStatusMock: vi.fn<
+    (scope?: { serverID: string; directory?: string; workspace?: string }) => Promise<Record<string, { type: string }>>
+  >(() => Promise.resolve({})),
   getPendingPermissionsMock: vi.fn(() =>
     Promise.resolve([] as Array<{ id: string; sessionID: string; permission: string; patterns?: string[] }>),
   ),
@@ -274,8 +276,8 @@ describe('useGlobalEvents', () => {
     const statusDeferreds = new Map<string, ReturnType<typeof createDeferred<Record<string, { type: string }>>>>()
     getPendingPermissionsMock.mockResolvedValue([])
     getPendingQuestionsMock.mockResolvedValue([])
-    getSessionStatusMock.mockImplementation(directory => {
-      const key = directory || 'root'
+    getSessionStatusMock.mockImplementation(scope => {
+      const key = scope?.directory || 'root'
       const deferred = createDeferred<Record<string, { type: string }>>()
       statusDeferreds.set(key, deferred)
       return deferred.promise
@@ -285,11 +287,11 @@ describe('useGlobalEvents', () => {
       initialProps: { directories: ['/one'] as string[] | undefined },
     })
 
-    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith('/one'))
+    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith({ serverID: 'local', directory: '/one' }))
 
     rerender({ directories: ['/two'] })
 
-    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith('/two'))
+    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith({ serverID: 'local', directory: '/two' }))
 
     statusDeferreds.get('/two')?.resolve({ 'new-session': { type: 'busy' } })
 
@@ -320,7 +322,9 @@ describe('useGlobalEvents', () => {
 
     renderHook(() => useGlobalEvents(['/workspace']))
 
-    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith('/workspace'))
+    await waitFor(() =>
+      expect(getSessionStatusMock).toHaveBeenCalledWith({ serverID: 'local', directory: '/workspace' }),
+    )
     await waitFor(() => expect(callbacks).toBeDefined())
 
     callbacks!.onPermissionAsked?.({
@@ -363,8 +367,8 @@ describe('useGlobalEvents', () => {
       if (sessionId === 'question-session') return { title: 'Question Session', directory: '/two' }
       return { title: 'Session', directory: '/workspace' }
     })
-    getSessionStatusMock.mockImplementation(directory => {
-      const key = directory || 'root'
+    getSessionStatusMock.mockImplementation(scope => {
+      const key = scope?.directory || 'root'
       const deferred = createDeferred<Record<string, { type: string }>>()
       statusDeferreds.set(key, deferred)
       return deferred.promise
@@ -376,7 +380,7 @@ describe('useGlobalEvents', () => {
       initialProps: { directories: ['/one'] as string[] | undefined },
     })
 
-    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith('/one'))
+    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith({ serverID: 'local', directory: '/one' }))
     await waitFor(() => expect(callbacks).toBeDefined())
 
     callbacks!.onPermissionAsked?.({
@@ -388,7 +392,7 @@ describe('useGlobalEvents', () => {
 
     rerender({ directories: ['/two'] })
 
-    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith('/two'))
+    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith({ serverID: 'local', directory: '/two' }))
 
     callbacks!.onQuestionAsked?.({
       id: 'question-1',

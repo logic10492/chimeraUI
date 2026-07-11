@@ -1,21 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { createOpencodeClientMock, getActiveBaseUrlMock, getActiveAuthMock, isTauriMock } = vi.hoisted(() => ({
-  createOpencodeClientMock: vi.fn((config: unknown) => ({ config })),
-  getActiveBaseUrlMock: vi.fn(() => 'http://127.0.0.1:4096'),
-  getActiveAuthMock: vi.fn(() => null),
-  isTauriMock: vi.fn(() => false),
-}))
+const { createOpencodeClientMock, getActiveServerIdMock, getServerAuthMock, getServerBaseUrlMock, isTauriMock } =
+  vi.hoisted(() => ({
+    createOpencodeClientMock: vi.fn((config: unknown) => ({ config })),
+    getActiveServerIdMock: vi.fn(() => 'local'),
+    getServerAuthMock: vi.fn<(serverID: string) => { username: string; password: string } | null>(() => null),
+    getServerBaseUrlMock: vi.fn((serverID: string) => `http://${serverID}.test`),
+    isTauriMock: vi.fn(() => false),
+  }))
 
 vi.mock('@opencode-ai/sdk/v2/client', () => ({
   createOpencodeClient: createOpencodeClientMock,
 }))
 
 vi.mock('../store/serverStore', () => ({
-  makeBasicAuthHeader: vi.fn(() => 'Basic token'),
+  makeBasicAuthHeader: vi.fn(
+    (auth: { username: string; password: string }) => `Basic ${auth.username}:${auth.password}`,
+  ),
   serverStore: {
-    getActiveBaseUrl: getActiveBaseUrlMock,
-    getActiveAuth: getActiveAuthMock,
+    getActiveServerId: getActiveServerIdMock,
+    getServerAuth: getServerAuthMock,
+    getServerBaseUrl: getServerBaseUrlMock,
   },
 }))
 
@@ -25,6 +30,8 @@ vi.mock('../utils/tauri', () => ({
 
 type MockClient = {
   config: {
+    baseUrl: string
+    headers: Record<string, string>
     fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   }
 }
@@ -32,12 +39,33 @@ type MockClient = {
 describe('sdk request lifecycle', () => {
   beforeEach(async () => {
     vi.restoreAllMocks()
-    getActiveBaseUrlMock.mockReturnValue('http://127.0.0.1:4096')
-    getActiveAuthMock.mockReturnValue(null)
+    vi.clearAllMocks()
+    getActiveServerIdMock.mockReturnValue('local')
+    getServerBaseUrlMock.mockImplementation(serverID => `http://${serverID}.test`)
+    getServerAuthMock.mockReturnValue(null)
     isTauriMock.mockReturnValue(false)
     const { abortInFlightApiRequests, invalidateSDKClient } = await import('./sdk')
     abortInFlightApiRequests('reset test state')
     invalidateSDKClient()
+  })
+
+  it('isolates cached clients by explicit server even when directories match', async () => {
+    const { getSDKClient } = await import('./sdk')
+    getServerAuthMock.mockImplementation(serverID =>
+      serverID === 'server-a' ? { username: 'a', password: 'secret-a' } : { username: 'b', password: 'secret-b' },
+    )
+
+    const serverA = getSDKClient({ serverID: 'server-a', directory: '/same' }) as unknown as MockClient
+    const serverB = getSDKClient({ serverID: 'server-b', directory: '/same' }) as unknown as MockClient
+
+    expect(serverA).not.toBe(serverB)
+    expect(serverA.config.baseUrl).toBe('http://server-a.test')
+    expect(serverB.config.baseUrl).toBe('http://server-b.test')
+    expect(serverA.config.headers.Authorization).toBe('Basic a:secret-a')
+    expect(serverB.config.headers.Authorization).toBe('Basic b:secret-b')
+
+    getActiveServerIdMock.mockReturnValue('server-b')
+    expect(getSDKClient({ serverID: 'server-a', directory: '/same' })).toBe(serverA)
   })
 
   it('aborts in-flight SDK requests when the server endpoint changes', async () => {
@@ -52,7 +80,7 @@ describe('sdk request lifecycle', () => {
     })
 
     const client = getSDKClient() as unknown as MockClient
-    const request = client.config.fetch('http://127.0.0.1:4096/project/current')
+    const request = client.config.fetch('http://local.test/project/current')
 
     abortInFlightApiRequests('Server endpoint changed')
 
@@ -67,7 +95,7 @@ describe('sdk request lifecycle', () => {
 
     abortInFlightApiRequests('Server endpoint changed')
 
-    await expect(client.config.fetch('http://127.0.0.1:4096/project/current')).rejects.toMatchObject({
+    await expect(client.config.fetch('http://local.test/project/current')).rejects.toMatchObject({
       name: 'AbortError',
     })
     expect(fetchSpy).not.toHaveBeenCalled()
