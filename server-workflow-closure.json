@@ -1,0 +1,833 @@
+{
+  "schemaVersion": 2,
+  "authority": {
+    "source": "current-chimera-server-openapi-sdk",
+    "openapi": { "package": "packages/chimera", "command": "bun dev generate" },
+    "currentlyUsedInventory": "api-call-inventory.json",
+    "excludedAuthorities": ["tui-inventory", "second-server-contract"]
+  },
+  "phase0": {
+    "serverFixes": ["pty-connect-query-openapi-parity"],
+    "serverAdds": [],
+    "statement": "PTY connect query/OpenAPI parity is the only Phase 0 server fix; there are zero additional Phase 0 server fixes and zero Phase 0 server adds."
+  },
+  "workflows": [
+    {
+      "id": "bootstrap-discovery",
+      "title": "Project, config, provider catalog, model, agent, skill, and command discovery",
+      "classification": "reuse",
+      "phase": 0,
+      "status": { "server": "existing", "ui": "implemented" },
+      "operations": [
+        {
+          "operationId": "project.list",
+          "method": "GET",
+          "path": "/project",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "project.current",
+          "method": "GET",
+          "path": "/project/current",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "project.initGit",
+          "method": "POST",
+          "path": "/project/git/init",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "project.update",
+          "method": "PATCH",
+          "path": "/project/{projectID}",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "global.config.get",
+          "method": "GET",
+          "path": "/global/config",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "global.config.update",
+          "method": "PATCH",
+          "path": "/global/config",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        { "operationId": "config.get", "method": "GET", "path": "/config", "transport": "sdk", "currentlyUsed": true },
+        {
+          "operationId": "config.update",
+          "method": "PATCH",
+          "path": "/config",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "config.providers",
+          "method": "GET",
+          "path": "/config/providers",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "config.modelSelection.get",
+          "method": "GET",
+          "path": "/config/model-selection",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "config.modelSelection.update",
+          "method": "PATCH",
+          "path": "/config/model-selection",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        { "operationId": "app.agents", "method": "GET", "path": "/agent", "transport": "sdk", "currentlyUsed": true },
+        { "operationId": "app.skills", "method": "GET", "path": "/skill", "transport": "sdk", "currentlyUsed": true },
+        {
+          "operationId": "command.list",
+          "method": "GET",
+          "path": "/command",
+          "transport": "sdk",
+          "currentlyUsed": true
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "Existing server discovery operations; model-selection UI can adopt the existing operations without a server gap."
+    },
+    {
+      "id": "session-chat-core",
+      "title": "Session and chat core",
+      "classification": "reuse",
+      "phase": 0,
+      "status": { "server": "existing", "ui": "implemented" },
+      "operations": [
+        {
+          "operationId": "session.list",
+          "method": "GET",
+          "path": "/session",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.create",
+          "method": "POST",
+          "path": "/session",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.status",
+          "method": "GET",
+          "path": "/session/status",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.get",
+          "method": "GET",
+          "path": "/session/{sessionID}",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.delete",
+          "method": "DELETE",
+          "path": "/session/{sessionID}",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.update",
+          "method": "PATCH",
+          "path": "/session/{sessionID}",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.messages",
+          "method": "GET",
+          "path": "/session/{sessionID}/message",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.prompt",
+          "method": "POST",
+          "path": "/session/{sessionID}/message",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.message",
+          "method": "GET",
+          "path": "/session/{sessionID}/message/{messageID}",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.prompt_async",
+          "method": "POST",
+          "path": "/session/{sessionID}/prompt_async",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.command",
+          "method": "POST",
+          "path": "/session/{sessionID}/command",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.abort",
+          "method": "POST",
+          "path": "/session/{sessionID}/abort",
+          "transport": "sdk",
+          "currentlyUsed": true
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "Existing server and currently implemented NewWeb workflow."
+    },
+    {
+      "id": "interaction-history",
+      "title": "Permission, question, fork, history, compact, share, todo, work brief, and diff",
+      "classification": "reuse",
+      "phase": 0,
+      "status": { "server": "existing", "ui": "implemented" },
+      "operations": [
+        {
+          "operationId": "permission.list",
+          "method": "GET",
+          "path": "/permission",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "permission.reply",
+          "method": "POST",
+          "path": "/permission/{requestID}/reply",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "permission.respond",
+          "method": "POST",
+          "path": "/session/{sessionID}/permissions/{permissionID}",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "question.list",
+          "method": "GET",
+          "path": "/question",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "question.reply",
+          "method": "POST",
+          "path": "/question/{requestID}/reply",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "question.reject",
+          "method": "POST",
+          "path": "/question/{requestID}/reject",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.fork",
+          "method": "POST",
+          "path": "/session/{sessionID}/fork",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.revert",
+          "method": "POST",
+          "path": "/session/{sessionID}/revert",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.unrevert",
+          "method": "POST",
+          "path": "/session/{sessionID}/unrevert",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.summarize",
+          "method": "POST",
+          "path": "/session/{sessionID}/summarize",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.share",
+          "method": "POST",
+          "path": "/session/{sessionID}/share",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.unshare",
+          "method": "DELETE",
+          "path": "/session/{sessionID}/share",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.todo",
+          "method": "GET",
+          "path": "/session/{sessionID}/todo",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.workBrief",
+          "method": "GET",
+          "path": "/session/{sessionID}/work_brief",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.diff",
+          "method": "GET",
+          "path": "/session/{sessionID}/diff",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "session.children",
+          "method": "GET",
+          "path": "/session/{sessionID}/children",
+          "transport": "sdk",
+          "currentlyUsed": true
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "Existing server and currently implemented NewWeb interaction/history operations; summarize is the current compact workflow."
+    },
+    {
+      "id": "global-sse-events",
+      "title": "Global scoped SSE events",
+      "classification": "reuse",
+      "phase": 3,
+      "status": { "server": "existing", "ui": "implemented" },
+      "operations": [
+        {
+          "operationId": "global.event",
+          "method": "GET",
+          "path": "/global/event",
+          "transport": "sse",
+          "currentlyUsed": true
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "The SSE transport is implemented; Phase 3 client event handling remains separate from the missing overflow signal contract."
+    },
+    {
+      "id": "sse-overflow-gap-resync-signal",
+      "title": "Explicit SSE overflow gap and resync signal",
+      "classification": "add",
+      "phase": 3,
+      "status": { "server": "planned", "ui": "deferred" },
+      "operations": [],
+      "plannedContract": {
+        "seedOperationId": "global.event",
+        "transport": "sse",
+        "change": "explicit-overflow-gap-resync-signal"
+      },
+      "closure": { "files": [], "tests": [] },
+      "notes": "The current SSE contract has no explicit overflow gap/resync signal; this is a known Phase 3 server addition and does not affect Phase 0 server adds."
+    },
+    {
+      "id": "pty-crud",
+      "title": "PTY shells and CRUD",
+      "classification": "reuse",
+      "phase": 0,
+      "status": { "server": "existing", "ui": "implemented" },
+      "operations": [
+        {
+          "operationId": "pty.shells",
+          "method": "GET",
+          "path": "/pty/shells",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        { "operationId": "pty.list", "method": "GET", "path": "/pty", "transport": "sdk", "currentlyUsed": true },
+        { "operationId": "pty.create", "method": "POST", "path": "/pty", "transport": "sdk", "currentlyUsed": true },
+        {
+          "operationId": "pty.get",
+          "method": "GET",
+          "path": "/pty/{ptyID}",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "pty.update",
+          "method": "PUT",
+          "path": "/pty/{ptyID}",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "pty.remove",
+          "method": "DELETE",
+          "path": "/pty/{ptyID}",
+          "transport": "sdk",
+          "currentlyUsed": true
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "Existing server and currently implemented terminal workflow."
+    },
+    {
+      "id": "pty-connect-query-openapi-parity",
+      "title": "PTY connect query and OpenAPI parity",
+      "classification": "fix",
+      "phase": 0,
+      "status": { "server": "closed", "ui": "implemented" },
+      "operations": [
+        {
+          "operationId": "pty.connect",
+          "method": "GET",
+          "path": "/pty/{ptyID}/connect",
+          "transport": "websocket",
+          "currentlyUsed": true
+        }
+      ],
+      "closure": {
+        "files": [
+          "../chimera/src/server/routes/instance/httpapi/groups/pty.ts",
+          "../chimera/src/server/routes/instance/httpapi/handlers/pty.ts",
+          "../chimera/src/server/routes/instance/pty.ts",
+          "../sdk/js/src/v2/gen/sdk.gen.ts",
+          "../sdk/js/src/v2/gen/types.gen.ts",
+          "src/api/pty.ts"
+        ],
+        "tests": ["../chimera/test/server/httpapi-pty.test.ts", "src/api/pty.test.ts", "src/api/ptyBridge.test.ts"]
+      },
+      "notes": "Closed by the current modified Chimera server/OpenAPI/SDK and NewWeb PTY bridge files."
+    },
+    {
+      "id": "candidate-server-health-probing",
+      "title": "Candidate server health probing",
+      "classification": "reuse",
+      "phase": 0,
+      "status": { "server": "existing", "ui": "implemented" },
+      "operations": [
+        {
+          "operationId": "global.health",
+          "method": "GET",
+          "path": "/global/health",
+          "transport": "sdk",
+          "currentlyUsed": true
+        }
+      ],
+      "closure": { "files": ["src/api/health.ts", "src/store/serverStore.ts"], "tests": ["src/api/health.test.ts"] },
+      "notes": "The existing server operation is reused; candidate probing is closed by the current client-local adapter."
+    },
+    {
+      "id": "provider-auth-oauth-disconnect",
+      "title": "Provider onboarding, authentication, OAuth, and disconnect",
+      "classification": "reuse",
+      "phase": 2,
+      "status": { "server": "existing", "ui": "deferred" },
+      "operations": [
+        {
+          "operationId": "provider.list",
+          "method": "GET",
+          "path": "/provider",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "provider.auth",
+          "method": "GET",
+          "path": "/provider/auth",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "provider.oauth.authorize",
+          "method": "POST",
+          "path": "/provider/{providerID}/oauth/authorize",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "provider.oauth.callback",
+          "method": "POST",
+          "path": "/provider/{providerID}/oauth/callback",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "auth.set",
+          "method": "PUT",
+          "path": "/auth/{providerID}",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "auth.remove",
+          "method": "DELETE",
+          "path": "/auth/{providerID}",
+          "transport": "sdk",
+          "currentlyUsed": false
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "All required server operations already exist; Phase 2 is deferred NewWeb onboarding UI work, not a server gap."
+    },
+    {
+      "id": "mcp-connectivity",
+      "title": "MCP status, add, authentication, connect, and disconnect",
+      "classification": "reuse",
+      "phase": 0,
+      "status": { "server": "existing", "ui": "implemented" },
+      "operations": [
+        { "operationId": "mcp.status", "method": "GET", "path": "/mcp", "transport": "sdk", "currentlyUsed": true },
+        { "operationId": "mcp.add", "method": "POST", "path": "/mcp", "transport": "sdk", "currentlyUsed": true },
+        {
+          "operationId": "mcp.auth.start",
+          "method": "POST",
+          "path": "/mcp/{name}/auth",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "mcp.auth.remove",
+          "method": "DELETE",
+          "path": "/mcp/{name}/auth",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "mcp.auth.callback",
+          "method": "POST",
+          "path": "/mcp/{name}/auth/callback",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "mcp.auth.authenticate",
+          "method": "POST",
+          "path": "/mcp/{name}/auth/authenticate",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "mcp.connect",
+          "method": "POST",
+          "path": "/mcp/{name}/connect",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "mcp.disconnect",
+          "method": "POST",
+          "path": "/mcp/{name}/disconnect",
+          "transport": "sdk",
+          "currentlyUsed": true
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "Existing server and currently implemented NewWeb workflow."
+    },
+    {
+      "id": "file-context-search",
+      "title": "File-context text and file search",
+      "classification": "reuse",
+      "phase": 0,
+      "status": { "server": "existing", "ui": "implemented" },
+      "operations": [
+        { "operationId": "find.text", "method": "GET", "path": "/find", "transport": "sdk", "currentlyUsed": false },
+        {
+          "operationId": "find.files",
+          "method": "GET",
+          "path": "/find/file",
+          "transport": "sdk",
+          "currentlyUsed": true
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "Existing server text/file search operations; text search is available but not currently called by NewWeb."
+    },
+    {
+      "id": "workspace-symbol-search",
+      "title": "Workspace symbol search returns real results",
+      "classification": "fix",
+      "phase": 5,
+      "status": { "server": "planned", "ui": "deferred" },
+      "operations": [
+        {
+          "operationId": "find.symbols",
+          "method": "GET",
+          "path": "/find/symbol",
+          "transport": "sdk",
+          "currentlyUsed": true
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "The existing operation currently has a fixed-empty implementation; Phase 5 requires repairing that server behavior before treating workspace symbol search as reusable."
+    },
+    {
+      "id": "graph-workflows",
+      "title": "Graph status, search, symbols, files, nodes, and impact",
+      "classification": "reuse",
+      "phase": 5,
+      "status": { "server": "existing", "ui": "deferred" },
+      "operations": [
+        {
+          "operationId": "graph.status",
+          "method": "GET",
+          "path": "/graph/status",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "graph.search",
+          "method": "GET",
+          "path": "/graph/search",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "graph.node",
+          "method": "GET",
+          "path": "/graph/node/{nodeID}",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "graph.file.symbols",
+          "method": "GET",
+          "path": "/graph/file/symbols",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "graph.files",
+          "method": "GET",
+          "path": "/graph/files",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "graph.impact",
+          "method": "GET",
+          "path": "/graph/impact",
+          "transport": "sdk",
+          "currentlyUsed": false
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "The Graph server contract already exists; Phase 5 is deferred read-only UI work, not a server gap."
+    },
+    {
+      "id": "worktree-workflows",
+      "title": "Worktree workflows",
+      "classification": "reuse",
+      "phase": 0,
+      "status": { "server": "existing", "ui": "implemented" },
+      "operations": [
+        {
+          "operationId": "worktree.list",
+          "method": "GET",
+          "path": "/experimental/worktree",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "worktree.create",
+          "method": "POST",
+          "path": "/experimental/worktree",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "worktree.remove",
+          "method": "DELETE",
+          "path": "/experimental/worktree",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "worktree.reset",
+          "method": "POST",
+          "path": "/experimental/worktree/reset",
+          "transport": "sdk",
+          "currentlyUsed": true
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "Existing server and currently implemented NewWeb worktree workflow."
+    },
+    {
+      "id": "workspace-lifecycle",
+      "title": "Remote workspace lifecycle",
+      "classification": "reuse",
+      "phase": 2,
+      "status": { "server": "existing", "ui": "deferred" },
+      "operations": [
+        {
+          "operationId": "experimental.workspace.list",
+          "method": "GET",
+          "path": "/experimental/workspace",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "experimental.workspace.create",
+          "method": "POST",
+          "path": "/experimental/workspace",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "experimental.workspace.status",
+          "method": "GET",
+          "path": "/experimental/workspace/status",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "experimental.workspace.remove",
+          "method": "DELETE",
+          "path": "/experimental/workspace/{id}",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "experimental.workspace.warp",
+          "method": "POST",
+          "path": "/experimental/workspace/warp",
+          "transport": "sdk",
+          "currentlyUsed": false
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "The server lifecycle operations already exist; Phase 2 NewWeb workspace integration is deferred and is not a server gap."
+    },
+    {
+      "id": "vcs-file-lsp-formatter",
+      "title": "VCS, file, LSP, formatter, and diagnostics workflows",
+      "classification": "reuse",
+      "phase": 5,
+      "status": { "server": "existing", "ui": "implemented" },
+      "operations": [
+        { "operationId": "vcs.get", "method": "GET", "path": "/vcs", "transport": "sdk", "currentlyUsed": true },
+        {
+          "operationId": "vcs.status",
+          "method": "GET",
+          "path": "/vcs/status",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        { "operationId": "vcs.diff", "method": "GET", "path": "/vcs/diff", "transport": "sdk", "currentlyUsed": true },
+        {
+          "operationId": "vcs.diff.raw",
+          "method": "GET",
+          "path": "/vcs/diff/raw",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        {
+          "operationId": "vcs.apply",
+          "method": "POST",
+          "path": "/vcs/apply",
+          "transport": "sdk",
+          "currentlyUsed": false
+        },
+        { "operationId": "file.list", "method": "GET", "path": "/file", "transport": "sdk", "currentlyUsed": true },
+        {
+          "operationId": "file.read",
+          "method": "GET",
+          "path": "/file/content",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        {
+          "operationId": "file.status",
+          "method": "GET",
+          "path": "/file/status",
+          "transport": "sdk",
+          "currentlyUsed": true
+        },
+        { "operationId": "lsp.status", "method": "GET", "path": "/lsp", "transport": "sdk", "currentlyUsed": true },
+        {
+          "operationId": "formatter.status",
+          "method": "GET",
+          "path": "/formatter",
+          "transport": "sdk",
+          "currentlyUsed": true
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "The server family exists and several UI paths are implemented; Phase 5 adds Chimera-native visibility without requiring new server operations."
+    },
+    {
+      "id": "panes-and-layout",
+      "title": "Panes and layout state",
+      "classification": "client-local",
+      "phase": 4,
+      "status": { "server": "not-applicable", "ui": "implemented" },
+      "operations": [],
+      "closure": { "files": [], "tests": [] },
+      "notes": "Client-local state; no server operation or TUI authority is required."
+    },
+    {
+      "id": "browser-bridge",
+      "title": "Browser transport and platform bridge",
+      "classification": "client-local",
+      "phase": 0,
+      "status": { "server": "not-applicable", "ui": "implemented" },
+      "operations": [],
+      "closure": { "files": [], "tests": [] },
+      "notes": "Browser fetch/SSE/WebSocket adaptation remains client-local."
+    },
+    {
+      "id": "tauri-bridges",
+      "title": "Tauri desktop and mobile bridges",
+      "classification": "client-local",
+      "phase": 6,
+      "status": { "server": "not-applicable", "ui": "implemented" },
+      "operations": [],
+      "closure": { "files": [], "tests": [] },
+      "notes": "Platform bridge behavior remains client-local; Phase 6 covers additional hardening."
+    },
+    {
+      "id": "pty-connect-ticket-migration",
+      "title": "PTY connect-ticket migration",
+      "classification": "reuse",
+      "phase": 2,
+      "status": { "server": "existing", "ui": "deferred" },
+      "operations": [
+        {
+          "operationId": "pty.connectToken",
+          "method": "POST",
+          "path": "/pty/{ptyID}/connect-token",
+          "transport": "sdk",
+          "currentlyUsed": false
+        }
+      ],
+      "closure": { "files": [], "tests": [] },
+      "notes": "Explicitly Phase 2, not Phase 0; the server operation already exists and only the NewWeb migration is deferred."
+    }
+  ]
+}

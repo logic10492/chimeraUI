@@ -136,18 +136,6 @@ export function invalidateSDKClient(): void {
   _cachedKey = ''
 }
 
-export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  const baseUrl = serverStore.getActiveBaseUrl().replace(/\/$/, '')
-  const generation = _apiRequestGeneration
-  return trackedFetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      ...buildHeaders(),
-      ...init?.headers,
-    },
-  }, generation)
-}
-
 /**
  * 从 SDK 返回值中提取 data，如果有 error 则抛出
  *

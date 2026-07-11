@@ -3,7 +3,7 @@
 // 基于 @opencode-ai/sdk: /config, /project, /provider 相关接口
 // ============================================
 
-import { apiFetch, getSDKClient, unwrap } from './sdk'
+import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type { ModelInfo, ApiProject, ApiPath, ProviderBalanceResult } from './types'
 
@@ -106,11 +106,8 @@ export async function getDefaultModels(directory?: string): Promise<Record<strin
 }
 
 export async function getProviderBalance(providerId: string, directory?: string): Promise<ProviderBalanceResult> {
-  const response = await apiFetch(
-    `/provider/${encodeURIComponent(providerId)}/balance${directory ? `?directory=${encodeURIComponent(directory)}` : ''}`,
-  )
-  if (!response.ok) throw new Error(`Failed to load provider balance (${response.status})`)
-  return (await response.json()) as ProviderBalanceResult
+  const sdk = getSDKClient()
+  return unwrap(await sdk.provider.balance({ providerID: providerId, directory: formatPathForApi(directory) }))
 }
 
 // ============================================

@@ -3,7 +3,7 @@
 // 基于 @opencode-ai/sdk: /session 相关接口
 // ============================================
 
-import { apiFetch, getSDKClient, unwrap } from './sdk'
+import { getSDKClient, unwrap } from './sdk'
 import { normalizeTodoItems } from './todo'
 import { formatPathForApi } from '../utils/directoryUtils'
 import { normalizeFileDiffs } from '../types/api/file'
@@ -29,11 +29,8 @@ export async function getSessionStatus(directory?: string): Promise<SessionStatu
 }
 
 export async function getSessionWorkBrief(sessionId: string, directory?: string): Promise<WorkBrief> {
-  const response = await apiFetch(
-    `/session/${encodeURIComponent(sessionId)}/work_brief${directory ? `?directory=${encodeURIComponent(directory)}` : ''}`,
-  )
-  if (!response.ok) throw new Error(`Failed to load WorkBrief (${response.status})`)
-  return (await response.json()) as WorkBrief
+  const sdk = getSDKClient()
+  return unwrap(await sdk.session.workBrief({ sessionID: sessionId, directory: formatPathForApi(directory) }))
 }
 
 /**
@@ -43,23 +40,25 @@ export async function getSessionWorkBrief(sessionId: string, directory?: string)
 export async function getSessionDiff(
   sessionId: string,
   directory?: string,
-  options?: { messageId?: string; lastVisible?: boolean },
+  options?: { messageId?: string },
 ): Promise<FileDiff[]> {
-  const query = new URLSearchParams()
-  const formattedDirectory = formatPathForApi(directory)
-  if (formattedDirectory) query.set('directory', formattedDirectory)
-  if (options?.messageId) query.set('messageID', options.messageId)
-  if (options?.lastVisible) query.set('lastVisible', 'true')
-  const response = await apiFetch(`/session/${encodeURIComponent(sessionId)}/diff?${query.toString()}`)
-  if (!response.ok) throw new Error(`Failed to load session diff (${response.status})`)
-  return normalizeFileDiffs(await response.json())
+  const sdk = getSDKClient()
+  return normalizeFileDiffs(
+    unwrap(
+      await sdk.session.diff({
+        sessionID: sessionId,
+        directory: formatPathForApi(directory),
+        messageID: options?.messageId,
+      }),
+    ),
+  )
 }
 
 /**
  * 获取当前可见用户消息对应的本轮 diff
  */
 export async function getLastTurnDiff(sessionId: string, directory?: string): Promise<FileDiff[]> {
-  return getSessionDiff(sessionId, directory, { lastVisible: true })
+  return getSessionDiff(sessionId, directory)
 }
 
 // ============================================

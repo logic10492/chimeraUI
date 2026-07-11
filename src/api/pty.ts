@@ -98,7 +98,7 @@ export function getPtyConnectUrl(ptyId: string, directory?: string, options?: Pt
   const wsBase = httpBase.replace(/^http/, 'ws')
   const includeAuthInUrl = options?.includeAuthInUrl ?? true
   const cursor =
-    typeof options?.cursor === 'number' && Number.isSafeInteger(options.cursor) && options.cursor >= 0
+    typeof options?.cursor === 'number' && Number.isSafeInteger(options.cursor) && options.cursor >= -1
       ? options.cursor
       : undefined
 

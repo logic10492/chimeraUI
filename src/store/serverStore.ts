@@ -3,22 +3,8 @@
 // ============================================
 
 import { API_BASE_URL } from '../constants'
-import { isTauri } from '../utils/tauri'
-
-// Tauri plugin-http fetch 缓存（避免重复 dynamic import）
-let _tauriFetch: typeof globalThis.fetch | null = null
-let _tauriFetchLoading: Promise<typeof globalThis.fetch> | null = null
-
-async function getUnifiedFetch(): Promise<typeof globalThis.fetch> {
-  if (!isTauri()) return globalThis.fetch
-  if (_tauriFetch) return _tauriFetch
-  if (_tauriFetchLoading) return _tauriFetchLoading
-  _tauriFetchLoading = import('@tauri-apps/plugin-http').then(mod => {
-    _tauriFetch = mod.fetch as unknown as typeof globalThis.fetch
-    return _tauriFetch
-  })
-  return _tauriFetchLoading
-}
+import { checkCandidateServerHealth } from '../api/health'
+export { makeBasicAuthHeader } from '../api/health'
 
 /**
  * 服务器认证信息
@@ -63,69 +49,6 @@ interface ServerClockCalibration {
 
 type Listener = () => void
 export type ServerChangeReason = 'server-switch' | 'local-runtime-url'
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value)
-}
-
-function normalizeConnectionError(err: unknown): string {
-  if (err instanceof DOMException && err.name === 'AbortError') return 'Connection timed out'
-  if (!(err instanceof Error)) return 'Connection failed'
-
-  const message = err.message || 'Connection failed'
-  if (/certificate|cert|tls|ssl/i.test(message)) {
-    return `TLS/certificate error: ${message}`
-  }
-  return message
-}
-
-function redactHeaderValue(key: string, value: string): string {
-  return /set-cookie|authorization|proxy-authorization/i.test(key) ? '<redacted>' : value
-}
-
-function headersToRecord(headers: Headers): Record<string, string> {
-  const result: Record<string, string> = {}
-  headers.forEach((value, key) => {
-    result[key] = redactHeaderValue(key, value)
-  })
-  return result
-}
-
-function truncateForDiagnostics(value: string, maxLength = 5000): string {
-  if (value.length <= maxLength) return value
-  return `${value.slice(0, maxLength)}\n...[truncated ${value.length - maxLength} chars]`
-}
-
-function formatResponseDiagnostics(options: {
-  url: string
-  response: Response
-  latency: number
-  body: string
-}): string {
-  const contentType = options.response.headers.get('content-type') ?? ''
-  return [
-    `Request: GET ${options.url}`,
-    `Status: ${options.response.status}${options.response.statusText ? ` ${options.response.statusText}` : ''}`,
-    `Latency: ${options.latency}ms`,
-    `Content-Type: ${contentType || '(none)'}`,
-    `Headers:\n${JSON.stringify(headersToRecord(options.response.headers), null, 2)}`,
-    `Body (${options.body.length} chars):\n${truncateForDiagnostics(options.body)}`,
-  ].join('\n\n')
-}
-
-function formatExceptionDiagnostics(url: string, err: unknown): string {
-  if (!(err instanceof Error)) return `Request: GET ${url}\n\nError: ${String(err)}`
-
-  const cause = 'cause' in err && err.cause !== undefined ? `\n\nCause:\n${String(err.cause)}` : ''
-  return [
-    `Request: GET ${url}`,
-    `Error name: ${err.name}`,
-    `Message: ${err.message}`,
-    err.stack ? `Stack:\n${err.stack}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n') + cause
-}
 
 const STORAGE_KEY = 'opencode-servers'
 const ACTIVE_SERVER_KEY = 'opencode-active-server'
@@ -479,7 +402,6 @@ class ServerStore {
     const server = this.withRuntimeServerUrl(storedServer)
     const checkSeq = (this.healthCheckSeqMap.get(serverId) ?? 0) + 1
     this.healthCheckSeqMap.set(serverId, checkSeq)
-    const healthUrl = `${server.url}/global/health`
 
     const commitHealth = (health: ServerHealth) => {
       if (this.healthCheckSeqMap.get(serverId) === checkSeq) {
@@ -493,106 +415,7 @@ class ServerStore {
     this.healthMap.set(serverId, { status: 'checking' })
     this.notify()
 
-    const startTime = Date.now()
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000)
-
-    try {
-      const headers: Record<string, string> = {}
-      if (server.auth?.password) {
-        headers['Authorization'] = makeBasicAuthHeader(server.auth)
-      }
-
-      const f = await getUnifiedFetch()
-      const response = await f(healthUrl, {
-        method: 'GET',
-        signal: controller.signal,
-        headers,
-      })
-
-      const latency = Date.now() - startTime
-      const responseBody = await response.text().catch(err => `[Failed to read response body: ${normalizeConnectionError(err)}]`)
-      const details = formatResponseDiagnostics({ url: healthUrl, response, latency, body: responseBody })
-
-      if (response.ok) {
-        const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
-        if (!contentType.includes('application/json')) {
-          const health: ServerHealth = {
-            status: 'error',
-            latency,
-            lastCheck: Date.now(),
-            error: contentType.includes('text/html')
-              ? 'Server returned HTML instead of OpenCode health JSON. Check the URL path.'
-              : 'Server did not return OpenCode health JSON',
-            details,
-          }
-          return commitHealth(health)
-        }
-
-        let data: unknown
-        try {
-          data = JSON.parse(responseBody)
-        } catch {
-          const health: ServerHealth = {
-            status: 'error',
-            latency,
-            lastCheck: Date.now(),
-            error: 'Invalid OpenCode health JSON',
-            details,
-          }
-          return commitHealth(health)
-        }
-
-        if (!isRecord(data) || data.healthy !== true || typeof data.version !== 'string' || !data.version.trim()) {
-          const health: ServerHealth = {
-            status: 'error',
-            latency,
-            lastCheck: Date.now(),
-            error: 'Not an OpenCode server',
-            details,
-          }
-          return commitHealth(health)
-        }
-
-        const health: ServerHealth = {
-          status: 'online',
-          latency,
-          lastCheck: Date.now(),
-          version: data.version,
-          details,
-        }
-        return commitHealth(health)
-      } else if (response.status === 401) {
-        // 认证失败
-        const health: ServerHealth = {
-          status: 'unauthorized',
-          latency,
-          lastCheck: Date.now(),
-          error: 'Invalid credentials',
-          details,
-        }
-        return commitHealth(health)
-      } else {
-        const health: ServerHealth = {
-          status: 'error',
-          latency,
-          lastCheck: Date.now(),
-          error: `HTTP ${response.status}`,
-          details,
-        }
-        return commitHealth(health)
-      }
-    } catch (err) {
-      const health: ServerHealth = {
-        status: 'offline',
-        lastCheck: Date.now(),
-        error: normalizeConnectionError(err),
-        details: formatExceptionDiagnostics(healthUrl, err),
-      }
-      return commitHealth(health)
-    } finally {
-      clearTimeout(timeoutId)
-    }
+    return commitHealth(await checkCandidateServerHealth({ serverUrl: server.url, auth: server.auth }))
   }
 
   /**
@@ -675,13 +498,6 @@ export function importServerSettingsBackup(raw: unknown): void {
     localStorage.removeItem(ACTIVE_SERVER_KEY)
     sessionStorage.removeItem(ACTIVE_SERVER_KEY)
   }
-}
-
-/**
- * 生成 Basic Auth header 值
- */
-export function makeBasicAuthHeader(auth: ServerAuth): string {
-  return 'Basic ' + btoa(`${auth.username}:${auth.password}`)
 }
 
 function normalizeServerTimestamp(timestamp: unknown): number | null {

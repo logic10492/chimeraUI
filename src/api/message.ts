@@ -3,7 +3,7 @@
 // 基于 @opencode-ai/sdk: /session/{sessionID}/message 相关接口
 // ============================================
 
-import { apiFetch, getSDKClient, unwrap } from './sdk'
+import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type {
   ApiMessageWithParts,
@@ -54,24 +54,24 @@ export async function getSessionMessages(
   sessionId: string,
   limit = 100,
   directory?: string,
-  options?: { all?: boolean; output?: boolean },
+  options?: { before?: string },
 ): Promise<ApiMessageWithParts[]> {
-  const query = new URLSearchParams()
-  const formattedDirectory = formatPathForApi(directory)
-  if (formattedDirectory) query.set('directory', formattedDirectory)
-  if (!options?.output) query.set('output', 'false')
-  if (options?.all) query.set('all', 'true')
-  if (!options?.all) query.set('limit', limit.toString())
-  const response = await apiFetch(`/session/${encodeURIComponent(sessionId)}/message?${query.toString()}`)
-  if (!response.ok) throw new Error(`Failed to load session messages (${response.status})`)
-  return (await response.json()) as ApiMessageWithParts[]
+  const sdk = getSDKClient()
+  return unwrap<ApiMessageWithParts[]>(
+    await sdk.session.messages({
+      sessionID: sessionId,
+      directory: formatPathForApi(directory),
+      limit,
+      before: options?.before,
+    }),
+  )
 }
 
 /**
  * 获取 session 的消息数量
  */
 export async function getSessionMessageCount(sessionId: string): Promise<number> {
-  const messages = await getSessionMessages(sessionId, undefined, undefined, { all: true })
+  const messages = await getSessionMessages(sessionId, 0)
   return messages.length
 }
 
@@ -255,12 +255,19 @@ export async function getPartOutput(
   partId: string,
   directory?: string,
 ): Promise<{ output?: string; error?: string; attachments?: ApiFilePart[] } | null> {
-  const query = new URLSearchParams()
-  const formattedDirectory = formatPathForApi(directory)
-  if (formattedDirectory) query.set('directory', formattedDirectory)
-  const response = await apiFetch(
-    `/session/${encodeURIComponent(sessionId)}/message/${encodeURIComponent(messageId)}/part/${encodeURIComponent(partId)}/output?${query.toString()}`,
+  const sdk = getSDKClient()
+  const message = unwrap<ApiMessageWithParts>(
+    await sdk.session.message({
+      sessionID: sessionId,
+      messageID: messageId,
+      directory: formatPathForApi(directory),
+    }),
   )
-  if (!response.ok) return null
-  return (await response.json()) as { output?: string; error?: string; attachments?: ApiFilePart[] }
+  const part = message.parts.find(item => item.id === partId)
+  if (!part || part.type !== 'tool') return null
+  if (part.state.status === 'completed') {
+    return { output: part.state.output, attachments: part.state.attachments }
+  }
+  if (part.state.status === 'error') return { error: part.state.error }
+  return null
 }
