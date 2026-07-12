@@ -25,6 +25,7 @@ import {
   DefaultRenderer,
   TodoRenderer,
   TaskRenderer,
+  SwarmRenderer,
   hasTodos,
 } from '../tools'
 
@@ -568,6 +569,10 @@ const ToolBody = memo(function ToolBody({
 
   if (lowerTool === 'task') {
     return <TaskRenderer part={part} data={data} onFullscreenChange={onFullscreenChange} />
+  }
+
+  if (lowerTool === 'chimera_swarm') {
+    return <SwarmRenderer part={part} data={data} onFullscreenChange={onFullscreenChange} />
   }
 
   if (lowerTool.includes('todo') && hasTodos(part)) {

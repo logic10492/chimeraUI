@@ -269,12 +269,12 @@ const TaskHeader = memo(function TaskHeader({
 // Sub Session View
 // ============================================
 
-interface SubSessionViewProps {
+export interface SubSessionViewProps {
   sessionId: string
   isParentRunning: boolean
 }
 
-const SubSessionView = memo(function SubSessionView({ sessionId }: SubSessionViewProps) {
+export const SubSessionView = memo(function SubSessionView({ sessionId }: SubSessionViewProps) {
   const { t } = useTranslation('message')
   const scrollRef = useRef<HTMLDivElement>(null)
   const loadedRef = useRef(false)
