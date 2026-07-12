@@ -329,6 +329,13 @@ class ActiveSessionStore {
     this.notify()
   }
 
+  resetRuntimeState() {
+    this.state = { statusMap: {}, initialized: false }
+    this.pendingRequests.clear()
+    this.deferredIdleSessions.clear()
+    this.notify()
+  }
+
   // ============================================
   // Session 元信息管理
   // ============================================
@@ -398,6 +405,20 @@ class ActiveSessionStore {
 
   getSessionMetaServerIDs(sessionId: string): string[] {
     return [...(this.sessionMeta.get(sessionId)?.keys() ?? [])]
+  }
+
+  getSessionIdsForScope(scope: { serverID: string; directory?: string; workspace?: string }): string[] {
+    const sessionIds: string[] = []
+
+    for (const [sessionId, metadataByServer] of this.sessionMeta) {
+      const meta = metadataByServer.get(scope.serverID)
+      if (!meta) continue
+      if (scope.workspace && meta.workspaceID !== scope.workspace) continue
+      if (!scope.workspace && scope.directory && meta.directory !== scope.directory) continue
+      sessionIds.push(sessionId)
+    }
+
+    return sessionIds
   }
 
   getBusySessions(): ActiveSessionEntry[] {

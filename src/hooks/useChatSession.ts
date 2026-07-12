@@ -10,6 +10,7 @@ import {
   autoApproveStore,
   childSessionStore,
   useActiveSessionStore,
+  serverStore,
   type RevertHistoryItem,
 } from '../store'
 import {
@@ -19,8 +20,6 @@ import {
   hasOtherConsumerForSession,
 } from '../hooks'
 import { usePermissions, usePermissionHandler, useMessageAnimation, useDirectory, useSessionContext } from '../hooks'
-import { useNotification } from './useNotification'
-import { notificationEventSettingsStore } from '../store/notificationEventSettingsStore'
 import {
   sendMessageAsync,
   getSessionMessages,
@@ -125,7 +124,6 @@ export function useChatSession({
   const { resetPermissions } = usePermissions()
   const { currentDirectory } = useDirectory()
   const { createSession, sessions } = useSessionContext()
-  const { sendNotification } = useNotification()
 
   const routeStatus = routeSessionId ? statusMap[routeSessionId] : undefined
   const routeSessionIdRef = useRef(routeSessionId)
@@ -177,24 +175,6 @@ export function useChatSession({
   }, [routeSessionId, routeStatus])
 
   const isSessionBusy = useMemo(() => Boolean(routeStatus) || isStreaming, [routeStatus, isStreaming])
-
-  const getSessionTitle = useCallback(
-    (sessionId?: string) => {
-      const session = sessions.find(s => s.id === sessionId)
-      if (session?.title) return session.title
-      if (sessionId) return `Session ${sessionId.slice(0, 6)}`
-      return 'OpenCode'
-    },
-    [sessions],
-  )
-
-  const buildNotificationTitle = useCallback(
-    (sessionId: string | undefined, label: string) => {
-      const base = getSessionTitle(sessionId)
-      return `${base} - ${label}`
-    },
-    [getSessionTitle],
-  )
 
   // Session family for permission polling
   const sessionFamily = useSessionFamily(routeSessionId)
@@ -392,17 +372,6 @@ export function useChatSession({
           if (prev.some(r => r.id === request.id)) return prev
           return [...prev, request]
         })
-
-        // 页面不在前台时通知用户有权限请求等待批准
-        const permDesc = request.patterns?.length ? `${request.permission}: ${request.patterns[0]}` : request.permission
-        const title = buildNotificationTitle(request.sessionID, 'Permission Required')
-        if (notificationEventSettingsStore.isSystemEnabled('permission')) {
-          sendNotification(title, permDesc, {
-            sessionId: request.sessionID,
-            directory: effectiveDirectory,
-          })
-        }
-        // 应用内 toast 已在 useGlobalEvents 中统一处理
       },
       onPermissionReplied: (data: { sessionID: string; requestID: string }) => {
         setPendingPermissionRequests(prev =>
@@ -414,17 +383,6 @@ export function useChatSession({
           if (prev.some(r => r.id === request.id)) return prev
           return [...prev, request]
         })
-
-        // 页面不在前台时通知用户有问题等待回答
-        const questionDesc = request.questions?.[0]?.header || 'AI is waiting for your input'
-        const title = buildNotificationTitle(request.sessionID, 'Question')
-        if (notificationEventSettingsStore.isSystemEnabled('question')) {
-          sendNotification(title, questionDesc, {
-            sessionId: request.sessionID,
-            directory: effectiveDirectory,
-          })
-        }
-        // 应用内 toast 已在 useGlobalEvents 中统一处理
       },
       onQuestionReplied: (data: { sessionID: string; requestID: string }) => {
         setPendingQuestionRequests(prev => prev.filter(r => r.id !== data.requestID))
@@ -435,40 +393,14 @@ export function useChatSession({
       onScrollRequest: () => {
         chatAreaRef.current?.scrollToBottomIfAtBottom()
       },
-      onSessionIdle: (sessionID: string) => {
-        // 页面不在前台时发送浏览器通知
-        const title = buildNotificationTitle(sessionID, 'Session completed')
-        if (notificationEventSettingsStore.isSystemEnabled('completed')) {
-          sendNotification(title, 'Session completed', {
-            sessionId: sessionID,
-            directory: effectiveDirectory,
-          })
-        }
-        // 应用内 toast 已在 useGlobalEvents 中统一处理
-      },
-      onSessionError: (sessionID: string) => {
-        // 页面不在前台时通知用户 session 出错
-        const title = buildNotificationTitle(sessionID, 'Session error')
-        if (notificationEventSettingsStore.isSystemEnabled('error')) {
-          sendNotification(title, 'Session error', {
-            sessionId: sessionID,
-            directory: effectiveDirectory,
-          })
-        }
-        // 应用内 toast 已在 useGlobalEvents 中统一处理
-      },
-      onReconnected: (_reason: 'network' | 'server-switch') => {
-        messageStore.markAllSessionsStale()
+      onReconnected: (_reason: import('./useGlobalEvents').SessionResyncReason, serverID: string) => {
+        if (serverID !== serverStore.getActiveServerId()) return
 
-        // SSE 重连后重新加载当前会话，补齐断连期间可能丢失的消息
         if (routeSessionId) {
-          // 使用 force 模式，确保覆盖本地可能不完整的数据
           loadSession(routeSessionId, { force: true })
-          // 重连后刷新待处理的权限请求和问题，避免用户错过后台产生的请求
           refreshPendingRequests(sessionFamily, effectiveDirectory)
         }
         refetchModels().catch(() => {})
-        // 重新获取 agents 列表（切换后端时 currentDirectory 可能没变，useEffect 不会触发）
         getSelectableAgents(currentDirectory)
           .then(setAgents)
           .catch(() => {})
@@ -484,8 +416,6 @@ export function useChatSession({
       replyPermissionOnceAutomatically,
       setPendingPermissionRequests,
       setPendingQuestionRequests,
-      buildNotificationTitle,
-      sendNotification,
       loadSession,
       refreshPendingRequests,
       refetchModels,
@@ -507,9 +437,7 @@ export function useChatSession({
       onQuestionReplied: data => sseCallbacksRef.current.onQuestionReplied(data),
       onQuestionRejected: data => sseCallbacksRef.current.onQuestionRejected(data),
       onScrollRequest: () => sseCallbacksRef.current.onScrollRequest(),
-      onSessionIdle: sid => sseCallbacksRef.current.onSessionIdle(sid),
-      onSessionError: sid => sseCallbacksRef.current.onSessionError(sid),
-      onReconnected: reason => sseCallbacksRef.current.onReconnected(reason),
+      onReconnected: (reason, serverID) => sseCallbacksRef.current.onReconnected(reason, serverID),
     })
 
     return unregister

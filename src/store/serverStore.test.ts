@@ -197,3 +197,52 @@ describe('serverStore health check', () => {
     expect(serverStore.getHealth('local')?.status).toBe('online')
   })
 })
+
+describe('serverStore removal notifications', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('emits one server-switch when removing the active server', async () => {
+    const { serverStore } = await import('./serverStore')
+    const remote = serverStore.addServer({ name: 'Remote', url: 'http://remote.test' })
+    const listener = vi.fn()
+    serverStore.setActiveServer(remote.id)
+    serverStore.onServerChange(listener)
+    listener.mockClear()
+
+    expect(serverStore.removeServer(remote.id)).toBe(true)
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener).toHaveBeenCalledWith('local', 'server-switch')
+  })
+
+  it('does not emit a server switch when removing an inactive server', async () => {
+    const { serverStore } = await import('./serverStore')
+    const remote = serverStore.addServer({ name: 'Remote', url: 'http://remote.test' })
+    const listener = vi.fn()
+    serverStore.onServerChange(listener)
+
+    expect(serverStore.removeServer(remote.id)).toBe(true)
+
+    expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('keeps local-runtime-url notifications distinct from server switches', async () => {
+    const { serverStore } = await import('./serverStore')
+    const listener = vi.fn()
+    serverStore.onServerChange(listener)
+
+    expect(serverStore.setLocalServerRuntimeUrl('http://127.0.0.1:58231')).toBe(true)
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener).toHaveBeenCalledWith('local', 'local-runtime-url')
+    expect(listener).not.toHaveBeenCalledWith('local', 'server-switch')
+  })
+})

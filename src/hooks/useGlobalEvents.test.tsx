@@ -10,6 +10,9 @@ function createDeferred<T>() {
   return { promise, resolve }
 }
 
+const TEST_SCOPE = { serverID: 'local', directory: '/workspace' } as const
+const GLOBAL_SCOPE = { serverID: 'local', directory: 'global' } as const
+
 const {
   subscribeToEventsMock,
   getSessionStatusMock,
@@ -31,6 +34,11 @@ const {
   autoApproveStoreMock,
   clearSessionRuntimeStateMock,
   clearPaneSessionMock,
+  messageRemoveMock,
+  markAllSessionsStaleMock,
+  runtimeInvalidationEmitMock,
+  invalidateRootDirectoryCacheMock,
+  sendNotificationMock,
 } = vi.hoisted(() => ({
   subscribeToEventsMock: vi.fn(),
   getSessionStatusMock: vi.fn<
@@ -53,6 +61,11 @@ const {
   onServerChangeMock: vi.fn((_listener: (serverId: string) => void) => vi.fn()),
   clearSessionRuntimeStateMock: vi.fn(),
   clearPaneSessionMock: vi.fn(),
+  messageRemoveMock: vi.fn(),
+  markAllSessionsStaleMock: vi.fn(),
+  runtimeInvalidationEmitMock: vi.fn(),
+  invalidateRootDirectoryCacheMock: vi.fn(),
+  sendNotificationMock: vi.fn(() => Promise.resolve()),
   getSoundSnapshotMock: vi.fn(() => ({
     currentSessionEnabled: true,
   })),
@@ -68,6 +81,7 @@ const {
     resolvePendingRequest: vi.fn(),
     updateStatus: vi.fn(),
     getSnapshot: vi.fn(() => ({ statusMap: {} })),
+    getSessionIdsForScope: vi.fn(() => [] as string[]),
   },
   autoApproveStoreMock: {
     fullAutoMode: 'off' as 'off' | 'session' | 'global',
@@ -99,6 +113,8 @@ vi.mock('../store', () => ({
     handleSessionError: vi.fn(),
     getSessionState: vi.fn(() => null),
     updateSessionMetadata: vi.fn(),
+    removeMessage: messageRemoveMock,
+    markAllSessionsStale: markAllSessionsStaleMock,
   },
   childSessionStore: {
     belongsToSession: childBelongsToSessionMock,
@@ -127,6 +143,20 @@ vi.mock('../store/notificationStore', () => ({
   notificationStore: {
     push: notificationPushMock,
   },
+}))
+
+vi.mock('../api/file', () => ({
+  invalidateRootDirectoryCache: invalidateRootDirectoryCacheMock,
+}))
+
+vi.mock('../store/runtimeInvalidationStore', () => ({
+  runtimeInvalidationStore: {
+    emit: runtimeInvalidationEmitMock,
+  },
+}))
+
+vi.mock('./useNotification', () => ({
+  useNotification: () => ({ sendNotification: sendNotificationMock }),
 }))
 
 vi.mock('../store/soundStore', () => ({
@@ -173,6 +203,11 @@ describe('useGlobalEvents', () => {
     onServerChangeMock.mockReset()
     clearSessionRuntimeStateMock.mockReset()
     clearPaneSessionMock.mockReset()
+    messageRemoveMock.mockReset()
+    markAllSessionsStaleMock.mockReset()
+    runtimeInvalidationEmitMock.mockReset()
+    invalidateRootDirectoryCacheMock.mockReset()
+    sendNotificationMock.mockReset()
     autoApproveStoreMock.fullAutoMode = 'off'
     autoApproveStoreMock.approvePendingOnFullAuto = false
     autoApproveStoreMock.subscribe.mockReset()
@@ -195,6 +230,8 @@ describe('useGlobalEvents', () => {
     autoApproveStoreMock.claimAutoReply.mockReturnValue(true)
     activeSessionStoreMock.getSessionMeta.mockReturnValue({ title: 'Child Session', directory: '/workspace' })
     activeSessionStoreMock.getSnapshot.mockReturnValue({ statusMap: {} })
+    sendNotificationMock.mockResolvedValue(undefined)
+    activeSessionStoreMock.getSessionIdsForScope.mockReturnValue([])
   })
 
   it('stores server clock calibration when server.connected arrives', async () => {
@@ -208,7 +245,7 @@ describe('useGlobalEvents', () => {
 
     await waitFor(() => expect(callbacks).toBeDefined())
 
-    callbacks!.onServerConnected?.({ timestamp: '2026-04-22T15:00:00.000Z' })
+    callbacks!.onServerConnected?.({ timestamp: '2026-04-22T15:00:00.000Z' }, GLOBAL_SCOPE)
 
     expect(applyServerConnectedTimestampMock).toHaveBeenCalledWith('local', '2026-04-22T15:00:00.000Z')
   })
@@ -248,7 +285,7 @@ describe('useGlobalEvents', () => {
     await waitFor(() => expect(callbacks).toBeDefined())
     checkHealthMock.mockClear()
 
-    callbacks!.onReconnected?.('network')
+    callbacks!.onReconnected?.('network', 'local')
 
     expect(checkHealthMock).toHaveBeenCalledWith('local')
   })
@@ -265,9 +302,9 @@ describe('useGlobalEvents', () => {
 
     await waitFor(() => expect(callbacks).toBeDefined())
 
-    callbacks!.onSessionDeleted?.('deleted-session')
+    callbacks!.onSessionDeleted?.('deleted-session', TEST_SCOPE)
 
-    expect(clearSessionRuntimeStateMock).toHaveBeenCalledWith('deleted-session')
+    expect(clearSessionRuntimeStateMock).toHaveBeenCalledWith('deleted-session', 'local')
     expect(clearPaneSessionMock).toHaveBeenCalledWith('deleted-session')
     expect(clearPaneSessionMock).toHaveBeenCalledWith('child-session')
   })
@@ -308,6 +345,33 @@ describe('useGlobalEvents', () => {
     expect(activeSessionStoreMock.mergeStatusRefresh).not.toHaveBeenCalledWith({ 'old-session': { type: 'idle' } })
   })
 
+  it('ignores initialization responses from the server active before a switch', async () => {
+    let onServerChange: ((serverId: string) => void) | undefined
+    const statusDeferred = createDeferred<Record<string, { type: string }>>()
+    onServerChangeMock.mockImplementation(listener => {
+      onServerChange = listener
+      return vi.fn()
+    })
+    getSessionStatusMock.mockImplementation(() => statusDeferred.promise)
+    getPendingPermissionsMock.mockResolvedValue([])
+    getPendingQuestionsMock.mockResolvedValue([])
+
+    renderHook(() => useGlobalEvents(['/workspace']))
+    await waitFor(() => {
+      expect(onServerChange).toBeDefined()
+      expect(getSessionStatusMock).toHaveBeenCalledWith({ serverID: 'local', directory: '/workspace' })
+    })
+
+    getActiveServerIdMock.mockReturnValue('remote')
+    onServerChange!('remote')
+    statusDeferred.resolve({ 'old-session': { type: 'busy' } })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(activeSessionStoreMock.initialize).not.toHaveBeenCalled()
+    expect(activeSessionStoreMock.mergeStatusRefresh).not.toHaveBeenCalled()
+  })
+
   it('replays pending requests that arrive while initialization is in flight', async () => {
     let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
     const statusDeferred = createDeferred<Record<string, { type: string }>>()
@@ -327,12 +391,15 @@ describe('useGlobalEvents', () => {
     )
     await waitFor(() => expect(callbacks).toBeDefined())
 
-    callbacks!.onPermissionAsked?.({
-      id: 'perm-1',
-      sessionID: 'child-session',
-      permission: 'edit',
-      patterns: ['src/app.tsx'],
-    } as never)
+    callbacks!.onPermissionAsked?.(
+      {
+        id: 'perm-1',
+        sessionID: 'child-session',
+        permission: 'edit',
+        patterns: ['src/app.tsx'],
+      } as never,
+      TEST_SCOPE,
+    )
 
     statusDeferred.resolve({})
 
@@ -383,22 +450,28 @@ describe('useGlobalEvents', () => {
     await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith({ serverID: 'local', directory: '/one' }))
     await waitFor(() => expect(callbacks).toBeDefined())
 
-    callbacks!.onPermissionAsked?.({
-      id: 'perm-1',
-      sessionID: 'child-session',
-      permission: 'edit',
-      patterns: ['src/app.tsx'],
-    } as never)
+    callbacks!.onPermissionAsked?.(
+      {
+        id: 'perm-1',
+        sessionID: 'child-session',
+        permission: 'edit',
+        patterns: ['src/app.tsx'],
+      } as never,
+      { serverID: 'local', directory: '/one' },
+    )
 
     rerender({ directories: ['/two'] })
 
     await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith({ serverID: 'local', directory: '/two' }))
 
-    callbacks!.onQuestionAsked?.({
-      id: 'question-1',
-      sessionID: 'question-session',
-      questions: [{ header: 'Need input' }],
-    } as never)
+    callbacks!.onQuestionAsked?.(
+      {
+        id: 'question-1',
+        sessionID: 'question-session',
+        questions: [{ header: 'Need input' }],
+      } as never,
+      { serverID: 'local', directory: '/two' },
+    )
 
     statusDeferreds.get('/two')?.resolve({})
 
@@ -423,12 +496,15 @@ describe('useGlobalEvents', () => {
 
     await waitFor(() => expect(callbacks).toBeDefined())
 
-    callbacks!.onPermissionAsked?.({
-      id: 'perm-1',
-      sessionID: 'child-session',
-      permission: 'bash',
-      patterns: [],
-    })
+    callbacks!.onPermissionAsked?.(
+      {
+        id: 'perm-1',
+        sessionID: 'child-session',
+        permission: 'bash',
+        patterns: [],
+      },
+      TEST_SCOPE,
+    )
 
     expect(notificationPushMock).not.toHaveBeenCalled()
     expect(playNotificationSoundDedupedMock).not.toHaveBeenCalled()
@@ -446,23 +522,32 @@ describe('useGlobalEvents', () => {
 
     await waitFor(() => expect(callbacks).toBeDefined())
 
-    callbacks!.onQuestionAsked?.({
-      id: 'question-1',
-      sessionID: 'child-session',
-      questions: [{ header: 'First question' }],
-    })
-    callbacks!.onQuestionAsked?.({
-      id: 'question-2',
-      sessionID: 'child-session',
-      questions: [{ header: 'Second question' }],
-    })
+    callbacks!.onQuestionAsked?.(
+      {
+        id: 'question-1',
+        sessionID: 'child-session',
+        questions: [{ header: 'First question' }],
+      },
+      TEST_SCOPE,
+    )
+    callbacks!.onQuestionAsked?.(
+      {
+        id: 'question-2',
+        sessionID: 'child-session',
+        questions: [{ header: 'Second question' }],
+      },
+      TEST_SCOPE,
+    )
 
     expect(consumerAskedMock).not.toHaveBeenCalled()
 
-    callbacks!.onQuestionReplied?.({
-      sessionID: 'child-session',
-      requestID: 'question-1',
-    })
+    callbacks!.onQuestionReplied?.(
+      {
+        sessionID: 'child-session',
+        requestID: 'question-1',
+      },
+      TEST_SCOPE,
+    )
 
     getFocusedSessionIdMock.mockReturnValue('parent-session')
     childBelongsToSessionMock.mockImplementation((sessionId: string, rootSessionId: string) => {
@@ -473,12 +558,15 @@ describe('useGlobalEvents', () => {
       onQuestionAsked: consumerAskedMock,
     })
 
-    callbacks!.onSessionCreated?.({
-      id: 'child-session',
-      parentID: 'parent-session',
-      title: 'Child Session',
-      directory: '/workspace',
-    } as never)
+    callbacks!.onSessionCreated?.(
+      {
+        id: 'child-session',
+        parentID: 'parent-session',
+        title: 'Child Session',
+        directory: '/workspace',
+      } as never,
+      TEST_SCOPE,
+    )
 
     expect(consumerAskedMock).toHaveBeenCalledTimes(1)
     expect(consumerAskedMock).toHaveBeenCalledWith(
@@ -590,12 +678,15 @@ describe('useGlobalEvents', () => {
 
     await waitFor(() => expect(callbacks).toBeDefined())
 
-    callbacks!.onPermissionAsked?.({
-      id: 'perm-2',
-      sessionID: 'child-session',
-      permission: 'bash',
-      patterns: [],
-    })
+    callbacks!.onPermissionAsked?.(
+      {
+        id: 'perm-2',
+        sessionID: 'child-session',
+        permission: 'bash',
+        patterns: [],
+      },
+      TEST_SCOPE,
+    )
 
     expect(notificationPushMock).not.toHaveBeenCalled()
     expect(playNotificationSoundDedupedMock).toHaveBeenCalledWith('permission')
@@ -614,15 +705,197 @@ describe('useGlobalEvents', () => {
 
     await waitFor(() => expect(callbacks).toBeDefined())
 
-    callbacks!.onPermissionAsked?.({
-      id: 'perm-sound',
-      sessionID: 'child-session',
-      permission: 'bash',
-      patterns: [],
-    })
+    callbacks!.onPermissionAsked?.(
+      {
+        id: 'perm-sound',
+        sessionID: 'child-session',
+        permission: 'bash',
+        patterns: [],
+      },
+      TEST_SCOPE,
+    )
 
     expect(notificationPushMock).not.toHaveBeenCalled()
     expect(playNotificationSoundDedupedMock).toHaveBeenCalledWith('permission')
+  })
+
+  it('ignores stale-server events and removes messages for the active scoped stream', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+
+    renderHook(() => useGlobalEvents(['/workspace']))
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    callbacks!.onMessageRemoved?.(
+      { sessionID: 'session-1', messageID: 'stale-message' },
+      { serverID: 'remote', directory: '/workspace' },
+    )
+    expect(messageRemoveMock).not.toHaveBeenCalled()
+
+    callbacks!.onMessageRemoved?.({ sessionID: 'session-1', messageID: 'message-1' }, TEST_SCOPE)
+    expect(messageRemoveMock).toHaveBeenCalledWith('session-1', 'message-1')
+  })
+
+  it('invalidates scoped file and LSP consumers', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+
+    renderHook(() => useGlobalEvents(['/workspace']))
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    callbacks!.onFileWatcherUpdated?.({ file: '/workspace/src/app.ts', event: 'change' }, TEST_SCOPE)
+    callbacks!.onLspUpdated?.({}, TEST_SCOPE)
+
+    expect(invalidateRootDirectoryCacheMock).toHaveBeenCalledWith({
+      serverID: 'local',
+      directory: '/workspace',
+    })
+    expect(runtimeInvalidationEmitMock).toHaveBeenCalledWith({
+      type: 'file',
+      scope: TEST_SCOPE,
+      file: '/workspace/src/app.ts',
+      event: 'change',
+    })
+    expect(runtimeInvalidationEmitMock).toHaveBeenCalledWith({ type: 'lsp', scope: TEST_SCOPE })
+  })
+
+  it('invalidates directory and workspace root cache keys independently', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+
+    renderHook(() => useGlobalEvents(['/workspace']))
+    await waitFor(() => expect(callbacks).toBeDefined())
+    invalidateRootDirectoryCacheMock.mockClear()
+
+    callbacks!.onFileWatcherUpdated?.(
+      { file: '/workspace/src/app.ts', event: 'change' },
+      { serverID: 'local', directory: '/workspace', workspace: 'workspace-a' },
+    )
+
+    expect(invalidateRootDirectoryCacheMock).toHaveBeenNthCalledWith(1, {
+      serverID: 'local',
+      directory: '/workspace',
+    })
+    expect(invalidateRootDirectoryCacheMock).toHaveBeenNthCalledWith(2, {
+      serverID: 'local',
+      workspace: 'workspace-a',
+    })
+  })
+
+  it('uses one resync path for event gaps and reconnects', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    const onReconnected = vi.fn()
+    const unregister = registerSessionConsumer('pane-resync', 'session-1', { onReconnected })
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+
+    renderHook(() => useGlobalEvents(['/one', '/two']))
+    await waitFor(() => expect(callbacks).toBeDefined())
+    markAllSessionsStaleMock.mockClear()
+    invalidateRootDirectoryCacheMock.mockClear()
+    runtimeInvalidationEmitMock.mockClear()
+    checkHealthMock.mockClear()
+
+    callbacks!.onEventGap?.({ dropped: 2 }, GLOBAL_SCOPE)
+
+    expect(markAllSessionsStaleMock).toHaveBeenCalledTimes(1)
+    expect(invalidateRootDirectoryCacheMock).toHaveBeenCalledWith({
+      serverID: 'local',
+      directory: '/one',
+    })
+    expect(invalidateRootDirectoryCacheMock).toHaveBeenCalledWith({
+      serverID: 'local',
+      directory: '/two',
+    })
+    expect(runtimeInvalidationEmitMock).toHaveBeenCalledWith({
+      type: 'file',
+      scope: GLOBAL_SCOPE,
+      event: 'resync',
+    })
+    expect(onReconnected).toHaveBeenCalledWith('event-gap', 'local')
+
+    onReconnected.mockClear()
+    callbacks!.onReconnected?.('network', 'local')
+    expect(onReconnected).toHaveBeenCalledWith('network', 'local')
+
+    unregister()
+  })
+
+  it('clears instance and global runtime scopes before resyncing', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    activeSessionStoreMock.getSessionIdsForScope.mockReturnValue(['session-1', 'session-2'])
+
+    renderHook(() => useGlobalEvents(['/workspace']))
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    callbacks!.onServerInstanceDisposed?.({ directory: '/workspace' }, TEST_SCOPE)
+
+    expect(activeSessionStoreMock.getSessionIdsForScope).toHaveBeenCalledWith({
+      serverID: 'local',
+      directory: '/workspace',
+      workspace: undefined,
+    })
+    expect(clearSessionRuntimeStateMock).toHaveBeenCalledWith('session-1', 'local')
+    expect(clearSessionRuntimeStateMock).toHaveBeenCalledWith('session-2', 'local')
+    expect(clearPaneSessionMock).toHaveBeenCalledWith('session-1')
+    expect(clearPaneSessionMock).toHaveBeenCalledWith('session-2')
+    expect(runtimeInvalidationEmitMock).toHaveBeenCalledWith({
+      type: 'file',
+      scope: TEST_SCOPE,
+      event: 'disposed',
+    })
+
+    activeSessionStoreMock.getSessionIdsForScope.mockClear()
+    callbacks!.onGlobalDisposed?.({}, GLOBAL_SCOPE)
+    expect(activeSessionStoreMock.getSessionIdsForScope).toHaveBeenCalledWith({
+      serverID: 'local',
+      directory: undefined,
+      workspace: undefined,
+    })
+  })
+
+  it('sends one system notification for multiple matching pane consumers', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    const firstConsumer = vi.fn()
+    const secondConsumer = vi.fn()
+    const unregisterFirst = registerSessionConsumer('pane-a', 'session-1', { onPermissionAsked: firstConsumer })
+    const unregisterSecond = registerSessionConsumer('pane-b', 'session-1', { onPermissionAsked: secondConsumer })
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    getFocusedSessionIdMock.mockReturnValue('session-1')
+    isSystemEnabledMock.mockReturnValue(true)
+
+    renderHook(() => useGlobalEvents(['/workspace']))
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    callbacks!.onPermissionAsked?.(
+      { id: 'permission-1', sessionID: 'session-1', permission: 'bash', patterns: ['npm test'] },
+      TEST_SCOPE,
+    )
+
+    expect(firstConsumer).toHaveBeenCalledTimes(1)
+    expect(secondConsumer).toHaveBeenCalledTimes(1)
+    expect(sendNotificationMock).toHaveBeenCalledTimes(1)
+
+    unregisterFirst()
+    unregisterSecond()
   })
 
   it.each([
@@ -668,7 +941,10 @@ describe('useGlobalEvents', () => {
 
       await waitFor(() => expect(callbacks).toBeDefined())
 
-      callbacks![trigger as keyof typeof callbacks]?.(payload as never)
+      const callback = callbacks![trigger as keyof typeof callbacks] as
+        | ((value: never, scope: typeof TEST_SCOPE) => void)
+        | undefined
+      callback?.(payload as never, TEST_SCOPE)
 
       expect(notificationPushMock).toHaveBeenCalledTimes(1)
       expect(playNotificationSoundDedupedMock).not.toHaveBeenCalled()

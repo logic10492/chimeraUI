@@ -19,6 +19,7 @@ import { resetPathModeCache } from './utils/directoryUtils'
 import { isTauri, isTauriMobile } from './utils/tauri'
 import { apiErrorHandler, globalErrorHandler } from './utils/errorHandling'
 import { applyLocalServiceUrl } from './utils/localServiceUrl'
+import { resetServerScopedRuntime } from './utils/serverTransition'
 
 // Polyfill: randomUUID 在非 HTTPS 环境可能缺失（如局域网 HTTP）
 // 统一补齐，避免业务层 scattered fallback。
@@ -59,11 +60,15 @@ if (document.readyState === 'loading') {
 }
 
 // 注册 active server 入口变化 → 清理 server-specific 状态 + 重建 SDK/SSE
-serverStore.onServerChange(() => {
+serverStore.onServerChange((serverID, reason) => {
   abortInFlightApiRequests()
   invalidateSDKClient()
   if (isTauri()) {
     void getSDKClientAsync().catch(err => apiErrorHandler('reinitialize sdk client after server endpoint change', err))
+  }
+
+  if (reason === 'server-switch') {
+    resetServerScopedRuntime(serverID)
   }
 
   // 1. 清空内存中的 session/消息数据

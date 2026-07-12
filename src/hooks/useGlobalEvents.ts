@@ -11,14 +11,18 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { messageStore, childSessionStore, paneLayoutStore, serverStore } from '../store'
 import { activeSessionStore } from '../store/activeSessionStore'
+import { notificationEventSettingsStore } from '../store/notificationEventSettingsStore'
 import { notificationStore } from '../store/notificationStore'
+import { runtimeInvalidationStore } from '../store/runtimeInvalidationStore'
 import { soundStore } from '../store/soundStore'
 import { playNotificationSoundDeduped } from '../utils/notificationSoundBridge'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { subscribeToEvents, getSessionStatus, getPendingPermissions, getPendingQuestions } from '../api'
+import { invalidateRootDirectoryCache } from '../api/file'
 import { replyPermission } from '../api/permission'
 import { autoApproveStore } from '../store/autoApproveStore'
-import type { ApiMessage, ApiPart, ApiPermissionRequest, ApiQuestionRequest } from '../api/types'
+import { useNotification } from './useNotification'
+import type { ApiMessage, ApiPart, ApiPermissionRequest, ApiQuestionRequest, EventScope } from '../api/types'
 import type { SessionStatusMap } from '../types/api/session'
 
 // ============================================
@@ -29,6 +33,8 @@ import type { SessionStatusMap } from '../types/api/session'
 // SSE 事件到达后，按 sessionId 找到匹配的消费者分发。
 
 /** 消费者可以注册的回调类型（与 GlobalEventsCallbacks 的子集对应） */
+export type SessionResyncReason = 'network' | 'server-switch' | 'event-gap' | 'dispose'
+
 export interface SessionEventCallbacks {
   onPermissionAsked?: (request: ApiPermissionRequest) => void
   onPermissionReplied?: (data: { sessionID: string; requestID: string }) => void
@@ -38,7 +44,7 @@ export interface SessionEventCallbacks {
   onScrollRequest?: () => void
   onSessionIdle?: (sessionID: string) => void
   onSessionError?: (sessionID: string) => void
-  onReconnected?: (reason: 'network' | 'server-switch') => void
+  onReconnected?: (reason: SessionResyncReason, serverID: string) => void
 }
 
 interface SessionConsumer {
@@ -168,8 +174,7 @@ function removePendingByRequestId<T extends { id: string }>(
   }
 }
 
-async function fetchActiveScopeData(directories?: string[]) {
-  const serverID = serverStore.getActiveServerId()
+async function fetchActiveScopeData(serverID: string, directories?: string[]) {
   const scopes = directories && directories.length > 0 ? directories : [undefined]
   const results = await Promise.all(
     scopes.map(async directory => {
@@ -266,6 +271,7 @@ export function useGlobalEvents(directories?: string[]) {
   const directoriesRef = useRef<string[] | undefined>(directories)
   const refreshRef = useRef<((strategy?: 'replace' | 'merge') => void) | null>(null)
   const initializedDirectoriesRef = useRef(false)
+  const { sendNotification } = useNotification()
 
   useEffect(() => {
     // 节流滚动
@@ -307,10 +313,11 @@ export function useGlobalEvents(directories?: string[]) {
 
     const fetchAndInitialize = (strategy: 'replace' | 'merge' = 'replace') => {
       const currentVersion = ++fetchVersion
+      const serverID = serverStore.getActiveServerId()
       activeFetchVersion = currentVersion
-      void fetchActiveScopeData(directoriesRef.current)
+      void fetchActiveScopeData(serverID, directoriesRef.current)
         .then(({ statusMap, permissions, questions, sessionMetaEntries }) => {
-          if (disposed || currentVersion !== fetchVersion) return
+          if (disposed || currentVersion !== fetchVersion || serverStore.getActiveServerId() !== serverID) return
           if (strategy === 'merge') {
             activeSessionStore.mergeStatusRefresh(statusMap)
             activeSessionStore.mergePendingRequests(permissions, questions)
@@ -347,6 +354,82 @@ export function useGlobalEvents(directories?: string[]) {
     const refreshActiveServerHealth = () => {
       const activeServerId = serverStore.getActiveServerId()
       void serverStore.checkHealth(activeServerId).catch(() => {})
+    }
+
+    const isActiveScope = (scope: EventScope) => {
+      if (scope.serverID !== serverStore.getActiveServerId()) return false
+      const activeDirectories = directoriesRef.current
+      if (scope.directory === 'global' || !activeDirectories || activeDirectories.length === 0) return true
+      return activeDirectories.includes(scope.directory)
+    }
+
+    const invalidateRootCaches = (scope: EventScope) => {
+      const activeDirectories = directoriesRef.current
+      const directoriesToInvalidate =
+        scope.directory === 'global'
+          ? activeDirectories && activeDirectories.length > 0
+            ? activeDirectories
+            : [undefined]
+          : [scope.directory]
+
+      directoriesToInvalidate.forEach(directory => {
+        invalidateRootDirectoryCache({ serverID: scope.serverID, directory })
+      })
+      if (scope.workspace) {
+        invalidateRootDirectoryCache({ serverID: scope.serverID, workspace: scope.workspace })
+      }
+    }
+
+    const invalidateRuntimeScope = (scope: EventScope, event: 'resync' | 'disposed') => {
+      invalidateRootCaches(scope)
+      runtimeInvalidationStore.emit({ type: 'file', scope, event })
+      runtimeInvalidationStore.emit({ type: 'lsp', scope })
+    }
+
+    const resyncRuntime = (scope: EventScope, reason: SessionResyncReason, event: 'resync' | 'disposed' = 'resync') => {
+      if (!isActiveScope(scope)) return
+      pendingPermissions.clear()
+      pendingQuestions.clear()
+      latePendingRequests.clear()
+      messageStore.markAllSessionsStale()
+      invalidateRuntimeScope(scope, event)
+      refreshActiveServerHealth()
+      fetchAndInitialize()
+      for (const consumer of sessionConsumers.values()) {
+        consumer.callbacks.onReconnected?.(reason, scope.serverID)
+      }
+    }
+
+    const disposeRuntimeScope = (scope: EventScope) => {
+      if (!isActiveScope(scope)) return
+      const sessionIds = activeSessionStore.getSessionIdsForScope({
+        serverID: scope.serverID,
+        directory: scope.directory === 'global' ? undefined : scope.directory,
+        workspace: scope.workspace,
+      })
+      for (const sessionId of sessionIds) {
+        pendingPermissions.delete(sessionId)
+        pendingQuestions.delete(sessionId)
+        clearSessionRuntimeState(sessionId, scope.serverID)
+        paneLayoutStore.clearSession(sessionId)
+      }
+      resyncRuntime(scope, 'dispose', 'disposed')
+    }
+
+    const sendSystemNotification = (
+      type: 'permission' | 'question' | 'completed' | 'error',
+      sessionID: string,
+      label: string,
+      body: string,
+      scope: EventScope,
+    ) => {
+      if (!notificationEventSettingsStore.isSystemEnabled(type)) return
+      const meta = activeSessionStore.getSessionMeta(sessionID, scope.serverID)
+      const sessionLabel = meta?.title || `Session ${sessionID.slice(0, 6)}`
+      void sendNotification(`${sessionLabel} - ${label}`, body, {
+        sessionId: sessionID,
+        directory: meta?.directory ?? (scope.directory === 'global' ? undefined : scope.directory),
+      })
     }
 
     const markPermissionReplied = (sessionID: string, requestID: string) => {
@@ -396,6 +479,11 @@ export function useGlobalEvents(directories?: string[]) {
 
     const unsubscribeAutoApprove = autoApproveStore.subscribe(approveGlobalPendingPermissions)
     const unsubscribeServerChange = serverStore.onServerChange(serverId => {
+      fetchVersion += 1
+      activeFetchVersion = 0
+      pendingPermissions.clear()
+      pendingQuestions.clear()
+      latePendingRequests.clear()
       void serverStore.checkHealth(serverId).catch(() => {})
     })
 
@@ -404,23 +492,32 @@ export function useGlobalEvents(directories?: string[]) {
       // Message Events → messageStore
       // ============================================
 
-      onMessageUpdated: (apiMsg: ApiMessage) => {
+      onMessageUpdated: (apiMsg: ApiMessage, scope) => {
+        if (!isActiveScope(scope)) return
         messageStore.handleMessageUpdated(apiMsg)
       },
 
-      onPartUpdated: (apiPart: ApiPart) => {
+      onMessageRemoved: (data, scope) => {
+        if (!isActiveScope(scope)) return
+        messageStore.removeMessage(data.sessionID, data.messageID)
+      },
+
+      onPartUpdated: (apiPart: ApiPart, scope) => {
+        if (!isActiveScope(scope)) return
         if ('sessionID' in apiPart && 'messageID' in apiPart) {
           messageStore.handlePartUpdated(apiPart as ApiPart & { sessionID: string; messageID: string })
           scheduleScroll(apiPart.sessionID)
         }
       },
 
-      onPartDelta: data => {
+      onPartDelta: (data, scope) => {
+        if (!isActiveScope(scope)) return
         messageStore.handlePartDelta(data)
         scheduleScroll(data.sessionID)
       },
 
-      onPartRemoved: data => {
+      onPartRemoved: (data, scope) => {
+        if (!isActiveScope(scope)) return
         messageStore.handlePartRemoved(data)
       },
 
@@ -428,12 +525,11 @@ export function useGlobalEvents(directories?: string[]) {
       // Session Events → childSessionStore
       // ============================================
 
-      onSessionCreated: session => {
-        // 注册子 session 关系
+      onSessionCreated: (session, scope) => {
+        if (!isActiveScope(scope)) return
         if (session.parentID) {
           childSessionStore.registerChildSession(session)
 
-          // 处理因时序问题缓存的权限请求（可能有多个）
           if (belongsToCurrentSession(session.id)) {
             for (const req of drainPending(pendingPermissions, session.id)) {
               dispatchToConsumers(req.sessionID, cb => cb.onPermissionAsked?.(req))
@@ -444,78 +540,89 @@ export function useGlobalEvents(directories?: string[]) {
           }
         }
 
-        // 更新 session meta 供 active tab 使用
         activeSessionStore.setSessionMeta(
           session.id,
           session.title,
-          session.directory,
-          serverStore.getActiveServerId(),
-          session.workspaceID,
+          scope.directory === 'global' ? session.directory : scope.directory,
+          scope.serverID,
+          scope.workspace ?? session.workspaceID,
         )
 
-        // 清理过期缓存
         cleanupExpired(pendingPermissions)
         cleanupExpired(pendingQuestions)
       },
 
-      onSessionIdle: data => {
+      onSessionIdle: (data, scope) => {
+        if (!isActiveScope(scope)) return
         messageStore.handleSessionIdle(data.sessionID)
         childSessionStore.markIdle(data.sessionID)
-        dispatchToConsumers(data.sessionID, cb => cb.onSessionIdle?.(data.sessionID))
+        const dispatched = dispatchToConsumers(data.sessionID, cb => cb.onSessionIdle?.(data.sessionID))
+        if (dispatched) {
+          sendSystemNotification('completed', data.sessionID, 'Session completed', 'Session completed', scope)
+        }
       },
 
-      onSessionError: error => {
+      onSessionError: (error, scope) => {
+        if (!isActiveScope(scope)) return
         const isAbort = error.name === 'MessageAbortedError' || error.name === 'AbortError'
         if (!isAbort && import.meta.env.DEV) {
           console.warn('[GlobalEvents] Session error:', error)
         }
-        if (error.sessionID == null || error.sessionID.length < 1) {
-          return // Don't handle errors with no sessionID
-        }
+        if (!error.sessionID) return
+
         messageStore.handleSessionError(error.sessionID)
         childSessionStore.markError(error.sessionID)
         if (!isAbort) {
-          // 从 Working 列表移除
           activeSessionStore.updateStatus(error.sessionID, { type: 'idle' })
-          // 通知（跳过当前 session family）
+          const meta = activeSessionStore.getSessionMeta(error.sessionID, scope.serverID)
           if (!belongsToCurrentSession(error.sessionID)) {
-            const meta = activeSessionStore.getSessionMeta(error.sessionID)
             const sessionLabel = meta?.title || error.sessionID.slice(0, 8)
-            notificationStore.push('error', sessionLabel, 'Session error', error.sessionID, meta?.directory)
+            notificationStore.push(
+              'error',
+              sessionLabel,
+              'Session error',
+              error.sessionID,
+              meta?.directory ?? (scope.directory === 'global' ? undefined : scope.directory),
+            )
           } else if (isSessionDirectlyOpen(error.sessionID) && soundStore.getSnapshot().currentSessionEnabled) {
             playNotificationSoundDeduped('error')
           }
         }
-        dispatchToConsumers(error.sessionID, cb => cb.onSessionError?.(error.sessionID))
+
+        const dispatched = dispatchToConsumers(error.sessionID, cb => cb.onSessionError?.(error.sessionID))
+        if (!isAbort && dispatched) {
+          sendSystemNotification('error', error.sessionID, 'Session error', 'Session error', scope)
+        }
       },
 
-      onSessionUpdated: session => {
-        // 更新 session meta 供 active tab 使用
+      onSessionUpdated: (session, scope) => {
+        if (!isActiveScope(scope)) return
         activeSessionStore.setSessionMeta(
           session.id,
           session.title,
-          session.directory,
-          serverStore.getActiveServerId(),
-          session.workspaceID,
+          scope.directory === 'global' ? session.directory : scope.directory,
+          scope.serverID,
+          scope.workspace ?? session.workspaceID,
         )
         if (session.parentID) {
           childSessionStore.registerChildSession(session)
         }
 
-        // 同步标题到 messageStore，让 Header 等依赖 messageStore 的组件实时更新
         if (session.title && messageStore.getSessionState(session.id)) {
           messageStore.updateSessionMetadata(session.id, { title: session.title })
         }
       },
 
-      onSessionDeleted: sessionId => {
+      onSessionDeleted: (sessionId, scope) => {
+        if (!isActiveScope(scope)) return
         const removedSessionIds = childSessionStore.getSessionAndDescendants(sessionId)
-        clearSessionRuntimeState(sessionId)
+        clearSessionRuntimeState(sessionId, scope.serverID)
         for (const id of removedSessionIds) paneLayoutStore.clearSession(id)
       },
 
-      onServerConnected: data => {
-        serverStore.applyServerConnectedTimestamp(serverStore.getActiveServerId(), data.timestamp)
+      onServerConnected: (data, scope) => {
+        if (!isActiveScope(scope)) return
+        serverStore.applyServerConnectedTimestamp(scope.serverID, data.timestamp)
       },
 
       // ============================================
@@ -524,10 +631,19 @@ export function useGlobalEvents(directories?: string[]) {
       // 时序处理：如果 session 还没注册，缓存请求等 session.created 后处理
       // ============================================
 
-      onPermissionAsked: request => {
-        // Full Auto 全局模式拦截 — 所有会话的权限请求直接放行
+      onPermissionAsked: (request, scope) => {
+        if (!isActiveScope(scope)) return
+        activeSessionStore.setSessionMeta(
+          request.sessionID,
+          undefined,
+          scope.directory === 'global' ? undefined : scope.directory,
+          scope.serverID,
+          scope.workspace,
+        )
+        const meta = activeSessionStore.getSessionMeta(request.sessionID, scope.serverID)
+
         if (autoApproveStore.fullAutoMode === 'global') {
-          const dir = activeSessionStore.getSessionMeta(request.sessionID)?.directory
+          const dir = meta?.directory
           if (autoApproveStore.claimAutoReply(request.id)) {
             replyPermission(request.id, 'once', undefined, dir, request.sessionID)
               .then(() => {
@@ -540,11 +656,9 @@ export function useGlobalEvents(directories?: string[]) {
           return
         }
 
-        const meta = activeSessionStore.getSessionMeta(request.sessionID)
         const sessionLabel = meta?.title || request.sessionID.slice(0, 8)
         const desc = request.patterns?.length ? `${request.permission}: ${request.patterns[0]}` : request.permission
 
-        // Active 列表：注册 pending request
         activeSessionStore.addPendingRequest(request.id, request.sessionID, 'permission', desc)
         if (activeFetchVersion !== 0) {
           latePendingRequests.set(request.id, {
@@ -557,22 +671,23 @@ export function useGlobalEvents(directories?: string[]) {
           })
         }
 
-        // Toast 通知 — 不属于当前 session family 的才弹
-        if (!belongsToCurrentSession(request.sessionID)) {
+        const belongsToCurrent = belongsToCurrentSession(request.sessionID)
+        if (!belongsToCurrent) {
           notificationStore.push('permission', `${sessionLabel} — Permission`, desc, request.sessionID, meta?.directory)
         } else if (isSessionDirectlyOpen(request.sessionID) && soundStore.getSnapshot().currentSessionEnabled) {
-          // 当前会话：如果开启了当前会话提示音
           playNotificationSoundDeduped('permission')
         }
 
-        if (belongsToCurrentSession(request.sessionID)) {
+        if (belongsToCurrent) {
+          sendSystemNotification('permission', request.sessionID, 'Permission Required', desc, scope)
           dispatchToConsumers(request.sessionID, cb => cb.onPermissionAsked?.(request))
-        } else {
-          addPending(pendingPermissions, request.sessionID, request)
+          return
         }
+        addPending(pendingPermissions, request.sessionID, request)
       },
 
-      onPermissionReplied: data => {
+      onPermissionReplied: (data, scope) => {
+        if (!isActiveScope(scope)) return
         markPermissionReplied(data.sessionID, data.requestID)
       },
 
@@ -580,12 +695,19 @@ export function useGlobalEvents(directories?: string[]) {
       // Question Events
       // ============================================
 
-      onQuestionAsked: request => {
-        const meta = activeSessionStore.getSessionMeta(request.sessionID)
+      onQuestionAsked: (request, scope) => {
+        if (!isActiveScope(scope)) return
+        activeSessionStore.setSessionMeta(
+          request.sessionID,
+          undefined,
+          scope.directory === 'global' ? undefined : scope.directory,
+          scope.serverID,
+          scope.workspace,
+        )
+        const meta = activeSessionStore.getSessionMeta(request.sessionID, scope.serverID)
         const sessionLabel = meta?.title || request.sessionID.slice(0, 8)
         const desc = request.questions?.[0]?.header || 'AI is waiting for your input'
 
-        // Active 列表：注册 pending request
         activeSessionStore.addPendingRequest(request.id, request.sessionID, 'question', desc)
         if (activeFetchVersion !== 0) {
           latePendingRequests.set(request.id, {
@@ -598,21 +720,23 @@ export function useGlobalEvents(directories?: string[]) {
           })
         }
 
-        // Toast 通知
-        if (!belongsToCurrentSession(request.sessionID)) {
+        const belongsToCurrent = belongsToCurrentSession(request.sessionID)
+        if (!belongsToCurrent) {
           notificationStore.push('question', `${sessionLabel} — Question`, desc, request.sessionID, meta?.directory)
         } else if (isSessionDirectlyOpen(request.sessionID) && soundStore.getSnapshot().currentSessionEnabled) {
           playNotificationSoundDeduped('question')
         }
 
-        if (belongsToCurrentSession(request.sessionID)) {
+        if (belongsToCurrent) {
+          sendSystemNotification('question', request.sessionID, 'Question', desc, scope)
           dispatchToConsumers(request.sessionID, cb => cb.onQuestionAsked?.(request))
-        } else {
-          addPending(pendingQuestions, request.sessionID, request)
+          return
         }
+        addPending(pendingQuestions, request.sessionID, request)
       },
 
-      onQuestionReplied: data => {
+      onQuestionReplied: (data, scope) => {
+        if (!isActiveScope(scope)) return
         removePendingByRequestId(pendingQuestions, data.sessionID, data.requestID)
         latePendingRequests.delete(data.requestID)
         activeSessionStore.resolvePendingRequest(data.requestID)
@@ -622,7 +746,8 @@ export function useGlobalEvents(directories?: string[]) {
         }
       },
 
-      onQuestionRejected: data => {
+      onQuestionRejected: (data, scope) => {
+        if (!isActiveScope(scope)) return
         removePendingByRequestId(pendingQuestions, data.sessionID, data.requestID)
         latePendingRequests.delete(data.requestID)
         activeSessionStore.resolvePendingRequest(data.requestID)
@@ -636,17 +761,23 @@ export function useGlobalEvents(directories?: string[]) {
       // Session Status → activeSessionStore
       // ============================================
 
-      onSessionStatus: data => {
+      onSessionStatus: (data, scope) => {
+        if (!isActiveScope(scope)) return
         const prevStatus = activeSessionStore.getSnapshot().statusMap[data.sessionID]
         const wasBusy = prevStatus && (prevStatus.type === 'busy' || prevStatus.type === 'retry')
 
         activeSessionStore.updateStatus(data.sessionID, data.status)
 
-        // Toast — session 从 busy/retry 变成 idle 时弹 completed 通知
         if (wasBusy && data.status.type === 'idle' && !belongsToCurrentSession(data.sessionID)) {
-          const meta = activeSessionStore.getSessionMeta(data.sessionID)
+          const meta = activeSessionStore.getSessionMeta(data.sessionID, scope.serverID)
           const sessionLabel = meta?.title || data.sessionID.slice(0, 8)
-          notificationStore.push('completed', sessionLabel, 'Session completed', data.sessionID, meta?.directory)
+          notificationStore.push(
+            'completed',
+            sessionLabel,
+            'Session completed',
+            data.sessionID,
+            meta?.directory ?? (scope.directory === 'global' ? undefined : scope.directory),
+          )
         } else if (
           wasBusy &&
           data.status.type === 'idle' &&
@@ -657,21 +788,43 @@ export function useGlobalEvents(directories?: string[]) {
         }
       },
 
-      // ============================================
-      // Reconnected → 通知调用方刷新数据 + 重新拉取 session status
-      // ============================================
+      onFileEdited: (data, scope) => {
+        if (!isActiveScope(scope)) return
+        invalidateRootCaches(scope)
+        runtimeInvalidationStore.emit({ type: 'file', scope, file: data.file, event: 'edited' })
+      },
 
-      onReconnected: reason => {
+      onFileWatcherUpdated: (data, scope) => {
+        if (!isActiveScope(scope)) return
+        invalidateRootCaches(scope)
+        runtimeInvalidationStore.emit({ type: 'file', scope, file: data.file, event: data.event })
+      },
+
+      onLspUpdated: (_data, scope) => {
+        if (!isActiveScope(scope)) return
+        runtimeInvalidationStore.emit({ type: 'lsp', scope })
+      },
+
+      onServerInstanceDisposed: (data, scope) => {
+        disposeRuntimeScope({ ...scope, directory: data.directory })
+      },
+
+      onGlobalDisposed: (_data, scope) => {
+        disposeRuntimeScope({ ...scope, directory: 'global', workspace: undefined })
+      },
+
+      onEventGap: (data, scope) => {
         if (import.meta.env.DEV) {
-          console.log(`[GlobalEvents] SSE reconnected (reason: ${reason}), notifying for data refresh`)
+          console.warn(`[GlobalEvents] Event gap detected (${data.dropped} dropped), resyncing`)
         }
-        refreshActiveServerHealth()
-        // 重连后重新拉取全量状态 + pending requests
-        fetchAndInitialize()
-        // 通知所有 pub/sub 消费者
-        for (const consumer of sessionConsumers.values()) {
-          consumer.callbacks.onReconnected?.(reason)
+        resyncRuntime(scope, 'event-gap')
+      },
+
+      onReconnected: (reason, serverID) => {
+        if (import.meta.env.DEV) {
+          console.log(`[GlobalEvents] SSE reconnected (reason: ${reason}), resyncing`)
         }
+        resyncRuntime({ serverID, directory: 'global' }, reason)
       },
     })
 
@@ -688,7 +841,7 @@ export function useGlobalEvents(directories?: string[]) {
       unsubscribeServerChange()
       unsubscribe()
     }
-  }, [])
+  }, [sendNotification])
 
   useLayoutEffect(() => {
     directoriesRef.current = directories

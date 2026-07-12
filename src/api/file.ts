@@ -11,6 +11,7 @@ const ROOT_DIRECTORY_CACHE_TTL_MS = 10_000
 
 const rootDirectoryCache = new Map<string, { data: FileNode[]; expiresAt: number }>()
 const rootDirectoryInflight = new Map<string, Promise<FileNode[]>>()
+const rootDirectoryGeneration = new Map<string, number>()
 
 function isRootDirectoryPath(path: string): boolean {
   return path === '' || path === '.' || path === './'
@@ -18,6 +19,26 @@ function isRootDirectoryPath(path: string): boolean {
 
 function getRootDirectoryCacheKey(scope: ApiScope): string {
   return apiScopeKey(scope)
+}
+
+export function invalidateRootDirectoryCache(input?: ApiScopeInput) {
+  const key = getRootDirectoryCacheKey(resolveApiScope(input))
+  rootDirectoryGeneration.set(key, (rootDirectoryGeneration.get(key) ?? 0) + 1)
+  rootDirectoryCache.delete(key)
+  rootDirectoryInflight.delete(key)
+}
+
+export function invalidateAllRootDirectoryCaches() {
+  const keys = new Set([
+    ...rootDirectoryCache.keys(),
+    ...rootDirectoryInflight.keys(),
+    ...rootDirectoryGeneration.keys(),
+  ])
+  keys.forEach(key => {
+    rootDirectoryGeneration.set(key, (rootDirectoryGeneration.get(key) ?? 0) + 1)
+  })
+  rootDirectoryCache.clear()
+  rootDirectoryInflight.clear()
 }
 
 async function fetchDirectory(path: string, input?: ApiScopeInput): Promise<FileNode[]> {
@@ -76,13 +97,18 @@ export async function listDirectory(path: string, input?: ApiScopeInput): Promis
     return inflight
   }
 
+  const generation = rootDirectoryGeneration.get(key) ?? 0
   const request = fetchDirectory(path === '' ? '.' : path, scope)
     .then(data => {
-      rootDirectoryCache.set(key, { data, expiresAt: Date.now() + ROOT_DIRECTORY_CACHE_TTL_MS })
+      if ((rootDirectoryGeneration.get(key) ?? 0) === generation) {
+        rootDirectoryCache.set(key, { data, expiresAt: Date.now() + ROOT_DIRECTORY_CACHE_TTL_MS })
+      }
       return data
     })
     .finally(() => {
-      rootDirectoryInflight.delete(key)
+      if (rootDirectoryInflight.get(key) === request) {
+        rootDirectoryInflight.delete(key)
+      }
     })
 
   rootDirectoryInflight.set(key, request)

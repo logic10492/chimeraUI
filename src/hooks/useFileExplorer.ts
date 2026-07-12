@@ -8,6 +8,9 @@ import { useTranslation } from 'react-i18next'
 import { listDirectory, getFileContent, getFileStatus, getSessionDiff, getLastTurnDiff, getVcsDiff } from '../api'
 import type { FileNode, FileContent, FileStatusItem, FileDiff } from '../api/types'
 import { useSessionChangeScope } from '../store/changeScopeStore'
+import { activeSessionStore } from '../store/activeSessionStore'
+import { runtimeInvalidationStore } from '../store/runtimeInvalidationStore'
+import { serverStore } from '../store/serverStore'
 
 export interface FileTreeNode extends FileNode {
   children?: FileTreeNode[]
@@ -70,6 +73,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
   const [previewError, setPreviewError] = useState<string | null>(null)
   const previewCacheRef = useRef<Map<string, FileContent>>(new Map())
   const previewLoadIdRef = useRef(0)
+  const previewPathRef = useRef<string | null>(null)
 
   // 文件状态（git）
   const [fileStatus, setFileStatus] = useState<Map<string, FileStatusItem>>(new Map())
@@ -253,25 +257,29 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
     [tree, loadChildren, updateExpandedPaths],
   )
 
-  const collapsePath = useCallback((path: string) => {
-    updateExpandedPaths(prev => {
-      const next = new Set(prev)
-      next.delete(path)
-      return next
-    })
-  }, [updateExpandedPaths])
+  const collapsePath = useCallback(
+    (path: string) => {
+      updateExpandedPaths(prev => {
+        const next = new Set(prev)
+        next.delete(path)
+        return next
+      })
+    },
+    [updateExpandedPaths],
+  )
 
   // 加载文件预览
   const loadPreview = useCallback(
     async (path: string) => {
       if (!directory) return
-
+      const normalizedPath = normalizePath(path)
+      previewPathRef.current = normalizedPath
       const loadId = ++previewLoadIdRef.current
 
       setPreviewLoading(true)
       setPreviewError(null)
 
-      const cached = previewCacheRef.current.get(path)
+      const cached = previewCacheRef.current.get(normalizedPath)
       if (cached) {
         if (loadId === previewLoadIdRef.current) {
           setPreviewContent(cached)
@@ -281,9 +289,9 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
       }
 
       try {
-        const content = await getFileContent(path, directory)
+        const content = await getFileContent(normalizedPath, directory)
         if (loadId !== previewLoadIdRef.current) return
-        previewCacheRef.current.set(path, content)
+        previewCacheRef.current.set(normalizedPath, content)
         setPreviewContent(content)
       } catch (e) {
         if (loadId !== previewLoadIdRef.current) return
@@ -300,6 +308,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
 
   const clearPreview = useCallback(() => {
     previewLoadIdRef.current += 1
+    previewPathRef.current = null
     setPreviewContent(null)
     setPreviewError(null)
     setPreviewLoading(false)
@@ -312,9 +321,56 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
     }
     setExpandedPaths(new Set())
     previewCacheRef.current.clear()
+    previewPathRef.current = null
     setPreviewContent(null)
     await Promise.all([loadRoot(), loadStatuses()])
   }, [directory, loadRoot, loadStatuses])
+
+  useEffect(
+    () =>
+      runtimeInvalidationStore.subscribe(invalidation => {
+        if (invalidation.type !== 'file') return
+        if (invalidation.scope.serverID !== serverStore.getActiveServerId()) return
+        if (invalidation.scope.directory !== 'global' && invalidation.scope.directory !== directory) return
+        if (invalidation.scope.workspace && sessionId) {
+          const meta = activeSessionStore.getSessionMeta(sessionId, invalidation.scope.serverID)
+          if (meta?.workspaceID !== invalidation.scope.workspace) return
+        }
+
+        if (invalidation.event === 'resync' || invalidation.event === 'disposed') {
+          loadIdRef.current += 1
+          statusLoadIdRef.current += 1
+          childLoadIdsRef.current.clear()
+          expandedPathsByDirectoryRef.current.clear()
+          setTree([])
+          setFileStatus(new Map())
+          setError(null)
+          setIsLoading(false)
+          setExpandedPaths(new Set())
+        }
+
+        const file = invalidation.file
+          ? toRelativeEventPath(invalidation.file, invalidation.scope.directory)
+          : undefined
+        if (file) previewCacheRef.current.delete(file)
+        else previewCacheRef.current.clear()
+
+        const previewPath = previewPathRef.current
+        if (!file || file === previewPath) {
+          previewLoadIdRef.current += 1
+          setPreviewContent(null)
+          setPreviewError(null)
+          setPreviewLoading(false)
+
+          if (previewPath && invalidation.event !== 'unlink' && invalidation.event !== 'disposed') {
+            void loadPreview(previewPath)
+          }
+        }
+
+        void Promise.all([loadRoot(), loadStatuses()])
+      }),
+    [directory, loadPreview, loadRoot, loadStatuses, sessionId],
+  )
 
   // 初始加载
   useEffect(() => {
@@ -353,6 +409,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
   useEffect(() => {
     previewCacheRef.current.clear()
     previewLoadIdRef.current += 1
+    previewPathRef.current = null
     setPreviewContent(null)
     setPreviewError(null)
     setPreviewLoading(false)
@@ -380,6 +437,15 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
 // ============================================
 // Helper Functions
 // ============================================
+
+function toRelativeEventPath(file: string, directory: string): string {
+  const normalizedFile = normalizePath(file)
+  const normalizedDirectory = normalizePath(directory).replace(/\/$/, '')
+  if (normalizedDirectory !== 'global' && normalizedFile.startsWith(`${normalizedDirectory}/`)) {
+    return normalizedFile.slice(normalizedDirectory.length + 1)
+  }
+  return normalizedFile
+}
 
 function sortNodes(nodes: FileNode[]): FileNode[] {
   return [...nodes].sort((a, b) => {

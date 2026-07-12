@@ -4,11 +4,18 @@
 // ============================================
 
 import type {
+  EventFileEdited as SDKEventFileEdited,
+  EventFileWatcherUpdated as SDKEventFileWatcherUpdated,
+  EventGlobalDisposed as SDKEventGlobalDisposed,
+  EventLspUpdated as SDKEventLspUpdated,
   EventMessagePartDelta as SDKEventMessagePartDelta,
   EventMessagePartRemoved as SDKEventMessagePartRemoved,
+  EventMessageRemoved as SDKEventMessageRemoved,
   EventPermissionReplied as SDKEventPermissionReplied,
   EventQuestionRejected as SDKEventQuestionRejected,
   EventQuestionReplied as SDKEventQuestionReplied,
+  EventServerInstanceDisposed as SDKEventServerInstanceDisposed,
+  EventServerEventGap as SDKEventServerEventGap,
   EventSessionDiff as SDKEventSessionDiff,
   EventSessionIdle as SDKEventSessionIdle,
   EventSessionStatus as SDKEventSessionStatus,
@@ -18,7 +25,7 @@ import type {
   EventWorktreeReady as SDKEventWorktreeReady,
   GlobalEvent as SDKGlobalEvent,
   Todo as SDKTodo,
-  } from '@opencode-ai/sdk/v2/client'
+} from '@opencode-ai/sdk/v2/client'
 import type { WorkBrief } from './session'
 import type { Session } from './session'
 import type { Message, Part } from './message'
@@ -72,11 +79,27 @@ export interface ServerConnectedPayload {
   timestamp?: unknown
 }
 
+export type MessageRemovedPayload = SDKEventMessageRemoved['properties']
+export type FileEditedPayload = SDKEventFileEdited['properties']
+export type FileWatcherUpdatedPayload = SDKEventFileWatcherUpdated['properties']
+export type LspUpdatedPayload = SDKEventLspUpdated['properties']
+export type ServerInstanceDisposedPayload = SDKEventServerInstanceDisposed['properties']
+export type GlobalDisposedPayload = SDKEventGlobalDisposed['properties']
+
+export type EventGapPayload = SDKEventServerEventGap['properties']
+
+export interface EventScope {
+  serverID: string
+  directory: string
+  project?: string
+  workspace?: string
+}
+
 // ============================================
 // Global Event Type
 // ============================================
 
-export type GlobalEvent = SDKGlobalEvent | (Omit<SDKGlobalEvent, 'payload'> & { payload: { id: string; type: 'work_brief.updated'; properties: WorkBriefUpdatedPayload } })
+export type GlobalEvent = SDKGlobalEvent
 
 /**
  * 事件类型常量
@@ -123,6 +146,7 @@ export const EventTypes = {
 
   // Server events
   SERVER_CONNECTED: 'server.connected',
+  SERVER_EVENT_GAP: 'server.event-gap',
   SERVER_INSTANCE_DISPOSED: 'server.instance.disposed',
   GLOBAL_DISPOSED: 'global.disposed',
 
@@ -148,35 +172,42 @@ export const EventTypes = {
   PTY_DELETED: 'pty.deleted',
 } as const satisfies Record<string, GlobalEvent['payload']['type']>
 
-export type EventType = SDKGlobalEvent['payload']['type']
+export type EventType = GlobalEvent['payload']['type']
 
 // ============================================
 // Event Callbacks Interface
 // ============================================
 
 export interface EventCallbacks {
-  onMessageUpdated?: (message: Message) => void
-  onPartUpdated?: (part: Part) => void
-  onPartDelta?: (data: PartDeltaPayload) => void
-  onPartRemoved?: (data: PartRemovedPayload) => void
-  onServerConnected?: (data: ServerConnectedPayload) => void
-  onSessionCreated?: (session: Session) => void
-  onSessionUpdated?: (session: Session) => void
-  onSessionDeleted?: (sessionId: string) => void
-  onSessionIdle?: (data: SessionIdlePayload) => void
-  onSessionError?: (data: SessionErrorPayload) => void
-  onSessionStatus?: (data: SessionStatusPayload) => void
-  onPermissionAsked?: (request: PermissionRequest) => void
-  onPermissionReplied?: (data: PermissionRepliedPayload) => void
-  onQuestionAsked?: (request: QuestionRequest) => void
-  onQuestionReplied?: (data: QuestionRepliedPayload) => void
-  onQuestionRejected?: (data: QuestionRejectedPayload) => void
-  onTodoUpdated?: (data: TodoUpdatedPayload) => void
-  onWorkBriefUpdated?: (data: WorkBriefUpdatedPayload) => void
-  onProjectUpdated?: (project: Project) => void
-  onWorktreeReady?: (data: WorktreeReadyPayload) => void
-  onWorktreeFailed?: (data: WorktreeFailedPayload) => void
-  onVcsBranchUpdated?: (data: VcsBranchUpdatedPayload) => void
+  onMessageUpdated?: (message: Message, scope: EventScope) => void
+  onMessageRemoved?: (data: MessageRemovedPayload, scope: EventScope) => void
+  onPartUpdated?: (part: Part, scope: EventScope) => void
+  onPartDelta?: (data: PartDeltaPayload, scope: EventScope) => void
+  onPartRemoved?: (data: PartRemovedPayload, scope: EventScope) => void
+  onServerConnected?: (data: ServerConnectedPayload, scope: EventScope) => void
+  onSessionCreated?: (session: Session, scope: EventScope) => void
+  onSessionUpdated?: (session: Session, scope: EventScope) => void
+  onSessionDeleted?: (sessionId: string, scope: EventScope) => void
+  onSessionIdle?: (data: SessionIdlePayload, scope: EventScope) => void
+  onSessionError?: (data: SessionErrorPayload, scope: EventScope) => void
+  onSessionStatus?: (data: SessionStatusPayload, scope: EventScope) => void
+  onPermissionAsked?: (request: PermissionRequest, scope: EventScope) => void
+  onPermissionReplied?: (data: PermissionRepliedPayload, scope: EventScope) => void
+  onQuestionAsked?: (request: QuestionRequest, scope: EventScope) => void
+  onQuestionReplied?: (data: QuestionRepliedPayload, scope: EventScope) => void
+  onQuestionRejected?: (data: QuestionRejectedPayload, scope: EventScope) => void
+  onTodoUpdated?: (data: TodoUpdatedPayload, scope: EventScope) => void
+  onWorkBriefUpdated?: (data: WorkBriefUpdatedPayload, scope: EventScope) => void
+  onProjectUpdated?: (project: Project, scope: EventScope) => void
+  onWorktreeReady?: (data: WorktreeReadyPayload, scope: EventScope) => void
+  onWorktreeFailed?: (data: WorktreeFailedPayload, scope: EventScope) => void
+  onVcsBranchUpdated?: (data: VcsBranchUpdatedPayload, scope: EventScope) => void
+  onFileEdited?: (data: FileEditedPayload, scope: EventScope) => void
+  onFileWatcherUpdated?: (data: FileWatcherUpdatedPayload, scope: EventScope) => void
+  onLspUpdated?: (data: LspUpdatedPayload, scope: EventScope) => void
+  onServerInstanceDisposed?: (data: ServerInstanceDisposedPayload, scope: EventScope) => void
+  onGlobalDisposed?: (data: GlobalDisposedPayload, scope: EventScope) => void
+  onEventGap?: (data: EventGapPayload, scope: EventScope) => void
   onError?: (error: Error) => void
-  onReconnected?: (reason: 'network' | 'server-switch') => void
+  onReconnected?: (reason: 'network' | 'server-switch', serverID: string) => void
 }

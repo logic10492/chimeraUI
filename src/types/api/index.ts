@@ -110,6 +110,7 @@ export type {
   GlobalEvent,
   EventType,
   EventCallbacks,
+  EventScope,
   ServerConnectedPayload,
   SessionIdlePayload,
   SessionErrorPayload,
@@ -117,6 +118,7 @@ export type {
   SessionDiffPayload,
   PartDeltaPayload,
   PartRemovedPayload,
+  MessageRemovedPayload,
   PermissionRepliedPayload,
   QuestionRepliedPayload,
   QuestionRejectedPayload,
@@ -126,6 +128,12 @@ export type {
   WorktreeReadyPayload,
   WorktreeFailedPayload,
   VcsBranchUpdatedPayload,
+  FileEditedPayload,
+  FileWatcherUpdatedPayload,
+  LspUpdatedPayload,
+  ServerInstanceDisposedPayload,
+  GlobalDisposedPayload,
+  EventGapPayload,
 } from './event'
 export { EventTypes } from './event'
 

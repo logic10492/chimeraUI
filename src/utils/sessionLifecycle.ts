@@ -4,14 +4,14 @@ import { followupQueueStore } from '../store/followupQueueStore'
 import { messageStore } from '../store/messageStore'
 import { todoStore } from '../store/todoStore'
 
-export function clearSessionRuntimeState(sessionId: string) {
+export function clearSessionRuntimeState(sessionId: string, serverID?: string) {
   const sessionIds = childSessionStore.getSessionAndDescendants(sessionId)
 
   for (const id of sessionIds) {
     messageStore.clearSession(id)
     followupQueueStore.clearSession(id)
     todoStore.clearTodos(id)
-    activeSessionStore.removeSession(id)
+    activeSessionStore.removeSession(id, serverID)
   }
 
   childSessionStore.removeSession(sessionId)

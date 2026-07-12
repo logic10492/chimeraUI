@@ -9,6 +9,7 @@
 // 由 useGlobalEvents 统一推送，不再由 activeSessionStore 管通知
 
 import { useSyncExternalStore } from 'react'
+import { serverStore } from './serverStore'
 
 // ============================================
 // Types
@@ -25,6 +26,7 @@ export interface NotificationEntry {
   title: string
   body: string
   sessionId: string
+  serverID: string
   directory?: string
   timestamp: number
   read: boolean
@@ -61,19 +63,29 @@ const MAX_NOTIFICATIONS = 50
 // localStorage helpers
 // ============================================
 
-function loadNotifications(): NotificationEntry[] {
+function notificationStorageKey(serverID: string) {
+  return `srv:${serverID}:${STORAGE_KEY}`
+}
+
+function loadNotifications(serverID: string, includeLegacy = false): NotificationEntry[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const scoped = localStorage.getItem(notificationStorageKey(serverID))
+    const legacy = includeLegacy && !scoped ? localStorage.getItem(STORAGE_KEY) : null
+    const raw = scoped ?? legacy
     if (!raw) return []
-    return (JSON.parse(raw) as NotificationEntry[]).slice(0, MAX_NOTIFICATIONS)
+    const entries = (JSON.parse(raw) as Array<Omit<NotificationEntry, 'serverID'> & { serverID?: string }>)
+      .slice(0, MAX_NOTIFICATIONS)
+      .map(entry => ({ ...entry, serverID: entry.serverID ?? serverID }))
+    if (legacy) saveNotifications(serverID, entries)
+    return entries
   } catch {
     return []
   }
 }
 
-function saveNotifications(entries: NotificationEntry[]) {
+function saveNotifications(serverID: string, entries: NotificationEntry[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries))
+    localStorage.setItem(notificationStorageKey(serverID), JSON.stringify(entries))
   } catch {
     // quota exceeded
   }
@@ -84,9 +96,10 @@ function saveNotifications(entries: NotificationEntry[]) {
 // ============================================
 
 class NotificationStore {
+  private activeServerID = serverStore.getActiveServerId()
   private state: NotificationState = {
     toasts: [],
-    notifications: loadNotifications(),
+    notifications: loadNotifications(this.activeServerID, true),
   }
   private subscribers = new Set<Subscriber>()
   private toastTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -111,10 +124,22 @@ class NotificationStore {
   }
 
   private persist() {
-    saveNotifications(this.state.notifications)
+    saveNotifications(this.activeServerID, this.state.notifications)
   }
 
   getSnapshot = (): NotificationState => this.state
+
+  activateServer(serverID: string) {
+    if (this.activeServerID === serverID) return
+    this.toastTimers.forEach(timer => clearTimeout(timer))
+    this.toastTimers.clear()
+    this.activeServerID = serverID
+    this.state = {
+      toasts: [],
+      notifications: loadNotifications(serverID),
+    }
+    this.notify()
+  }
 
   setToastEnabled(enabled: boolean) {
     this.toastEnabled = enabled
@@ -144,6 +169,7 @@ class NotificationStore {
       title,
       body,
       sessionId,
+      serverID: this.activeServerID,
       directory,
       timestamp: Date.now(),
       read: false,

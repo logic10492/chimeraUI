@@ -347,19 +347,22 @@ class ServerStore {
     // 不能删除默认服务器
     const server = this.servers.find(s => s.id === id)
     if (!server || server.isDefault) return false
+    const wasActive = this.activeServerId === id
 
     this.servers = this.servers.filter(s => s.id !== id)
     this.healthMap.delete(id)
     this.healthCheckSeqMap.delete(id)
     this.clockCalibrationMap.delete(id)
 
-    // 如果删除的是当前选中的，切换到默认
-    if (this.activeServerId === id) {
+    if (wasActive) {
       this.activeServerId = this.servers[0]?.id ?? null
     }
 
     this.saveToStorage()
     this.notify()
+    if (wasActive && this.activeServerId) {
+      this.notifyServerChange(this.activeServerId, 'server-switch')
+    }
     return true
   }
 

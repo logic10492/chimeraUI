@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventTypes } from '../types/api/event'
 
+const { getActiveServerIdMock } = vi.hoisted(() => ({
+  getActiveServerIdMock: vi.fn(() => 'local'),
+}))
+
 vi.mock('./http', () => ({
   getApiBaseUrl: () => 'http://example.test',
   getAuthHeader: () => ({}),
@@ -8,6 +12,10 @@ vi.mock('./http', () => ({
 
 vi.mock('../utils/tauri', () => ({
   isTauri: () => false,
+}))
+
+vi.mock('../store/serverStore', () => ({
+  serverStore: { getActiveServerId: getActiveServerIdMock },
 }))
 
 const encoder = new TextEncoder()
@@ -77,14 +85,28 @@ function createDeferred<T>() {
   return { promise, resolve, reject }
 }
 
-function createEventChunk(payload: object): Uint8Array[] {
-  return [encoder.encode(`data: ${JSON.stringify({ directory: 'global', payload })}\n\n`)]
+function createEventChunk(
+  payload: object,
+  scope: { directory?: string; project?: string; workspace?: string } = {},
+): Uint8Array[] {
+  return [
+    encoder.encode(
+      `data: ${JSON.stringify({
+        directory: scope.directory ?? 'global',
+        project: scope.project,
+        workspace: scope.workspace,
+        payload,
+      })}\n\n`,
+    ),
+  ]
 }
 
 describe('subscribeToEvents', () => {
   beforeEach(() => {
     vi.resetModules()
   })
+  getActiveServerIdMock.mockReset()
+  getActiveServerIdMock.mockReturnValue('local')
 
   afterEach(() => {
     vi.restoreAllMocks()
@@ -213,6 +235,100 @@ describe('subscribeToEvents', () => {
 
     expect(received).toEqual(['new-server-time'])
     unsubscribe()
+  })
+
+  it('dispatches recovery events with connection and envelope scope', async () => {
+    const scope = { directory: '/repo', project: 'project-1', workspace: 'workspace-1' }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        createFetchResponse([
+          ...createEventChunk(
+            { type: EventTypes.MESSAGE_REMOVED, properties: { sessionID: 'session-1', messageID: 'message-1' } },
+            scope,
+          ),
+          ...createEventChunk(
+            { type: EventTypes.FILE_WATCHER_UPDATED, properties: { file: '/repo/src/app.ts', event: 'change' } },
+            scope,
+          ),
+          ...createEventChunk({ type: EventTypes.SERVER_EVENT_GAP, properties: { dropped: 3 } }, scope),
+        ]),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { subscribeToEvents } = await import('./events')
+    const received = await new Promise<Array<{ type: string; value: unknown; scope: unknown }>>((resolve, reject) => {
+      const events: Array<{ type: string; value: unknown; scope: unknown }> = []
+      const complete = () => {
+        if (events.length !== 3) return
+        unsubscribe()
+        resolve(events)
+      }
+      const unsubscribe = subscribeToEvents({
+        onMessageRemoved(value, eventScope) {
+          events.push({ type: 'message.removed', value, scope: eventScope })
+          complete()
+        },
+        onFileWatcherUpdated(value, eventScope) {
+          events.push({ type: 'file.watcher.updated', value, scope: eventScope })
+          complete()
+        },
+        onEventGap(value, eventScope) {
+          events.push({ type: 'server.event-gap', value, scope: eventScope })
+          complete()
+        },
+        onError(error) {
+          unsubscribe()
+          reject(error)
+        },
+      })
+    })
+
+    expect(received).toEqual([
+      {
+        type: 'message.removed',
+        value: { sessionID: 'session-1', messageID: 'message-1' },
+        scope: { serverID: 'local', ...scope },
+      },
+      {
+        type: 'file.watcher.updated',
+        value: { file: '/repo/src/app.ts', event: 'change' },
+        scope: { serverID: 'local', ...scope },
+      },
+      { type: 'server.event-gap', value: { dropped: 3 }, scope: { serverID: 'local', ...scope } },
+    ])
+  })
+
+  it('keeps the server ID captured when the browser SSE connection starts', async () => {
+    const response = createDeferred<Pick<Response, 'ok' | 'body'>>()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => response.promise),
+    )
+    getActiveServerIdMock.mockReturnValue('server-a')
+
+    const { subscribeToEvents } = await import('./events')
+    const received = new Promise<string>((resolve, reject) => {
+      const unsubscribe = subscribeToEvents({
+        onServerConnected(_data, scope) {
+          unsubscribe()
+          resolve(scope.serverID)
+        },
+        onError(error) {
+          unsubscribe()
+          reject(error)
+        },
+      })
+    })
+
+    getActiveServerIdMock.mockReturnValue('server-b')
+    response.resolve(
+      createFetchResponse(
+        createEventChunk({ type: EventTypes.SERVER_CONNECTED, properties: {} }, { directory: 'global' }),
+      ),
+    )
+
+    await expect(received).resolves.toBe('server-a')
   })
 
   it('ignores stale browser fetch failures from an old SSE generation after reconnect', async () => {

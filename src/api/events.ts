@@ -9,12 +9,14 @@ import { isTauri } from '../utils/tauri'
 import type {
   ApiMessage,
   EventCallbacks,
+  EventScope,
   GlobalEvent,
   ServerConnectedPayload,
   SessionErrorPayload,
   TodoUpdatedPayload,
 } from './types'
 import { EventTypes } from '../types/api/event'
+import { serverStore } from '../store/serverStore'
 
 // ============================================
 // Connection State
@@ -102,7 +104,7 @@ function finalizeConnectionAttempt(generation: number): boolean {
 /**
  * 广播 onReconnected，带 cooldown 防止 SSE 快速重连时密集触发数据拉取
  */
-function broadcastReconnected(reason: 'network' | 'server-switch') {
+function broadcastReconnected(reason: 'network' | 'server-switch', serverID: string) {
   const now = Date.now()
   if (reason !== 'server-switch' && now - lastReconnectedBroadcast < RECONNECTED_COOLDOWN) {
     if (import.meta.env.DEV) {
@@ -112,7 +114,7 @@ function broadcastReconnected(reason: 'network' | 'server-switch') {
   }
   lastReconnectedBroadcast = now
   allSubscribers.forEach(cb => {
-    cb.onReconnected?.(reason)
+    cb.onReconnected?.(reason, serverID)
   })
 }
 
@@ -228,6 +230,7 @@ interface BridgeEvent {
 
 async function connectViaTauri() {
   const myGeneration = connectionGeneration
+  const serverID = serverStore.getActiveServerId()
 
   try {
     // 等待上一次 disconnect 完成，避免 Rust 侧 connect/disconnect 竞争
@@ -264,7 +267,7 @@ async function connectViaTauri() {
           // 覆盖场景：首次连接（先开 UI 后开 server）、网络重连、服务器切换
           const reason = isServerSwitch ? ('server-switch' as const) : ('network' as const)
           isServerSwitch = false
-          broadcastReconnected(reason)
+          broadcastReconnected(reason, serverID)
           break
         }
         case 'data': {
@@ -274,7 +277,7 @@ async function connectViaTauri() {
           for (const eventData of sseParser.push(msg.data.data)) {
             const globalEvent = parseGlobalEvent(eventData)
             if (globalEvent) {
-              broadcastEvent(globalEvent)
+              broadcastEvent(globalEvent, serverID)
             }
           }
           break
@@ -344,6 +347,7 @@ function connectViaBrowser() {
 
   // 捕获当前连接代次
   const myGeneration = connectionGeneration
+  const serverID = serverStore.getActiveServerId()
 
   fetch(`${getApiBaseUrl()}/global/event`, {
     signal: singletonController.signal,
@@ -378,7 +382,7 @@ function connectViaBrowser() {
       // 覆盖场景：首次连接（先开 UI 后开 server）、网络重连、服务器切换
       const reason = isServerSwitch ? ('server-switch' as const) : ('network' as const)
       isServerSwitch = false
-      broadcastReconnected(reason)
+      broadcastReconnected(reason, serverID)
 
       const reader = response.body?.getReader()
       if (!reader) {
@@ -415,7 +419,7 @@ function connectViaBrowser() {
         for (const eventData of sseParser.push(decoder.decode(value, { stream: true }))) {
           const globalEvent = parseGlobalEvent(eventData)
           if (globalEvent) {
-            broadcastEvent(globalEvent)
+            broadcastEvent(globalEvent, serverID)
           }
         }
       }
@@ -674,96 +678,117 @@ function unregisterLifecycleListeners() {
 }
 
 // 广播事件给所有订阅者
-function broadcastEvent(globalEvent: GlobalEvent) {
-  // 广播给所有订阅者
+function broadcastEvent(globalEvent: GlobalEvent, serverID: string) {
+  const scope: EventScope = {
+    serverID,
+    directory: globalEvent.directory,
+    project: globalEvent.project,
+    workspace: globalEvent.workspace,
+  }
+
   allSubscribers.forEach(callbacks => {
-    handleEventForSubscriber(globalEvent.payload, callbacks)
+    handleEventForSubscriber(globalEvent.payload, callbacks, scope)
   })
 }
 
-function handleEventForSubscriber(payload: GlobalEvent['payload'], callbacks: EventCallbacks) {
+function handleEventForSubscriber(payload: GlobalEvent['payload'], callbacks: EventCallbacks, scope: EventScope) {
   switch (payload.type) {
     case EventTypes.MESSAGE_UPDATED: {
       const message = getMessageInfo(payload.properties)
-      if (message) callbacks.onMessageUpdated?.(message)
+      if (message) callbacks.onMessageUpdated?.(message, scope)
       break
     }
-    case EventTypes.MESSAGE_PART_UPDATED: {
-      callbacks.onPartUpdated?.(payload.properties.part)
+    case EventTypes.MESSAGE_REMOVED:
+      callbacks.onMessageRemoved?.(payload.properties, scope)
       break
-    }
-    case EventTypes.MESSAGE_PART_DELTA: {
-      callbacks.onPartDelta?.(payload.properties)
+    case EventTypes.MESSAGE_PART_UPDATED:
+      callbacks.onPartUpdated?.(payload.properties.part, scope)
       break
-    }
+    case EventTypes.MESSAGE_PART_DELTA:
+      callbacks.onPartDelta?.(payload.properties, scope)
+      break
     case EventTypes.MESSAGE_PART_REMOVED:
-      callbacks.onPartRemoved?.(payload.properties)
+      callbacks.onPartRemoved?.(payload.properties, scope)
       break
-    case EventTypes.SESSION_UPDATED: {
-      callbacks.onSessionUpdated?.(payload.properties.info)
+    case EventTypes.SESSION_UPDATED:
+      callbacks.onSessionUpdated?.(payload.properties.info, scope)
       break
-    }
-    case EventTypes.SESSION_CREATED: {
-      callbacks.onSessionCreated?.(payload.properties.info)
+    case EventTypes.SESSION_CREATED:
+      callbacks.onSessionCreated?.(payload.properties.info, scope)
       break
-    }
-    case EventTypes.SESSION_DELETED: {
-      callbacks.onSessionDeleted?.(payload.properties.sessionID)
+    case EventTypes.SESSION_DELETED:
+      callbacks.onSessionDeleted?.(payload.properties.sessionID, scope)
       break
-    }
-    case EventTypes.PROJECT_UPDATED: {
-      callbacks.onProjectUpdated?.(payload.properties)
+    case EventTypes.PROJECT_UPDATED:
+      callbacks.onProjectUpdated?.(payload.properties, scope)
       break
-    }
     case EventTypes.SESSION_ERROR:
-      callbacks.onSessionError?.(normalizeSessionError(payload.properties))
+      callbacks.onSessionError?.(normalizeSessionError(payload.properties), scope)
       break
     case EventTypes.SESSION_IDLE:
-      callbacks.onSessionIdle?.(payload.properties)
+      callbacks.onSessionIdle?.(payload.properties, scope)
       break
     case EventTypes.SESSION_STATUS:
-      callbacks.onSessionStatus?.(payload.properties)
+      callbacks.onSessionStatus?.(payload.properties, scope)
       break
     case EventTypes.PERMISSION_ASKED:
-      callbacks.onPermissionAsked?.(payload.properties)
+      callbacks.onPermissionAsked?.(payload.properties, scope)
       break
     case EventTypes.PERMISSION_REPLIED:
-      callbacks.onPermissionReplied?.(payload.properties)
+      callbacks.onPermissionReplied?.(payload.properties, scope)
       break
     case EventTypes.QUESTION_ASKED:
-      callbacks.onQuestionAsked?.(payload.properties)
+      callbacks.onQuestionAsked?.(payload.properties, scope)
       break
     case EventTypes.QUESTION_REPLIED:
-      callbacks.onQuestionReplied?.(payload.properties)
+      callbacks.onQuestionReplied?.(payload.properties, scope)
       break
     case EventTypes.QUESTION_REJECTED:
-      callbacks.onQuestionRejected?.(payload.properties)
+      callbacks.onQuestionRejected?.(payload.properties, scope)
       break
     case EventTypes.WORKTREE_READY:
-      callbacks.onWorktreeReady?.(payload.properties)
+      callbacks.onWorktreeReady?.(payload.properties, scope)
       break
     case EventTypes.WORKTREE_FAILED:
-      callbacks.onWorktreeFailed?.(payload.properties)
+      callbacks.onWorktreeFailed?.(payload.properties, scope)
       break
     case EventTypes.VCS_BRANCH_UPDATED:
-      callbacks.onVcsBranchUpdated?.(payload.properties)
+      callbacks.onVcsBranchUpdated?.(payload.properties, scope)
       break
-    case EventTypes.TODO_UPDATED: {
-      callbacks.onTodoUpdated?.({
-        sessionID: payload.properties.sessionID,
-        todos: normalizeTodoItems(payload.properties.todos),
-      } satisfies TodoUpdatedPayload)
+    case EventTypes.TODO_UPDATED:
+      callbacks.onTodoUpdated?.(
+        {
+          sessionID: payload.properties.sessionID,
+          todos: normalizeTodoItems(payload.properties.todos),
+        } satisfies TodoUpdatedPayload,
+        scope,
+      )
       break
-    }
-    case EventTypes.WORK_BRIEF_UPDATED: {
-      callbacks.onWorkBriefUpdated?.(payload.properties)
+    case EventTypes.WORK_BRIEF_UPDATED:
+      callbacks.onWorkBriefUpdated?.(payload.properties, scope)
       break
-    }
+    case EventTypes.FILE_EDITED:
+      callbacks.onFileEdited?.(payload.properties, scope)
+      break
+    case EventTypes.FILE_WATCHER_UPDATED:
+      callbacks.onFileWatcherUpdated?.(payload.properties, scope)
+      break
+    case EventTypes.LSP_UPDATED:
+      callbacks.onLspUpdated?.(payload.properties, scope)
+      break
+    case EventTypes.SERVER_INSTANCE_DISPOSED:
+      callbacks.onServerInstanceDisposed?.(payload.properties, scope)
+      break
+    case EventTypes.GLOBAL_DISPOSED:
+      callbacks.onGlobalDisposed?.(payload.properties, scope)
+      break
+    case EventTypes.SERVER_EVENT_GAP:
+      callbacks.onEventGap?.(payload.properties, scope)
+      break
     case EventTypes.SERVER_CONNECTED:
-      callbacks.onServerConnected?.(normalizeServerConnected(payload.properties))
+      callbacks.onServerConnected?.(normalizeServerConnected(payload.properties), scope)
       break
     default:
-      // 忽略其他事件类型
       break
   }
 }
