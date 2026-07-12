@@ -21,6 +21,7 @@ const WorktreePanel = lazy(() => import('./WorktreePanel').then(module => ({ def
 const SessionStatusPanel = lazy(() =>
   import('./SessionStatusPanel').then(module => ({ default: module.SessionStatusPanel })),
 )
+const GraphPanel = lazy(() => import('./GraphPanel').then(module => ({ default: module.GraphPanel })))
 
 function PanelFallback() {
   const { t } = useTranslation(['components', 'common'])
@@ -173,6 +174,12 @@ export const RightPanel = memo(function RightPanel({
           {activeTab.type === 'worktree' ? (
             <Suspense fallback={<PanelFallback />}>
               <WorktreePanel isResizing={isPanelResizing} />
+            </Suspense>
+          ) : null}
+
+          {activeTab.type === 'graph' ? (
+            <Suspense fallback={<PanelFallback />}>
+              <GraphPanel apiScope={getTerminalScope()} isResizing={isPanelResizing} />
             </Suspense>
           ) : null}
         </>

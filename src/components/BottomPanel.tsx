@@ -23,6 +23,7 @@ const WorktreePanel = lazy(() => import('./WorktreePanel').then(module => ({ def
 const SessionStatusPanel = lazy(() =>
   import('./SessionStatusPanel').then(module => ({ default: module.SessionStatusPanel })),
 )
+const GraphPanel = lazy(() => import('./GraphPanel').then(module => ({ default: module.GraphPanel })))
 
 interface BottomPanelProps {
   directory?: string
@@ -143,7 +144,7 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
   // 渲染内容
   const renderContent = useCallback(
     (activeTab: PanelTab | null) => {
-      if (isRestoring) {
+      if (isRestoring && (!activeTab || activeTab.type === 'terminal')) {
         return (
           <div className="flex flex-col items-center justify-center h-full text-text-400 text-[length:var(--fs-base)] gap-2">
             <TerminalIcon size={24} className="opacity-30 animate-pulse" />
@@ -229,6 +230,12 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
           {activeTab.type === 'worktree' ? (
             <Suspense fallback={<PanelFallback />}>
               <WorktreePanel isResizing={isPanelResizing} />
+            </Suspense>
+          ) : null}
+
+          {activeTab.type === 'graph' ? (
+            <Suspense fallback={<PanelFallback />}>
+              <GraphPanel apiScope={getTerminalScope()} isResizing={isPanelResizing} />
             </Suspense>
           ) : null}
         </>

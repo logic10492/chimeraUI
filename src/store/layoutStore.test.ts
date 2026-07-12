@@ -19,6 +19,7 @@ describe('LayoutStore panel and terminal layout', () => {
     const store = new LayoutStore()
 
     store.addMcpTab('bottom')
+    store.addGraphTab('right')
     store.addTerminalTab({ id: 'term-1', title: 'Terminal 1', status: 'connected' }, true, 'right')
     store.openRightPanel('changes')
 
@@ -34,6 +35,7 @@ describe('LayoutStore panel and terminal layout', () => {
         expect.objectContaining({ id: 'files', type: 'files', position: 'right' }),
         expect.objectContaining({ id: 'changes', type: 'changes', position: 'right' }),
         expect.objectContaining({ id: 'mcp', type: 'mcp', position: 'bottom' }),
+        expect.objectContaining({ id: 'graph', type: 'graph', position: 'right' }),
       ]),
     )
     expect(persisted.panelTabs.some((tab: { id: string }) => tab.id === 'term-1')).toBe(false)
@@ -44,6 +46,46 @@ describe('LayoutStore panel and terminal layout', () => {
     expect(restored.panelTabs.some(tab => tab.id === 'mcp' && tab.position === 'bottom')).toBe(true)
     expect(restored.panelTabs.some(tab => tab.id === 'term-1')).toBe(false)
   })
+
+  it('persists one graph tab and moves it between panels instead of duplicating it', () => {
+    const store = new LayoutStore()
+
+    expect(store.addGraphTab('right')).toBe('graph')
+    expect(store.addGraphTab('bottom')).toBe('graph')
+
+    const graphTabs = store.getState().panelTabs.filter(tab => tab.type === 'graph')
+    expect(graphTabs).toEqual([expect.objectContaining({ id: 'graph', position: 'bottom' })])
+    expect(store.getState().activeTabId.bottom).toBe('graph')
+
+    const restored = new LayoutStore().getState()
+    expect(restored.panelTabs.filter(tab => tab.type === 'graph')).toEqual([
+      expect.objectContaining({ id: 'graph', position: 'bottom' }),
+    ])
+  })
+
+  it.each([
+    { position: 'right' as const, activateAnotherTab: (store: LayoutStore) => store.addStatusTab('right') },
+    { position: 'bottom' as const, activateAnotherTab: (store: LayoutStore) => store.addMcpTab('bottom') },
+  ])(
+    're-adding Graph activates it and reopens a collapsed $position panel without duplication',
+    ({ position, activateAnotherTab }) => {
+      const store = new LayoutStore()
+
+      store.addGraphTab(position)
+      activateAnotherTab(store)
+      if (position === 'right') store.closeRightPanel()
+      else store.closeBottomPanel()
+
+      expect(store.addGraphTab(position)).toBe('graph')
+
+      const state = store.getState()
+      expect(state.panelTabs.filter(tab => tab.type === 'graph')).toEqual([
+        expect.objectContaining({ id: 'graph', position }),
+      ])
+      expect(state.activeTabId[position]).toBe('graph')
+      expect(position === 'right' ? state.rightPanelOpen : state.bottomPanelOpen).toBe(true)
+    },
+  )
 
   it('keeps bottom and right panels open when syncing a directory with no terminal sessions', () => {
     const store = new LayoutStore()

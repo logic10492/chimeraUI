@@ -6,7 +6,7 @@
 export type PanelPosition = 'bottom' | 'right'
 
 // 面板内容类型
-export type PanelTabType = 'status' | 'terminal' | 'files' | 'changes' | 'mcp' | 'skill' | 'worktree'
+export type PanelTabType = 'status' | 'terminal' | 'files' | 'changes' | 'mcp' | 'skill' | 'worktree' | 'graph'
 type PersistedPanelTabType = Exclude<PanelTabType, 'terminal'>
 
 // 统一的面板标签
@@ -178,7 +178,15 @@ export interface PersistedTerminalLayoutMap {
 }
 
 const PANEL_POSITIONS: PanelPosition[] = ['bottom', 'right']
-const PERSISTED_PANEL_TAB_TYPES: PersistedPanelTabType[] = ['status', 'files', 'changes', 'mcp', 'skill', 'worktree']
+const PERSISTED_PANEL_TAB_TYPES: PersistedPanelTabType[] = [
+  'status',
+  'files',
+  'changes',
+  'mcp',
+  'skill',
+  'worktree',
+  'graph',
+]
 
 function isPanelPosition(value: unknown): value is PanelPosition {
   return typeof value === 'string' && PANEL_POSITIONS.includes(value as PanelPosition)
@@ -688,6 +696,19 @@ export class LayoutStore {
 
   addWorktreeTab(position: PanelPosition) {
     return this.addSingletonTab('worktree', position, 'worktree')
+  }
+
+  addGraphTab(position: PanelPosition) {
+    const existing = this.state.panelTabs.find(tab => tab.type === 'graph')
+    if (!existing) return this.addTab({ id: 'graph', type: 'graph', position })
+    if (existing.position !== position) {
+      this.moveTab(existing.id, position)
+      return existing.id
+    }
+    this.state.activeTabId[position] = existing.id
+    this.setPanelOpen(position, true)
+    this.notify()
+    return existing.id
   }
 
   removeTab(tabId: string) {

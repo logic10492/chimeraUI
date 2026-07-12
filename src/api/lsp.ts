@@ -3,8 +3,8 @@
 // ============================================
 
 import type { FormatterStatus as SDKFormatterStatus, LspStatus as SDKLspStatus } from '@opencode-ai/sdk/v2/client'
+import { apiScopeQuery, resolveApiScope, type ApiScopeInput } from './scope'
 import { getSDKClient, unwrap } from './sdk'
-import { formatPathForApi } from '../utils/directoryUtils'
 
 export interface LSPStatus {
   running: boolean
@@ -12,21 +12,21 @@ export interface LSPStatus {
   capabilities?: string[]
 }
 
+export async function getLspStatuses(input?: ApiScopeInput): Promise<SDKLspStatus[]> {
+  const scope = resolveApiScope(input)
+  return unwrap(await getSDKClient(scope).lsp.status(apiScopeQuery(scope)))
+}
+
 /**
  * 获取 LSP 服务状态
  */
-export async function getLspStatus(directory?: string): Promise<LSPStatus> {
-  const sdk = getSDKClient()
-  const result = unwrap<SDKLspStatus[]>(await sdk.lsp.status({ directory: formatPathForApi(directory) }))
-  // SDK 返回 LspStatus[]（id/name/root/status），转换为 UI 层期望的格式
-  if (Array.isArray(result) && result.length > 0) {
-    const first = result[0]
-    return {
-      running: first.status === 'connected',
-      language: first.name,
-    }
+export async function getLspStatus(input?: ApiScopeInput): Promise<LSPStatus> {
+  const first = (await getLspStatuses(input))[0]
+  if (!first) return { running: false }
+  return {
+    running: first.status === 'connected',
+    language: first.name,
   }
-  return { running: false }
 }
 
 export interface FormatterStatus {
@@ -34,19 +34,19 @@ export interface FormatterStatus {
   name?: string
 }
 
+export async function getFormatterStatuses(input?: ApiScopeInput): Promise<SDKFormatterStatus[]> {
+  const scope = resolveApiScope(input)
+  return unwrap(await getSDKClient(scope).formatter.status(apiScopeQuery(scope)))
+}
+
 /**
  * 获取格式化器状态
  */
-export async function getFormatterStatus(directory?: string): Promise<FormatterStatus> {
-  const sdk = getSDKClient()
-  const result = unwrap<SDKFormatterStatus[]>(await sdk.formatter.status({ directory: formatPathForApi(directory) }))
-  // SDK 返回 FormatterStatus[]（name/extensions/enabled），转换为 UI 层期望的格式
-  if (Array.isArray(result) && result.length > 0) {
-    const first = result[0]
-    return {
-      available: first.enabled === true,
-      name: first.name,
-    }
+export async function getFormatterStatus(input?: ApiScopeInput): Promise<FormatterStatus> {
+  const first = (await getFormatterStatuses(input))[0]
+  if (!first) return { available: false }
+  return {
+    available: first.enabled === true,
+    name: first.name,
   }
-  return { available: false }
 }
