@@ -63,6 +63,31 @@ describe('session ApiScope routing', () => {
     expect(rememberSessionApiScopesMock).toHaveBeenCalledWith(sessions, scope)
   })
 
+  it('passes archived selection through the generated session list contract', async () => {
+    const scope = { serverID: 'server-a', directory: '/remote' }
+    activeApiScopeMock.mockReturnValue(scope)
+    listMock.mockResolvedValue({ data: [] })
+
+    await getSessions({ directory: '/remote', roots: true, archived: true })
+
+    expect(listMock).toHaveBeenCalledWith({ directory: '/remote', roots: true, archived: true })
+  })
+
+  it('sends null explicitly when restoring a session', async () => {
+    const scope = { serverID: 'server-a', directory: '/remote' }
+    const session = { id: 'session-1', title: 'Restored', directory: '/remote' }
+    resolveSessionApiScopeMock.mockReturnValue(scope)
+    updateMock.mockResolvedValue({ data: session })
+
+    await updateSession('session-1', { time: { archived: null } }, '/remote')
+
+    expect(updateMock).toHaveBeenCalledWith({
+      sessionID: 'session-1',
+      directory: '/remote',
+      time: { archived: null },
+    })
+  })
+
   it('uses target session metadata for mutations instead of the caller directory', async () => {
     const scope = { serverID: 'server-a', workspace: 'workspace-a' }
     const session = { id: 'session-1', title: 'Renamed', directory: '/remote', workspaceID: 'workspace-a' }

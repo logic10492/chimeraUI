@@ -14,6 +14,7 @@ function createDeferred<T>() {
 const getSessionsMock = vi.fn()
 const createSessionMock = vi.fn()
 const deleteSessionMock = vi.fn()
+const updateSessionMock = vi.fn()
 const subscribeToEventsMock = vi.fn()
 const onServerChangeMock = vi.fn()
 let latestEventCallbacks: Partial<EventCallbacks> = {}
@@ -23,12 +24,14 @@ vi.mock('../api', () => ({
   getSessions: (...args: unknown[]) => getSessionsMock(...args),
   createSession: (...args: unknown[]) => createSessionMock(...args),
   deleteSession: (...args: unknown[]) => deleteSessionMock(...args),
+  updateSession: (...args: unknown[]) => updateSessionMock(...args),
   subscribeToEvents: (...args: unknown[]) => subscribeToEventsMock(...args),
 }))
 
 vi.mock('../store/serverStore', () => ({
   serverStore: {
     onServerChange: (...args: unknown[]) => onServerChangeMock(...args),
+    getActiveServerId: () => 'server-a',
   },
 }))
 
@@ -53,11 +56,13 @@ describe('useSessions', () => {
     getSessionsMock.mockReset()
     createSessionMock.mockReset()
     deleteSessionMock.mockReset()
+    updateSessionMock.mockReset()
     subscribeToEventsMock.mockReset()
     onServerChangeMock.mockReset()
     getSessionsMock.mockResolvedValue([])
     createSessionMock.mockResolvedValue(makeSession('new'))
     deleteSessionMock.mockResolvedValue(true)
+    updateSessionMock.mockResolvedValue(makeSession('updated'))
     latestEventCallbacks = {}
     latestServerChange = undefined
     subscribeToEventsMock.mockImplementation((callbacks: EventCallbacks) => {
@@ -112,6 +117,50 @@ describe('useSessions', () => {
     })
 
     expect(deleteSessionMock).toHaveBeenCalledWith('session-1', '/workspace/demo')
+  })
+
+  it('loads archived sessions and removes restored sessions from the archived view', async () => {
+    const archivedSession = { ...makeSession('archived'), time: { created: 1, updated: 2, archived: 3 } }
+    getSessionsMock.mockResolvedValue([archivedSession])
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo', archived: true }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    expect(getSessionsMock).toHaveBeenCalledWith({
+      roots: true,
+      limit: 20,
+      directory: '/workspace/demo',
+      archived: true,
+    })
+
+    await act(async () => {
+      await result.current.restore('archived')
+    })
+
+    expect(updateSessionMock).toHaveBeenCalledWith('archived', { time: { archived: null } }, '/workspace/demo')
+    expect(result.current.sessions).toEqual([])
+  })
+
+  it('treats restored events with archived null as active sessions', async () => {
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      latestEventCallbacks.onSessionUpdated?.({
+        ...makeSession('restored'),
+        time: { created: 1, updated: 2, archived: null },
+      } as unknown as Parameters<NonNullable<EventCallbacks['onSessionUpdated']>>[0])
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['restored'])
   })
 
   it('adds matching sessions from realtime events immediately', async () => {

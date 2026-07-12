@@ -22,6 +22,9 @@ interface SessionListProps {
   onSelect: (session: ApiSession) => void
   onDelete: (sessionId: string) => void
   onRename: (sessionId: string, newTitle: string) => void
+  onArchive?: (sessionId: string) => void
+  onRestore?: (sessionId: string) => void
+  error?: Error | null
   onLoadMore: () => void
   onNewChat: () => void
   showHeader?: boolean
@@ -57,6 +60,9 @@ export function SessionList({
   onSelect,
   onDelete,
   onRename,
+  onArchive,
+  onRestore,
+  error,
   onLoadMore,
   onNewChat,
   showHeader = true,
@@ -205,6 +211,8 @@ export function SessionList({
                         isSelected={session.id === selectedId}
                         onSelect={() => onSelect(session)}
                         onDelete={() => setDeleteConfirm({ isOpen: true, sessionId: session.id })}
+                        onArchive={onArchive ? () => onArchive(session.id) : undefined}
+                        onRestore={onRestore ? () => onRestore(session.id) : undefined}
                         onRename={newTitle => onRename(session.id, newTitle)}
                         preferTouchUi={preferTouchUi}
                         density={density}
@@ -252,6 +260,8 @@ export function SessionList({
                     isSelected={session.id === selectedId}
                     onSelect={() => onSelect(session)}
                     onDelete={() => setDeleteConfirm({ isOpen: true, sessionId: session.id })}
+                    onArchive={onArchive ? () => onArchive(session.id) : undefined}
+                    onRestore={onRestore ? () => onRestore(session.id) : undefined}
                     onRename={newTitle => onRename(session.id, newTitle)}
                     preferTouchUi={preferTouchUi}
                     density={density}
@@ -289,6 +299,15 @@ export function SessionList({
         )}
       </div>
 
+      {error && (
+        <div
+          role="alert"
+          className="mx-3 mb-2 rounded-md bg-danger-bg px-3 py-2 text-[length:var(--fs-xs)] text-danger-100"
+        >
+          {error.message}
+        </div>
+      )}
+
       <ConfirmDialog
         isOpen={deleteConfirm.isOpen}
         onClose={() => setDeleteConfirm({ isOpen: false, sessionId: null })}
@@ -317,6 +336,8 @@ export interface SessionListItemProps {
   onSelect: () => void
   onDelete: () => void
   onRename: (newTitle: string) => void
+  onArchive?: () => void
+  onRestore?: () => void
   preferTouchUi: boolean
   density?: 'default' | 'compact' | 'minimal'
   showStats?: boolean
@@ -333,6 +354,8 @@ export function SessionListItem({
   onSelect,
   onDelete,
   onRename,
+  onArchive,
+  onRestore,
   preferTouchUi,
   density = 'default',
   showStats = true,
@@ -366,8 +389,8 @@ export function SessionListItem({
   const isMinimal = density === 'minimal'
   const hasSummaryStats = Boolean(
     showStats &&
-    session.summary &&
-    (session.summary.additions > 0 || session.summary.deletions > 0 || session.summary.files > 0),
+      session.summary &&
+      (session.summary.additions > 0 || session.summary.deletions > 0 || session.summary.files > 0),
   )
   const itemPaddingClass = isCompact ? (isEditMode ? 'px-3 py-2' : 'pl-[6px] pr-3 py-2') : 'px-3 py-2.5'
   const pinnedEntries = useSyncExternalStore(
@@ -384,6 +407,18 @@ export function SessionListItem({
     e.stopPropagation()
     setShowActions(false)
     onDelete()
+  }
+
+  const handleArchiveAction = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowActions(false)
+    onArchive?.()
+  }
+
+  const handleRestoreAction = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowActions(false)
+    onRestore?.()
   }
 
   const handleStartEdit = (e: React.MouseEvent) => {
@@ -511,14 +546,11 @@ export function SessionListItem({
     if (isEditMode || isEditing) {
       return
     }
-    startInternalDrag(
-      e,
-      {
-        kind: 'session',
-        sessionId: session.id,
-        directory: session.directory,
-      },
-    )
+    startInternalDrag(e, {
+      kind: 'session',
+      sessionId: session.id,
+      directory: session.directory,
+    })
   }
 
   const isDraggable = !isEditMode && !isEditing
@@ -626,8 +658,12 @@ export function SessionListItem({
               >
                 {hasSummaryStats && session.summary && (
                   <span className="flex shrink-0 items-center gap-1 font-mono">
-                    {session.summary.additions > 0 && <span className="text-success-100">+{session.summary.additions}</span>}
-                    {session.summary.deletions > 0 && <span className="text-danger-100">-{session.summary.deletions}</span>}
+                    {session.summary.additions > 0 && (
+                      <span className="text-success-100">+{session.summary.additions}</span>
+                    )}
+                    {session.summary.deletions > 0 && (
+                      <span className="text-danger-100">-{session.summary.deletions}</span>
+                    )}
                     {session.summary.files > 0 && <span>{session.summary.files}f</span>}
                   </span>
                 )}
@@ -676,7 +712,9 @@ export function SessionListItem({
                   )}
 
                   {/* 时间 — 操作按钮出现时隐藏，并为按钮预留空间 */}
-                  {session.time?.updated && <span className="shrink-0">{formatRelativeTime(session.time.updated)}</span>}
+                  {session.time?.updated && (
+                    <span className="shrink-0">{formatRelativeTime(session.time.updated)}</span>
+                  )}
                 </div>
               )}
             </div>
@@ -714,6 +752,28 @@ export function SessionListItem({
             >
               <PencilIcon className="w-3 h-3" />
             </button>
+            {onArchive && (
+              <button
+                type="button"
+                onClick={handleArchiveAction}
+                className="rounded px-1.5 py-1 text-[length:var(--fs-xxs)] text-text-500 hover:bg-bg-300 hover:text-text-200"
+                aria-label="Archive session"
+                title="Archive session"
+              >
+                Archive
+              </button>
+            )}
+            {onRestore && (
+              <button
+                type="button"
+                onClick={handleRestoreAction}
+                className="rounded px-1.5 py-1 text-[length:var(--fs-xxs)] text-text-500 hover:bg-bg-300 hover:text-text-200"
+                aria-label="Restore session"
+                title="Restore session"
+              >
+                Restore
+              </button>
+            )}
             <button
               type="button"
               onClick={handleDelete}
@@ -788,19 +848,28 @@ export function SessionListItem({
               </>
             ) : hasUnreadCompletedNotification ? (
               <>
-                <span className="relative shrink-0 flex items-center justify-center w-3 h-3" title={t('chat:notification.completed')}>
+                <span
+                  className="relative shrink-0 flex items-center justify-center w-3 h-3"
+                  title={t('chat:notification.completed')}
+                >
                   <span className="absolute w-1.5 h-1.5 rounded-full bg-accent-main-100" />
                 </span>
                 <span className="opacity-30 shrink-0">·</span>
               </>
             ) : null}
-            {session.time?.updated && <span className="shrink-0 opacity-60">{formatRelativeTime(session.time.updated)}</span>}
+            {session.time?.updated && (
+              <span className="shrink-0 opacity-60">{formatRelativeTime(session.time.updated)}</span>
+            )}
             {showStats && session.summary && (
               <>
                 <span className="opacity-30">·</span>
                 <span className="flex items-center gap-1.5 font-mono shrink-0">
-                  {session.summary.additions > 0 && <span className="text-success-100">+{session.summary.additions}</span>}
-                  {session.summary.deletions > 0 && <span className="text-danger-100">-{session.summary.deletions}</span>}
+                  {session.summary.additions > 0 && (
+                    <span className="text-success-100">+{session.summary.additions}</span>
+                  )}
+                  {session.summary.deletions > 0 && (
+                    <span className="text-danger-100">-{session.summary.deletions}</span>
+                  )}
                   {session.summary.files > 0 && <span>{session.summary.files}f</span>}
                 </span>
               </>
@@ -846,7 +915,9 @@ export function SessionListItem({
                   <span className="relative shrink-0 flex items-center justify-center w-3 h-3">
                     <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot}`} />
                     {activeStatus.pulse && (
-                      <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot} animate-ping opacity-50`} />
+                      <span
+                        className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot} animate-ping opacity-50`}
+                      />
                     )}
                   </span>
                   <span className="opacity-30 shrink-0">·</span>
@@ -874,7 +945,9 @@ export function SessionListItem({
                     {session.summary.additions > 0 && (
                       <span className="text-success-100">+{session.summary.additions}</span>
                     )}
-                    {session.summary.deletions > 0 && <span className="text-danger-100">-{session.summary.deletions}</span>}
+                    {session.summary.deletions > 0 && (
+                      <span className="text-danger-100">-{session.summary.deletions}</span>
+                    )}
                     {session.summary.files > 0 && <span>{session.summary.files}f</span>}
                   </span>
                 </>
@@ -924,6 +997,28 @@ export function SessionListItem({
           >
             <PencilIcon className="w-3.5 h-3.5" />
           </button>
+          {onArchive && (
+            <button
+              type="button"
+              onClick={handleArchiveAction}
+              className="rounded-md px-1.5 py-1 text-[length:var(--fs-xxs)] text-text-400 hover:bg-bg-300 hover:text-text-100"
+              aria-label="Archive session"
+              title="Archive session"
+            >
+              Archive
+            </button>
+          )}
+          {onRestore && (
+            <button
+              type="button"
+              onClick={handleRestoreAction}
+              className="rounded-md px-1.5 py-1 text-[length:var(--fs-xxs)] text-text-400 hover:bg-bg-300 hover:text-text-100"
+              aria-label="Restore session"
+              title="Restore session"
+            >
+              Restore
+            </button>
+          )}
           <button
             type="button"
             onClick={handleDelete}

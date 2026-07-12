@@ -2,6 +2,8 @@
 // 统一错误处理工具
 // ============================================
 
+import { notificationStore } from '../store/notificationStore'
+
 export type ErrorCategory =
   | 'api' // API 调用错误
   | 'session' // Session 相关错误
@@ -34,15 +36,12 @@ export interface ErrorContext {
 export function logError(error: unknown, context: ErrorContext): void {
   const { category, operation, silent = false } = context
 
-  // 开发环境下始终输出到控制台
   if (import.meta.env.DEV) {
     console.error(`[${category}] ${operation}:`, error)
   }
 
-  // 非静默错误，未来可以显示 toast
   if (!silent) {
-    // TODO: 集成 toast 通知系统
-    // showToast({ type: 'error', message: `${operation} failed` })
+    notificationStore.pushTransient('error', 'Error', `${operation} failed`)
   }
 }
 

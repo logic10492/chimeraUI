@@ -57,6 +57,18 @@ async function isPermissionStillPending(
   }
 }
 
+async function getQuestionPendingState(
+  requestId: string,
+  directory?: string,
+): Promise<ApiQuestionRequest | null | undefined> {
+  try {
+    const pending = await getPendingQuestions(undefined, directory)
+    return pending.find(request => request.id === requestId) ?? null
+  } catch {
+    return undefined
+  }
+}
+
 async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES, delay = RETRY_DELAY): Promise<T> {
   let lastError: Error | undefined
 
@@ -83,20 +95,23 @@ export function usePermissionHandler(): UsePermissionHandlerResult {
 
   // 防止重复回复
   const replyingIdsRef = useRef<Set<string>>(new Set())
+  const scopeGenerationRef = useRef(0)
+  const refreshGenerationRef = useRef(0)
 
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: PermissionReply, directory?: string, sessionId?: string): Promise<boolean> => {
-      // 防止重复回复
       if (replyingIdsRef.current.has(requestId)) {
         console.warn(`[Permission] Already replying to ${requestId}`)
         return false
       }
 
+      const scopeGeneration = scopeGenerationRef.current
       replyingIdsRef.current.add(requestId)
       setIsReplying(true)
 
       try {
         await withRetry(() => replyPermission(requestId, reply, undefined, directory, sessionId))
+        if (scopeGeneration !== scopeGenerationRef.current) return true
         setPendingPermissionRequests(prev =>
           prev.some(r => r.id === requestId) ? prev.filter(r => r.id !== requestId) : prev,
         )
@@ -104,6 +119,7 @@ export function usePermissionHandler(): UsePermissionHandlerResult {
         return true
       } catch (error) {
         const stillPending = await isPermissionStillPending(requestId, directory, sessionId)
+        if (scopeGeneration !== scopeGenerationRef.current) return false
         if (stillPending === false) {
           setPendingPermissionRequests(prev =>
             prev.some(r => r.id === requestId) ? prev.filter(r => r.id !== requestId) : prev,
@@ -113,11 +129,12 @@ export function usePermissionHandler(): UsePermissionHandlerResult {
         }
 
         permissionErrorHandler('reply after retries', error)
-
         return false
       } finally {
-        replyingIdsRef.current.delete(requestId)
-        setIsReplying(false)
+        if (scopeGeneration === scopeGenerationRef.current) {
+          replyingIdsRef.current.delete(requestId)
+          setIsReplying(replyingIdsRef.current.size > 0)
+        }
       }
     },
     [],
@@ -130,72 +147,101 @@ export function usePermissionHandler(): UsePermissionHandlerResult {
         return false
       }
 
+      const scopeGeneration = scopeGenerationRef.current
       replyingIdsRef.current.add(requestId)
       setIsReplying(true)
 
       try {
         await withRetry(() => replyQuestion(requestId, answers, directory))
+        if (scopeGeneration !== scopeGenerationRef.current) return true
         setPendingQuestionRequests(prev => prev.filter(r => r.id !== requestId))
         activeSessionStore.resolvePendingRequest(requestId)
         return true
       } catch (error) {
+        const pendingRequest = await getQuestionPendingState(requestId, directory)
+        if (scopeGeneration !== scopeGenerationRef.current) return false
+        if (pendingRequest === null) {
+          setPendingQuestionRequests(prev => prev.filter(r => r.id !== requestId))
+          activeSessionStore.resolvePendingRequest(requestId)
+          return true
+        }
+        if (pendingRequest) {
+          setPendingQuestionRequests(prev =>
+            prev.some(r => r.id === requestId)
+              ? prev.map(r => (r.id === requestId ? pendingRequest : r))
+              : [...prev, pendingRequest],
+          )
+        }
         permissionErrorHandler('question reply after retries', error)
-        setPendingQuestionRequests(prev => prev.filter(r => r.id !== requestId))
-        activeSessionStore.resolvePendingRequest(requestId)
         return false
       } finally {
-        replyingIdsRef.current.delete(requestId)
-        setIsReplying(false)
+        if (scopeGeneration === scopeGenerationRef.current) {
+          replyingIdsRef.current.delete(requestId)
+          setIsReplying(replyingIdsRef.current.size > 0)
+        }
       }
     },
     [],
   )
 
   const handleQuestionReject = useCallback(async (requestId: string, directory?: string): Promise<boolean> => {
-    if (replyingIdsRef.current.has(requestId)) {
-      return false
-    }
+    if (replyingIdsRef.current.has(requestId)) return false
 
+    const scopeGeneration = scopeGenerationRef.current
     replyingIdsRef.current.add(requestId)
     setIsReplying(true)
 
     try {
       await withRetry(() => rejectQuestion(requestId, directory))
+      if (scopeGeneration !== scopeGenerationRef.current) return true
       setPendingQuestionRequests(prev => prev.filter(r => r.id !== requestId))
       activeSessionStore.resolvePendingRequest(requestId)
       return true
     } catch (error) {
+      const pendingRequest = await getQuestionPendingState(requestId, directory)
+      if (scopeGeneration !== scopeGenerationRef.current) return false
+      if (pendingRequest === null) {
+        setPendingQuestionRequests(prev => prev.filter(r => r.id !== requestId))
+        activeSessionStore.resolvePendingRequest(requestId)
+        return true
+      }
+      if (pendingRequest) {
+        setPendingQuestionRequests(prev =>
+          prev.some(r => r.id === requestId)
+            ? prev.map(r => (r.id === requestId ? pendingRequest : r))
+            : [...prev, pendingRequest],
+        )
+      }
       permissionErrorHandler('question reject after retries', error)
-      setPendingQuestionRequests(prev => prev.filter(r => r.id !== requestId))
-      activeSessionStore.resolvePendingRequest(requestId)
       return false
     } finally {
-      replyingIdsRef.current.delete(requestId)
-      setIsReplying(false)
+      if (scopeGeneration === scopeGenerationRef.current) {
+        replyingIdsRef.current.delete(requestId)
+        setIsReplying(replyingIdsRef.current.size > 0)
+      }
     }
   }, [])
 
   // 主动轮询获取 pending 请求（用于 SSE 可能丢失事件的情况）
   // 一次拉取全量数据，用 sessionFamily 过滤后直接替换本地状态
   const refreshPendingRequests = useCallback(async (sessionIds?: string | string[], directory?: string) => {
+    const scopeGeneration = scopeGenerationRef.current
+    const refreshGeneration = ++refreshGenerationRef.current
     try {
-      // 规范化为 Set 用于过滤
       const familySet = new Set(sessionIds ? (Array.isArray(sessionIds) ? sessionIds : [sessionIds]) : [])
-
-      // 只请求一次全量数据（不按 sessionId 分别请求）
       const [allPermissions, allQuestions] = await Promise.all([
         getPendingPermissions(undefined, directory).catch(() => []),
         getPendingQuestions(undefined, directory).catch(() => []),
       ])
+      if (scopeGeneration !== scopeGenerationRef.current || refreshGeneration !== refreshGenerationRef.current) {
+        return
+      }
 
       const nextPermissions =
         familySet.size > 0
           ? allPermissions.filter(p => familySet.has(p.sessionID) && !replyingIdsRef.current.has(p.id))
           : allPermissions.filter(p => !replyingIdsRef.current.has(p.id))
 
-      // OMO background subagents can emit permission.asked over SSE before /permission
-      // exposes the request for the routed instance. Keep SSE-known requests until a
-      // permission.replied event removes them.
       setPendingPermissionRequests(prev => {
         const merged = new Map(nextPermissions.map(p => [p.id, p]))
         for (const request of prev) {
@@ -211,14 +257,19 @@ export function usePermissionHandler(): UsePermissionHandlerResult {
           : allQuestions.filter(q => !replyingIdsRef.current.has(q.id)),
       )
     } catch (error) {
-      permissionErrorHandler('refresh pending requests', error)
+      if (scopeGeneration === scopeGenerationRef.current && refreshGeneration === refreshGenerationRef.current) {
+        permissionErrorHandler('refresh pending requests', error)
+      }
     }
   }, [])
 
   const resetPendingRequests = useCallback(() => {
+    scopeGenerationRef.current += 1
+    refreshGenerationRef.current += 1
     setPendingPermissionRequests([])
     setPendingQuestionRequests([])
     replyingIdsRef.current.clear()
+    setIsReplying(false)
   }, [])
 
   return {

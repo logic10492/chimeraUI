@@ -2,13 +2,14 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApiSession } from '../../api'
 import { pinnedSessionsStore } from '../../store/pinnedSessionsStore'
-import { SessionListItem } from './SessionList'
+import { SessionList, SessionListItem } from './SessionList'
 
-const { useSessionActiveEntryMock, useHasUnreadCompletedNotificationMock, markSessionNotificationsReadMock } = vi.hoisted(() => ({
-  useSessionActiveEntryMock: vi.fn(),
-  useHasUnreadCompletedNotificationMock: vi.fn(),
-  markSessionNotificationsReadMock: vi.fn(),
-}))
+const { useSessionActiveEntryMock, useHasUnreadCompletedNotificationMock, markSessionNotificationsReadMock } =
+  vi.hoisted(() => ({
+    useSessionActiveEntryMock: vi.fn(),
+    useHasUnreadCompletedNotificationMock: vi.fn(),
+    markSessionNotificationsReadMock: vi.fn(),
+  }))
 
 vi.mock('../../store/activeSessionStore', () => ({
   useSessionActiveEntry: (...args: unknown[]) => useSessionActiveEntryMock(...args),
@@ -113,4 +114,60 @@ describe('SessionListItem', () => {
     expect(pinnedSessionsStore.isPinned('session-1')).toBe(false)
   })
 
+  it('exposes archive and restore row actions', () => {
+    const onArchive = vi.fn()
+    const onRestore = vi.fn()
+
+    const { rerender } = render(
+      <SessionListItem
+        session={session}
+        isSelected={false}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+        onRename={vi.fn()}
+        onArchive={onArchive}
+        preferTouchUi={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive session' }))
+    expect(onArchive).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <SessionListItem
+        session={session}
+        isSelected={false}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+        onRename={vi.fn()}
+        onRestore={onRestore}
+        preferTouchUi={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Restore session' }))
+    expect(onRestore).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps session list failures visible', () => {
+    render(
+      <SessionList
+        sessions={[]}
+        selectedId={null}
+        isLoading={false}
+        isLoadingMore={false}
+        hasMore={false}
+        search=""
+        onSearchChange={vi.fn()}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+        onRename={vi.fn()}
+        onLoadMore={vi.fn()}
+        onNewChat={vi.fn()}
+        error={new Error('Archive list failed')}
+      />,
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Archive list failed')
+  })
 })

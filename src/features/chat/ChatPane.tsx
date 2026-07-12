@@ -17,7 +17,11 @@ import { PaneDropOverlay, resolveDropZone, type DropZone, type PaneDropOverlayHa
 import { useChatSession, useModels, useModelSelection } from '../../hooks'
 import { useServerStore } from '../../hooks/useServerStore'
 import { useCancelHint } from '../../hooks/useCancelHint'
-import { InlineToolRequestContext, type InlineToolRequestContextValue } from './InlineToolRequestContext'
+import {
+  findUnmatchedInlineToolRequests,
+  InlineToolRequestContext,
+  type InlineToolRequestContextValue,
+} from './InlineToolRequestContext'
 import { ChatViewportProvider, canUseSplitPane, useChatViewportMaybe, type ChatViewportValue } from './chatViewport'
 import { useChatPageViewModel } from './useChatPageViewModel'
 import { SessionNavigationContext } from '../../contexts/SessionNavigationContext'
@@ -333,7 +337,10 @@ export const ChatPane = memo(function ChatPane({
         : '',
     ].filter(Boolean)
 
-    const responseBody = [lines.join('\n'), activeServerHealth.details ? `Raw diagnostics:\n${activeServerHealth.details}` : '']
+    const responseBody = [
+      lines.join('\n'),
+      activeServerHealth.details ? `Raw diagnostics:\n${activeServerHealth.details}` : '',
+    ]
       .filter(Boolean)
       .join('\n\n')
 
@@ -716,7 +723,15 @@ export const ChatPane = memo(function ChatPane({
       toggleFullAuto: stableControllerActions.toggleFullAuto,
       isStreaming,
     })
-  }, [paneId, routeSessionId, effectiveDirectory, contextLimit, currentProviderId, stableControllerActions, isStreaming])
+  }, [
+    paneId,
+    routeSessionId,
+    effectiveDirectory,
+    contextLimit,
+    currentProviderId,
+    stableControllerActions,
+    isStreaming,
+  ])
 
   // ============================================
   // Dialog Collapsed State
@@ -734,6 +749,13 @@ export const ChatPane = memo(function ChatPane({
   }, [questionRequestId])
 
   const { inlineToolRequests, outlineCurrentHighlight } = useTheme()
+  const unmatchedInlineRequests = findUnmatchedInlineToolRequests(
+    renderedMessages,
+    pendingPermissionRequests,
+    pendingQuestionRequests,
+  )
+  const dialogPermissionRequests = inlineToolRequests ? unmatchedInlineRequests.permissions : pendingPermissionRequests
+  const dialogQuestionRequests = inlineToolRequests ? unmatchedInlineRequests.questions : pendingQuestionRequests
 
   const inlineToolRequestCtx = useMemo<InlineToolRequestContextValue>(
     () => ({
@@ -891,24 +913,21 @@ export const ChatPane = memo(function ChatPane({
           showScrollToBottom={!isAtBottom}
           onScrollToBottom={() => chatAreaRef.current?.scrollToBottom()}
           collapsedPermission={
-            !inlineToolRequests && pendingPermissionRequests.length > 0 && permissionCollapsed
+            dialogPermissionRequests.length > 0 && permissionCollapsed
               ? {
                   label: t('chat:permissionDialog.permission', {
-                    permission: pendingPermissionRequests[0].permission,
+                    permission: dialogPermissionRequests[0].permission,
                   }),
-                  queueLength: pendingPermissionRequests.length,
+                  queueLength: dialogPermissionRequests.length,
                   onExpand: () => setPermissionCollapsed(false),
                 }
               : undefined
           }
           collapsedQuestion={
-            !inlineToolRequests &&
-            pendingPermissionRequests.length === 0 &&
-            pendingQuestionRequests.length > 0 &&
-            questionCollapsed
+            dialogPermissionRequests.length === 0 && dialogQuestionRequests.length > 0 && questionCollapsed
               ? {
                   label: t('chat:questionDialog.title'),
-                  queueLength: pendingQuestionRequests.length,
+                  queueLength: dialogQuestionRequests.length,
                   onExpand: () => setQuestionCollapsed(false),
                 }
               : undefined
@@ -916,18 +935,18 @@ export const ChatPane = memo(function ChatPane({
         />
       </div>
 
-      {!inlineToolRequests && pendingPermissionRequests.length > 0 && (
+      {dialogPermissionRequests.length > 0 && (
         <PermissionDialog
-          request={pendingPermissionRequests[0]}
+          request={dialogPermissionRequests[0]}
           onReply={reply =>
             handlePermissionReply(
-              pendingPermissionRequests[0].id,
+              dialogPermissionRequests[0].id,
               reply,
               effectiveDirectory,
-              pendingPermissionRequests[0].sessionID,
+              dialogPermissionRequests[0].sessionID,
             )
           }
-          queueLength={pendingPermissionRequests.length}
+          queueLength={dialogPermissionRequests.length}
           isReplying={isReplying}
           currentSessionId={routeSessionId}
           collapsed={permissionCollapsed}
@@ -935,12 +954,12 @@ export const ChatPane = memo(function ChatPane({
         />
       )}
 
-      {!inlineToolRequests && pendingPermissionRequests.length === 0 && pendingQuestionRequests.length > 0 && (
+      {dialogPermissionRequests.length === 0 && dialogQuestionRequests.length > 0 && (
         <QuestionDialog
-          request={pendingQuestionRequests[0]}
-          onReply={answers => handleQuestionReply(pendingQuestionRequests[0].id, answers, effectiveDirectory)}
-          onReject={() => handleQuestionReject(pendingQuestionRequests[0].id, effectiveDirectory)}
-          queueLength={pendingQuestionRequests.length}
+          request={dialogQuestionRequests[0]}
+          onReply={answers => handleQuestionReply(dialogQuestionRequests[0].id, answers, effectiveDirectory)}
+          onReject={() => handleQuestionReject(dialogQuestionRequests[0].id, effectiveDirectory)}
+          queueLength={dialogQuestionRequests.length}
           isReplying={isReplying}
           collapsed={questionCollapsed}
           onCollapsedChange={setQuestionCollapsed}

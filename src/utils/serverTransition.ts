@@ -9,10 +9,10 @@ import { runtimeInvalidationStore } from '../store/runtimeInvalidationStore'
 export function resetServerScopedRuntime(serverID: string) {
   invalidateAllRootDirectoryCaches()
   activeSessionStore.resetRuntimeState()
-  paneLayoutStore.reset()
-  followupQueueStore.reset()
-  layoutStore.syncTerminalSessions(undefined, [])
   notificationStore.activateServer(serverID)
+  paneLayoutStore.activateServer(serverID)
+  followupQueueStore.activateServer(serverID)
+  layoutStore.syncTerminalSessions(undefined, [])
 
   const scope = { serverID, directory: 'global' }
   runtimeInvalidationStore.emit({ type: 'file', scope, event: 'resync' })

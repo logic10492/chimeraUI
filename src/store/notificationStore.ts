@@ -163,7 +163,33 @@ class NotificationStore {
   // ============================================
 
   push(type: NotificationType, title: string, body: string, sessionId: string, directory?: string) {
-    const entry: NotificationEntry = {
+    const entry = this.createEntry(type, title, body, sessionId, directory)
+    const notifications = [entry, ...this.state.notifications].slice(0, MAX_NOTIFICATIONS)
+
+    this.showToast(entry, notifications)
+    this.pushListeners.forEach(fn => {
+      try {
+        fn(type)
+      } catch {
+        // 回调异常不影响通知流程
+      }
+    })
+  }
+
+  pushTransient(type: NotificationType, title: string, body: string) {
+    if (
+      this.state.toasts.some(
+        toast =>
+          toast.notification.type === type && toast.notification.title === title && toast.notification.body === body,
+      )
+    ) {
+      return
+    }
+    this.showToast(this.createEntry(type, title, body, ''))
+  }
+
+  private createEntry(type: NotificationType, title: string, body: string, sessionId: string, directory?: string) {
+    return {
       id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       type,
       title,
@@ -174,36 +200,29 @@ class NotificationStore {
       timestamp: Date.now(),
       read: false,
     }
+  }
 
-    // 加到历史
-    const notifications = [entry, ...this.state.notifications].slice(0, MAX_NOTIFICATIONS)
-
-    // 弹 toast（仅开关打开时）
-    if (this.toastEnabled) {
-      const toasts = [...this.state.toasts]
-      if (toasts.length >= MAX_TOASTS) {
-        const oldest = toasts.pop()
-        if (oldest) this.clearToastTimer(oldest.notification.id)
+  private showToast(entry: NotificationEntry, notifications = this.state.notifications) {
+    const includesHistoryUpdate = notifications !== this.state.notifications
+    if (!this.toastEnabled) {
+      if (includesHistoryUpdate) {
+        this.state = { ...this.state, notifications }
+        this.persist()
+        this.notify()
       }
-      toasts.unshift({ notification: entry, exiting: false })
-      this.state = { ...this.state, toasts, notifications }
-      this.persist()
-      this.notify()
-      this.scheduleToastDismiss(entry.id)
-    } else {
-      this.state = { ...this.state, notifications }
-      this.persist()
-      this.notify()
+      return
     }
 
-    // 触发 push 后回调（声音播放等）
-    this.pushListeners.forEach(fn => {
-      try {
-        fn(type)
-      } catch {
-        // 回调异常不影响通知流程
-      }
-    })
+    const toasts = [...this.state.toasts]
+    if (toasts.length >= MAX_TOASTS) {
+      const oldest = toasts.pop()
+      if (oldest) this.clearToastTimer(oldest.notification.id)
+    }
+    toasts.unshift({ notification: entry, exiting: false })
+    this.state = { ...this.state, toasts, notifications }
+    if (includesHistoryUpdate) this.persist()
+    this.notify()
+    this.scheduleToastDismiss(entry.id)
   }
 
   // ============================================

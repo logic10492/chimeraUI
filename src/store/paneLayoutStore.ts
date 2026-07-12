@@ -11,6 +11,10 @@
  */
 
 import { useSyncExternalStore } from 'react'
+import { notificationStore } from './notificationStore'
+
+const STORAGE_PREFIX = 'chimera:pane-layout:v1'
+const STORAGE_VERSION = 1
 
 // ============================================
 // Types
@@ -72,6 +76,40 @@ function findLeaf(node: PaneNode, paneId: string): PaneLeaf | null {
 function allLeaves(node: PaneNode): PaneLeaf[] {
   if (node.type === 'leaf') return [node]
   return [...allLeaves(node.first), ...allLeaves(node.second)]
+}
+
+function syncNextPaneId(node: PaneNode) {
+  const maxPaneId = allLeaves(node).reduce((max, leaf) => {
+    const match = /^pane-(\d+)$/.exec(leaf.id)
+    return match ? Math.max(max, Number(match[1])) : max
+  }, 0)
+  _nextPaneId = maxPaneId + 1
+}
+
+function validatePaneNode(value: unknown, ids = new Set<string>()): value is PaneNode {
+  if (!value || typeof value !== 'object') return false
+  const node = value as Partial<PaneNode>
+  if (typeof node.id !== 'string' || !node.id || ids.has(node.id)) return false
+  ids.add(node.id)
+  if (node.type === 'leaf') return node.sessionId === null || typeof node.sessionId === 'string'
+  if (node.type !== 'split') return false
+  return (
+    (node.direction === 'horizontal' || node.direction === 'vertical') &&
+    typeof node.ratio === 'number' &&
+    Number.isFinite(node.ratio) &&
+    node.ratio > 0 &&
+    node.ratio < 1 &&
+    validatePaneNode(node.first, ids) &&
+    validatePaneNode(node.second, ids)
+  )
+}
+
+function storageKey(serverID: string) {
+  return `${STORAGE_PREFIX}:${encodeURIComponent(serverID)}`
+}
+
+function createInitialRoot(): PaneLeaf {
+  return { type: 'leaf', id: genPaneId(), sessionId: null }
 }
 
 /**
@@ -183,9 +221,11 @@ function updateRatio(node: PaneNode, splitId: string, ratio: number): PaneNode {
 type Listener = () => void
 
 function createPaneLayoutStore() {
-  let _root: PaneNode = { type: 'leaf', id: genPaneId(), sessionId: null }
+  let _root: PaneNode = createInitialRoot()
   let _focusedPaneId: string | null = _root.id
   let _fullscreenPaneId: string | null = null
+  let _activeServerID = 'local'
+  let _suspendPersistence = false
   const _listeners = new Set<Listener>()
 
   function _notify() {
@@ -208,9 +248,48 @@ function createPaneLayoutStore() {
   // Cache snapshot for useSyncExternalStore identity stability
   let _cachedSnapshot = _snapshot()
 
+  function _reportStorageError(error: unknown) {
+    notificationStore.pushTransient(
+      'error',
+      'Pane layout persistence failed',
+      error instanceof Error ? error.message : String(error),
+    )
+  }
+
+  function _persist() {
+    if (_suspendPersistence) return
+    try {
+      localStorage.setItem(
+        storageKey(_activeServerID),
+        JSON.stringify({
+          version: STORAGE_VERSION,
+          serverID: _activeServerID,
+          root: _root,
+          focusedPaneId: _focusedPaneId,
+          fullscreenPaneId: _fullscreenPaneId,
+        }),
+      )
+    } catch (error) {
+      _reportStorageError(error)
+    }
+  }
+
   function _refreshSnapshot() {
     _cachedSnapshot = _snapshot()
+    _persist()
     _notify()
+  }
+
+  function _activateEmptyServer(serverID: string, error?: unknown) {
+    _suspendPersistence = true
+    _nextPaneId = 1
+    _root = createInitialRoot()
+    _focusedPaneId = _root.id
+    _fullscreenPaneId = null
+    _activeServerID = serverID
+    _suspendPersistence = false
+    if (error !== undefined) _reportStorageError(error)
+    _refreshSnapshot()
   }
 
   return {
@@ -256,6 +335,50 @@ function createPaneLayoutStore() {
     /** Whether the given pane is the only leaf (i.e. no split active). */
     isSinglePane() {
       return _root.type === 'leaf'
+    },
+
+    activateServer(serverID: string) {
+      try {
+        const raw = localStorage.getItem(storageKey(serverID))
+        if (!raw) {
+          _activateEmptyServer(serverID)
+          return
+        }
+        const stored = JSON.parse(raw) as {
+          version?: number
+          serverID?: string
+          root?: unknown
+          focusedPaneId?: unknown
+          fullscreenPaneId?: unknown
+        }
+        if (stored.version !== STORAGE_VERSION || stored.serverID !== serverID) {
+          throw new Error('Unsupported pane layout snapshot version or server scope')
+        }
+        if (!validatePaneNode(stored.root)) {
+          _activateEmptyServer(serverID, new Error('Invalid pane layout snapshot'))
+          return
+        }
+
+        const focusedPaneId = typeof stored.focusedPaneId === 'string' ? stored.focusedPaneId : null
+        const fullscreenPaneId = typeof stored.fullscreenPaneId === 'string' ? stored.fullscreenPaneId : null
+        const invalidFocusedPane = focusedPaneId && !findLeaf(stored.root, focusedPaneId)
+        const invalidFullscreenPane = fullscreenPaneId && !findLeaf(stored.root, fullscreenPaneId)
+        if (invalidFocusedPane || invalidFullscreenPane) {
+          _activateEmptyServer(serverID, new Error('Invalid pane layout snapshot'))
+          return
+        }
+
+        _suspendPersistence = true
+        _root = stored.root
+        syncNextPaneId(_root)
+        _focusedPaneId = focusedPaneId ?? allLeaves(_root)[0]?.id ?? null
+        _fullscreenPaneId = fullscreenPaneId
+        _activeServerID = serverID
+        _suspendPersistence = false
+        _refreshSnapshot()
+      } catch (error) {
+        _activateEmptyServer(serverID, error)
+      }
     },
 
     // ---- Mutations ----
@@ -461,7 +584,7 @@ function createPaneLayoutStore() {
      */
     reset() {
       _nextPaneId = 1
-      _root = { type: 'leaf', id: genPaneId(), sessionId: null }
+      _root = createInitialRoot()
       _focusedPaneId = _root.id
       _fullscreenPaneId = null
       _refreshSnapshot()

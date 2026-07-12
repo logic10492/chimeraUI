@@ -668,6 +668,7 @@ export function useChatSession({
 
       if (shouldQueueFollowup) {
         const queued = followupQueueStore.enqueue({
+          serverID: serverStore.getActiveServerId(),
           sessionId: routeSessionId,
           directory: effectiveDirectory || '',
           text: content,

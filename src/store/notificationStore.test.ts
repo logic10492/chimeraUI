@@ -82,4 +82,21 @@ describe('notificationStore server scoping', () => {
     secondModule.notificationStore.activateServer('server-a')
     expect(secondModule.notificationStore.getSnapshot().notifications).toEqual([])
   })
+
+  it('shows transient errors once without adding navigable notification history', async () => {
+    const { notificationStore } = await import('./notificationStore')
+
+    notificationStore.pushTransient('error', 'Error', 'Loading session failed')
+    notificationStore.pushTransient('error', 'Error', 'Loading session failed')
+
+    expect(notificationStore.getSnapshot().toasts).toHaveLength(1)
+    expect(notificationStore.getSnapshot().toasts[0].notification).toMatchObject({
+      type: 'error',
+      title: 'Error',
+      body: 'Loading session failed',
+      sessionId: '',
+    })
+    expect(notificationStore.getSnapshot().notifications).toEqual([])
+    expect(localStorage.getItem(scopedKey('local'))).toBeNull()
+  })
 })

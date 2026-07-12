@@ -3,6 +3,7 @@ import {
   getSessions,
   createSession,
   deleteSession,
+  updateSession,
   subscribeToEvents,
   type ApiSession,
   type SessionListParams,
@@ -22,6 +23,8 @@ interface UseSessionsOptions {
   directory?: string
   /** 延迟启用，用于懒加载 */
   enabled?: boolean
+  /** 加载归档会话而不是活跃会话 */
+  archived?: boolean
 }
 
 interface UseSessionsResult {
@@ -41,6 +44,10 @@ interface UseSessionsResult {
   create: (title?: string) => Promise<ApiSession>
   /** 删除会话 */
   remove: (sessionId: string) => Promise<void>
+  /** 归档会话 */
+  archive: (sessionId: string) => Promise<void>
+  /** 恢复归档会话 */
+  restore: (sessionId: string) => Promise<void>
   /** 本地更新会话 */
   patchLocalSession: (sessionId: string, patch: Partial<ApiSession>) => void
   /** 本地移除会话 */
@@ -48,7 +55,7 @@ interface UseSessionsResult {
 }
 
 export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult {
-  const { pageSize = 20, initialSearch = '', rootsOnly = true, directory, enabled = true } = options
+  const { pageSize = 20, initialSearch = '', rootsOnly = true, directory, enabled = true, archived = false } = options
 
   // 标准化 directory 路径 (移除末尾斜杠，统一正斜杠)
   const normalizedDirectory = directory ? directory.replace(/\\/g, '/').replace(/\/$/, '') : undefined
@@ -107,6 +114,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
           roots: rootsOnly,
           limit: currentLimitRef.current,
           directory: normalizedDirectory,
+          ...(archived ? { archived: true } : {}),
           ...queryParams,
         })
 
@@ -147,7 +155,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
         }
       }
     },
-    [rootsOnly, normalizedDirectory, enabled],
+    [rootsOnly, normalizedDirectory, enabled, archived],
   )
 
   fetchSessionsRef.current = fetchSessions
@@ -191,6 +199,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
     const unsubscribe = subscribeToEvents({
       onSessionCreated: session => {
         if (session.parentID) return
+        if (archived || session.time.archived != null) return
         if (!matchesDirectory(session)) return
 
         if (searchRef.current) {
@@ -205,6 +214,12 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
       },
       onSessionUpdated: session => {
         if (session.parentID) return
+        const belongsInView = archived ? session.time.archived != null : session.time.archived == null
+
+        if (!belongsInView) {
+          setSessions(prev => prev.filter(item => item.id !== session.id))
+          return
+        }
 
         if (searchRef.current) {
           if (matchesDirectory(session)) {
@@ -245,7 +260,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
     })
 
     return unsubscribe
-  }, [enabled, matchesDirectory, pageSize])
+  }, [enabled, matchesDirectory, pageSize, archived])
 
   useEffect(() => {
     if (!enabled) return
@@ -307,6 +322,22 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
     [normalizedDirectory],
   )
 
+  const archive = useCallback(
+    async (sessionId: string) => {
+      await updateSession(sessionId, { time: { archived: Date.now() } }, normalizedDirectory)
+      setSessions(prev => prev.filter(session => session.id !== sessionId))
+    },
+    [normalizedDirectory],
+  )
+
+  const restore = useCallback(
+    async (sessionId: string) => {
+      await updateSession(sessionId, { time: { archived: null } }, normalizedDirectory)
+      setSessions(prev => prev.filter(session => session.id !== sessionId))
+    },
+    [normalizedDirectory],
+  )
+
   const patchLocalSession = useCallback((sessionId: string, patch: Partial<ApiSession>) => {
     setSessions(prev => prev.map(session => (session.id === sessionId ? { ...session, ...patch } : session)))
   }, [])
@@ -327,6 +358,8 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
     refresh,
     create,
     remove,
+    archive,
+    restore,
     patchLocalSession,
     removeLocalSession,
   }

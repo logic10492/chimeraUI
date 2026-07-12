@@ -139,7 +139,7 @@ export async function createSession(
  */
 export async function updateSession(
   sessionId: string,
-  params: { title?: string; time?: { archived?: number } },
+  params: { title?: string; time?: { archived?: number | null } },
   input?: ApiScopeInput,
 ): Promise<ApiSession> {
   const scope = resolveSessionApiScope(sessionId, input)

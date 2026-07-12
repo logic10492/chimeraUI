@@ -143,62 +143,53 @@ function SplitNode({ split, renderLeaf, fullscreenPaneId }: SplitNodeProps) {
   const hitSize = SPLIT_GAP + HIT_EXTEND * 2
   const negMargin = -(hitSize + SPLIT_GAP) / 2
 
-  // ---- Fullscreen: bypass grid, use absolute overlay ----
-  if (isFullscreen) {
-    const firstHasFs = containsLeaf(split.first, fullscreenPaneId!)
-    const secondHasFs = containsLeaf(split.second, fullscreenPaneId!)
-
-    const fsStyle: React.CSSProperties = { position: 'absolute', inset: 0, zIndex: 1 }
-    const hiddenStyle: React.CSSProperties = {
-      position: 'absolute',
-      width: 0,
-      height: 0,
-      overflow: 'hidden',
-      contentVisibility: 'hidden',
-    }
-
-    return (
-      <div ref={containerRef} className="relative w-full h-full">
-        {/* The branch containing the fullscreen pane gets absolute positioning to fill the container */}
-        <div className="min-w-0 min-h-0" style={firstHasFs ? fsStyle : hiddenStyle}>
-          <SplitContainer node={split.first} renderLeaf={renderLeaf} fullscreenPaneId={fullscreenPaneId} />
-        </div>
-        <div className="min-w-0 min-h-0" style={secondHasFs ? fsStyle : hiddenStyle}>
-          <SplitContainer node={split.second} renderLeaf={renderLeaf} fullscreenPaneId={fullscreenPaneId} />
-        </div>
-      </div>
-    )
+  const firstHasFullscreen = fullscreenPaneId ? containsLeaf(split.first, fullscreenPaneId) : false
+  const secondHasFullscreen = fullscreenPaneId ? containsLeaf(split.second, fullscreenPaneId) : false
+  const fullscreenStyle: React.CSSProperties = { position: 'absolute', inset: 0, zIndex: 1 }
+  const hiddenStyle: React.CSSProperties = {
+    position: 'absolute',
+    width: 0,
+    height: 0,
+    overflow: 'hidden',
+    contentVisibility: 'hidden',
   }
+  const normalPaneStyle: React.CSSProperties = { contain: 'layout style' }
 
   return (
     <div
       ref={containerRef}
-      className="grid w-full h-full"
+      className={`${isFullscreen ? 'relative' : 'grid'} w-full h-full`}
       style={
-        isHorizontal
-          ? { gridTemplateColumns: gridTemplate, gridTemplateRows: '1fr' }
-          : { gridTemplateRows: gridTemplate, gridTemplateColumns: '1fr' }
+        isFullscreen
+          ? undefined
+          : isHorizontal
+            ? { gridTemplateColumns: gridTemplate, gridTemplateRows: '1fr' }
+            : { gridTemplateRows: gridTemplate, gridTemplateColumns: '1fr' }
       }
     >
-      {/* First child — contain: layout style isolates reflow without clipping ring borders */}
-      <div className="min-w-0 min-h-0 relative" style={{ contain: 'layout style' }}>
-        <SplitContainer node={split.first} renderLeaf={renderLeaf} />
+      <div
+        className="min-w-0 min-h-0 relative"
+        style={isFullscreen ? (firstHasFullscreen ? fullscreenStyle : hiddenStyle) : normalPaneStyle}
+      >
+        <SplitContainer node={split.first} renderLeaf={renderLeaf} fullscreenPaneId={fullscreenPaneId} />
       </div>
 
-      {/* Divider — invisible hit area overlapping the grid gap */}
       <div
         className={`relative z-10 ${isHorizontal ? 'cursor-col-resize' : 'cursor-row-resize'}`}
         style={{
           [isHorizontal ? 'width' : 'height']: hitSize,
           [isHorizontal ? 'marginLeft' : 'marginTop']: negMargin,
           [isHorizontal ? 'marginRight' : 'marginBottom']: negMargin,
+          display: isFullscreen ? 'none' : undefined,
         }}
         onPointerDown={handleDrag}
       />
 
-      {/* Second child */}
-      <div className="min-w-0 min-h-0 relative" style={{ contain: 'layout style' }}>
-        <SplitContainer node={split.second} renderLeaf={renderLeaf} />
+      <div
+        className="min-w-0 min-h-0 relative"
+        style={isFullscreen ? (secondHasFullscreen ? fullscreenStyle : hiddenStyle) : normalPaneStyle}
+      >
+        <SplitContainer node={split.second} renderLeaf={renderLeaf} fullscreenPaneId={fullscreenPaneId} />
       </div>
     </div>
   )

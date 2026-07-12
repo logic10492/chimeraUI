@@ -28,6 +28,7 @@ import {
   isFileSupported,
   readFileAsDataUrl,
 } from './input/inputUtils'
+import { removeAttachmentFromText, transformAttachmentRanges } from './attachmentRanges'
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
 import { themeStore } from '../../store/themeStore'
 import { useChatViewport } from './chatViewport'
@@ -374,10 +375,7 @@ function InputBoxComponent({
       TEXTAREA_MIN_HEIGHT + TEXTAREA_VERTICAL_CHROME + toolbarHeight,
       nextComposerMaxHeight - footerHeight,
     )
-    const nextTextareaMaxHeight = Math.max(
-      TEXTAREA_MIN_HEIGHT,
-      nextInputContainerMaxHeight - inputContainerChrome,
-    )
+    const nextTextareaMaxHeight = Math.max(TEXTAREA_MIN_HEIGHT, nextInputContainerMaxHeight - inputContainerChrome)
 
     setComposerMaxHeight(prev => (Math.abs(prev - nextComposerMaxHeight) < 1 ? prev : nextComposerMaxHeight))
     setInputContainerMaxHeight(prev =>
@@ -703,19 +701,7 @@ function InputBoxComponent({
 
       // 用户修改了内容，检查是否应退出历史模式
       handleHistoryChange(newText)
-
-      // 同步检测 mention 是否被破坏/删除
-      // 比对 attachments 的 textRange：如果文本中对应位置不再匹配，删除该 attachment
-      setAttachments(prev => {
-        const surviving = prev.filter(a => {
-          if (!a.textRange) return true // 图片等无 textRange 的保留
-          const { start, end, value } = a.textRange
-          const actual = newText.slice(start, end)
-          return actual === value
-        })
-        // 只在数量变化时更新（避免不必要的 re-render）
-        return surviving.length === prev.length ? prev : surviving
-      })
+      setAttachments(prev => transformAttachmentRanges(text, newText, prev))
 
       // 检测 @ 触发
       const cursorPos = e.target.selectionStart || 0
@@ -740,7 +726,7 @@ function InputBoxComponent({
         }
       }
     },
-    [handleHistoryChange],
+    [handleHistoryChange, text],
   )
 
   const handleCompositionStart = useCallback(() => {
@@ -800,7 +786,7 @@ function InputBoxComponent({
       }
 
       setText(newText)
-      setAttachments(prev => [...prev, attachment])
+      setAttachments(prev => [...transformAttachmentRanges(text, newText, prev), attachment])
       setMentionOpen(false)
 
       // 移动光标到 mention 后
@@ -855,7 +841,7 @@ function InputBoxComponent({
       }
 
       setText(newText)
-      setAttachments(prev => [...prev, attachment])
+      setAttachments(prev => [...transformAttachmentRanges(text, newText, prev), attachment])
       setSlashOpen(false)
 
       // 移动光标到命令后
@@ -917,15 +903,9 @@ function InputBoxComponent({
       const attachment = attachments.find(a => a.id === id)
       if (!attachment) return
 
-      // 如果有 textRange，从文本中删除 @mention
-      if (attachment.textRange) {
-        const { value } = attachment.textRange
-        // 删除 @mention 和后面的空格
-        const newText = text.replace(value + ' ', '').replace(value, '')
-        setText(newText)
-      }
-
-      setAttachments(prev => prev.filter(a => a.id !== id))
+      const next = removeAttachmentFromText(text, attachments, id)
+      setText(next.text)
+      setAttachments(next.attachments)
     },
     [attachments, isSubmitting, text],
   )
@@ -1028,7 +1008,7 @@ function InputBoxComponent({
       })
 
       setText(newText)
-      setAttachments(prev => [...prev, ...nextAttachments])
+      setAttachments(prev => [...transformAttachmentRanges(currentText, newText, prev), ...nextAttachments])
 
       requestAnimationFrame(() => {
         if (!textareaRef.current) return
@@ -1040,7 +1020,10 @@ function InputBoxComponent({
     [text],
   )
 
-  const insertDraggedFile = useCallback((fileInfo: DraggedFileInfo) => insertDraggedFiles([fileInfo]), [insertDraggedFiles])
+  const insertDraggedFile = useCallback(
+    (fileInfo: DraggedFileInfo) => insertDraggedFiles([fileInfo]),
+    [insertDraggedFiles],
+  )
 
   useEffect(() => {
     const updateInternalFileDragState = () => {
@@ -1132,7 +1115,13 @@ function InputBoxComponent({
         console.warn('[InputBox] Failed to process Tauri dropped paths:', err)
       }
     },
-    [buildDraggedFileInfo, createUploadAttachmentFromDroppedPath, externalFileDropMode, insertDraggedFiles, isSubmitting],
+    [
+      buildDraggedFileInfo,
+      createUploadAttachmentFromDroppedPath,
+      externalFileDropMode,
+      insertDraggedFiles,
+      isSubmitting,
+    ],
   )
 
   const handleTauriDragDropEvent = useCallback(
@@ -1205,7 +1194,11 @@ function InputBoxComponent({
 
       const onEnter = await listen<[string[], number, number]>('file-drop-enter', e => {
         if (disposed) return
-        handleTauriDragDropEvent({ type: 'enter', paths: e.payload[0], position: new PhysicalPosition(e.payload[1], e.payload[2]) })
+        handleTauriDragDropEvent({
+          type: 'enter',
+          paths: e.payload[0],
+          position: new PhysicalPosition(e.payload[1], e.payload[2]),
+        })
       })
       cleanupFns.push(onEnter)
 
@@ -1217,7 +1210,11 @@ function InputBoxComponent({
 
       const onDrop = await listen<[string[], number, number]>('file-drop-drop', e => {
         if (disposed) return
-        handleTauriDragDropEvent({ type: 'drop', paths: e.payload[0], position: new PhysicalPosition(e.payload[1], e.payload[2]) })
+        handleTauriDragDropEvent({
+          type: 'drop',
+          paths: e.payload[0],
+          position: new PhysicalPosition(e.payload[1], e.payload[2]),
+        })
       })
       cleanupFns.push(onDrop)
 
@@ -1384,7 +1381,9 @@ function InputBoxComponent({
               {/* Drop overlay */}
               {(isDragging || isInternalFileDragging) && (
                 <div className="absolute inset-0 z-50 rounded-2xl bg-accent-main-100/5 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
-                  <span className="text-[length:var(--fs-base)] text-accent-main-100 font-medium">{t('inputBox.dropFilesHere')}</span>
+                  <span className="text-[length:var(--fs-base)] text-accent-main-100 font-medium">
+                    {t('inputBox.dropFilesHere')}
+                  </span>
                 </div>
               )}
 

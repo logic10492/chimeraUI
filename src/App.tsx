@@ -31,6 +31,7 @@ import {
   useChatViewportController,
 } from './features/chat/chatViewport'
 import { uiErrorHandler, isSameDirectory, collectActiveDirectories } from './utils'
+import { focusPaneInput, paneFullscreenForViewport } from './utils/paneView'
 import { initNotificationSound } from './utils/notificationSoundBridge'
 import { createPtySession } from './api/pty'
 import { activeApiScope, apiScopeKey, resolveSessionApiScope } from './api/scope'
@@ -73,6 +74,11 @@ function App() {
   })
   const splitPaneEnabled = canUseSplitPane(chatViewport)
   const paneLayout = usePaneLayout()
+  const renderedFullscreenPaneId = paneFullscreenForViewport(
+    paneLayout.fullscreenPaneId,
+    paneLayout.focusedPaneId,
+    splitPaneEnabled,
+  )
   const focusedController = usePaneController(paneLayout.focusedPaneId)
   const paneControllers = usePaneControllers()
   const syncingFromRouteRef = useRef(false)
@@ -484,29 +490,32 @@ function App() {
 
   const renderPaneLeaf = useCallback(
     (paneId: string, paneSessionId: string | null) => (
-      <ChatPane
-        key={paneId}
-        paneId={paneId}
-        sessionId={paneSessionId}
-        isFocused={paneLayout.focusedPaneId === paneId}
-        paneCount={paneLayout.paneCount}
-        displayMode={paneLayout.isSplit && paneLayout.fullscreenPaneId !== paneId ? 'split' : 'single'}
-        isPaneFullscreen={paneLayout.fullscreenPaneId === paneId}
-        onOpenSidebar={handleOpenSidebar}
-        onToggleRightPanel={handleToggleRightPanel}
-        showSidebarButton={chatViewport.interaction.sidebarBehavior === 'overlay'}
-        onSplitPane={splitPaneEnabled && !paneLayout.fullscreenPaneId ? handleEnterSplitMode : undefined}
-        onTogglePaneFullscreen={paneLayout.isSplit ? handleToggleFocusedPaneFullscreen : undefined}
-        onOpenSettings={openSettings}
-        navigatePaneToSession={navigatePaneToSession}
-        navigatePaneHome={navigatePaneHome}
-      />
+      <div data-pane-id={paneId} className="h-full min-h-0">
+        <ChatPane
+          key={paneId}
+          paneId={paneId}
+          sessionId={paneSessionId}
+          isFocused={paneLayout.focusedPaneId === paneId}
+          paneCount={paneLayout.paneCount}
+          displayMode={paneLayout.isSplit && renderedFullscreenPaneId !== paneId ? 'split' : 'single'}
+          isPaneFullscreen={paneLayout.fullscreenPaneId === paneId}
+          onOpenSidebar={handleOpenSidebar}
+          onToggleRightPanel={handleToggleRightPanel}
+          showSidebarButton={chatViewport.interaction.sidebarBehavior === 'overlay'}
+          onSplitPane={splitPaneEnabled && !paneLayout.fullscreenPaneId ? handleEnterSplitMode : undefined}
+          onTogglePaneFullscreen={paneLayout.isSplit ? handleToggleFocusedPaneFullscreen : undefined}
+          onOpenSettings={openSettings}
+          navigatePaneToSession={navigatePaneToSession}
+          navigatePaneHome={navigatePaneHome}
+        />
+      </div>
     ),
     [
       paneLayout.focusedPaneId,
       paneLayout.paneCount,
       paneLayout.isSplit,
       paneLayout.fullscreenPaneId,
+      renderedFullscreenPaneId,
       chatViewport.interaction.sidebarBehavior,
       splitPaneEnabled,
       handleOpenSidebar,
@@ -564,8 +573,7 @@ function App() {
       toggleSidebar: handleToggleSidebar,
       toggleRightPanel: handleToggleRightPanel,
       focusInput: () => {
-        const input = document.querySelector<HTMLTextAreaElement>('[data-input-box] textarea')
-        input?.focus()
+        focusPaneInput(paneLayoutStore.getFocusedPaneId())
       },
       newSession: () => focusedController?.newSession(),
       archiveSession: () => focusedController?.archiveSession(),
@@ -582,21 +590,13 @@ function App() {
       focusNextPane: () => {
         paneLayoutStore.focusNextPane()
         requestAnimationFrame(() => {
-          const pid = paneLayoutStore.getFocusedPaneId()
-          if (pid) {
-            const input = document.querySelector<HTMLTextAreaElement>(`[data-pane-id="${pid}"] textarea`)
-            input?.focus()
-          }
+          focusPaneInput(paneLayoutStore.getFocusedPaneId())
         })
       },
       focusPrevPane: () => {
         paneLayoutStore.focusPrevPane()
         requestAnimationFrame(() => {
-          const pid = paneLayoutStore.getFocusedPaneId()
-          if (pid) {
-            const input = document.querySelector<HTMLTextAreaElement>(`[data-pane-id="${pid}"] textarea`)
-            input?.focus()
-          }
+          focusPaneInput(paneLayoutStore.getFocusedPaneId())
         })
       },
       splitRight: () => {
@@ -684,8 +684,7 @@ function App() {
         category: t('commands:categories.general'),
         shortcut: getShortcut('focusInput'),
         action: () => {
-          const input = document.querySelector<HTMLTextAreaElement>('[data-input-box] textarea')
-          input?.focus()
+          focusPaneInput(paneLayoutStore.getFocusedPaneId())
         },
       },
       {
@@ -922,12 +921,12 @@ function App() {
                     }}
                   >
                     <div
-                      className={`flex-1 min-h-0 px-4 ${paneLayout.isSplit && !paneLayout.fullscreenPaneId ? 'py-2' : ''}`}
+                      className={`flex-1 min-h-0 px-4 ${paneLayout.isSplit && !renderedFullscreenPaneId ? 'py-2' : ''}`}
                     >
                       <SplitContainer
                         node={paneLayout.root}
                         renderLeaf={renderPaneLeaf}
-                        fullscreenPaneId={paneLayout.fullscreenPaneId}
+                        fullscreenPaneId={renderedFullscreenPaneId}
                       />
                     </div>
 
@@ -992,13 +991,13 @@ function App() {
                 >
                   <div
                     className={
-                      paneLayout.isSplit && !paneLayout.fullscreenPaneId ? 'flex-1 min-h-0 p-2' : 'flex-1 min-h-0'
+                      paneLayout.isSplit && !renderedFullscreenPaneId ? 'flex-1 min-h-0 p-2' : 'flex-1 min-h-0'
                     }
                   >
                     <SplitContainer
                       node={paneLayout.root}
                       renderLeaf={renderPaneLeaf}
-                      fullscreenPaneId={paneLayout.fullscreenPaneId}
+                      fullscreenPaneId={renderedFullscreenPaneId}
                     />
                   </div>
 

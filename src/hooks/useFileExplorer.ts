@@ -11,6 +11,7 @@ import { useSessionChangeScope } from '../store/changeScopeStore'
 import { activeSessionStore } from '../store/activeSessionStore'
 import { runtimeInvalidationStore } from '../store/runtimeInvalidationStore'
 import { serverStore } from '../store/serverStore'
+import { ByteLruCache, FILE_PREVIEW_CACHE_MAX_BYTES } from '../utils/filePreviewCache'
 
 export interface FileTreeNode extends FileNode {
   children?: FileTreeNode[]
@@ -71,7 +72,9 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
   const [previewContent, setPreviewContent] = useState<FileContent | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
-  const previewCacheRef = useRef<Map<string, FileContent>>(new Map())
+  const previewCacheRef = useRef(
+    new ByteLruCache<string, FileContent>(FILE_PREVIEW_CACHE_MAX_BYTES, value => JSON.stringify(value)),
+  )
   const previewLoadIdRef = useRef(0)
   const previewPathRef = useRef<string | null>(null)
 

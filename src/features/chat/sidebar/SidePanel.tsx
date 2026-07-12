@@ -22,7 +22,7 @@ import {
   CloseIcon,
   SpinnerIcon,
 } from '../../../components/Icons'
-import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog, useVcsInfo } from '../../../hooks'
+import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog, useVcsInfo, useSessions } from '../../../hooks'
 import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useLayoutStore, childSessionStore } from '../../../store'
 import { useBusySessions, useBusyCount } from '../../../store/activeSessionStore'
@@ -145,6 +145,7 @@ export function SidePanel({
   })
   const [projectsExpanded, setProjectsExpanded] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<'recents' | 'active'>('recents')
+  const [sessionListView, setSessionListView] = useState<'active' | 'archived'>('active')
   const [expandedRecentProjectIds, setExpandedRecentProjectIds] = useState<string[]>([])
 
   // ---- 编辑模式状态 ----
@@ -246,8 +247,6 @@ export function SidePanel({
     }
   }, [projectsExpanded, showLabels])
 
-
-
   // Active sessions
   const busySessions = useBusySessions()
   const busyCount = useBusyCount()
@@ -267,6 +266,13 @@ export function SidePanel({
 
   const { sessions, isLoading, isLoadingMore, hasMore, search, setSearch, loadMore, deleteSession, refresh } =
     useSessionContext()
+  const archivedSessions = useSessions({
+    directory: currentDirectory,
+    archived: true,
+    enabled: sidebarTab === 'recents' && sessionListView === 'archived',
+    pageSize: 30,
+  })
+  const restoreArchivedSession = archivedSessions.restore
 
   const pinnedEntries = useSyncExternalStore(
     pinnedSessionsStore.subscribe,
@@ -741,6 +747,31 @@ export function SidePanel({
     [currentDirectory, refresh],
   )
 
+  const handleArchiveSession = useCallback(
+    async (sessionId: string) => {
+      try {
+        await updateSession(sessionId, { time: { archived: Date.now() } }, currentDirectory)
+        pinnedSessionsStore.unpin(sessionId)
+        await refresh()
+        if (selectedSessionId === sessionId) onNewSession()
+      } catch (error) {
+        uiErrorHandler('archive session', error)
+      }
+    },
+    [currentDirectory, onNewSession, refresh, selectedSessionId],
+  )
+
+  const handleRestoreSession = useCallback(
+    async (sessionId: string) => {
+      try {
+        await restoreArchivedSession(sessionId)
+      } catch (error) {
+        uiErrorHandler('restore session', error)
+      }
+    },
+    [restoreArchivedSession],
+  )
+
   const handleDeleteSession = useCallback(
     async (sessionId: string) => {
       await deleteSession(sessionId)
@@ -1085,17 +1116,19 @@ export function SidePanel({
             <input
               type="text"
               name="sidebar-chat-search"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
+              value={sessionListView === 'archived' ? archivedSessions.search : search}
+              onChange={e =>
+                sessionListView === 'archived' ? archivedSessions.setSearch(e.target.value) : setSearch(e.target.value)
+              }
               placeholder={t('sidebar.searchChats')}
               aria-label={t('sidebar.searchChats')}
               autoComplete="off"
               className="w-full bg-bg-200/40 hover:bg-bg-200/60 focus:bg-bg-000 border border-transparent focus:border-border-200 rounded-lg py-1.5 pl-[30px] pr-8 text-[length:var(--fs-sm)] text-text-100 placeholder:text-text-400/70 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset transition-all"
             />
-            {search && (
+            {(sessionListView === 'archived' ? archivedSessions.search : search) && (
               <button
                 type="button"
-                onClick={() => setSearch('')}
+                onClick={() => (sessionListView === 'archived' ? archivedSessions.setSearch('') : setSearch(''))}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-text-400 hover:text-text-100 text-[length:var(--fs-base)]"
                 aria-label={t('sidebar.clearSearch')}
               >
@@ -1120,6 +1153,27 @@ export function SidePanel({
             >
               {t('sidebar.recents')}
             </button>
+            {sidebarTab === 'recents' && (
+              <div className="ml-1 flex items-center rounded-md bg-bg-200/50 p-0.5 text-[length:var(--fs-xxs)]">
+                <button
+                  type="button"
+                  className={`rounded px-1.5 py-1 ${sessionListView === 'active' ? 'bg-bg-000 text-text-100' : 'text-text-500'}`}
+                  onClick={() => setSessionListView('active')}
+                >
+                  Active
+                </button>
+                <button
+                  type="button"
+                  className={`rounded px-1.5 py-1 ${sessionListView === 'archived' ? 'bg-bg-000 text-text-100' : 'text-text-500'}`}
+                  onClick={() => {
+                    exitEditMode()
+                    setSessionListView('archived')
+                  }}
+                >
+                  Archived
+                </button>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -1144,7 +1198,7 @@ export function SidePanel({
               )}
             </button>
             {/* 编辑按钮 — 只在 Recents tab 显示 */}
-            {sidebarTab === 'recents' && (
+            {sidebarTab === 'recents' && sessionListView === 'active' && (
               <button
                 type="button"
                 onMouseDown={e => e.preventDefault()}
@@ -1195,7 +1249,29 @@ export function SidePanel({
           {/* Recents Tab */}
           {sidebarTab === 'recents' && (
             <div ref={recentsSelectionRootRef} className="flex-1 overflow-hidden">
-              {canShowFolderRecents ? (
+              {sessionListView === 'archived' ? (
+                <SessionList
+                  sessions={archivedSessions.sessions}
+                  selectedId={selectedSessionId}
+                  isLoading={archivedSessions.isLoading}
+                  isLoadingMore={archivedSessions.isLoadingMore}
+                  hasMore={archivedSessions.hasMore}
+                  search={archivedSessions.search}
+                  onSearchChange={archivedSessions.setSearch}
+                  onSelect={handleSelect}
+                  onDelete={handleDeleteSession}
+                  onRestore={handleRestoreSession}
+                  onRename={handleRename}
+                  onLoadMore={archivedSessions.loadMore}
+                  onNewChat={onNewSession}
+                  error={archivedSessions.error}
+                  showHeader={false}
+                  grouped={false}
+                  density="compact"
+                  showStats
+                  showDirectory={!currentDirectory}
+                />
+              ) : canShowFolderRecents ? (
                 <FolderRecentList
                   projects={folderProjects}
                   {...commonFolderRecentListProps}
@@ -1227,6 +1303,7 @@ export function SidePanel({
                   onSearchChange={setSearch}
                   onSelect={handleSelect}
                   onDelete={handleDeleteSession}
+                  onArchive={handleArchiveSession}
                   onRename={handleRename}
                   onLoadMore={loadMore}
                   onNewChat={onNewSession}

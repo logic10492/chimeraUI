@@ -253,13 +253,13 @@ export function SidebarFooter({ showLabels, connectionState, onOpenSettings }: S
             ${isOpen ? 'bg-bg-200 text-text-100' : 'text-text-300 hover:text-text-100 hover:bg-bg-200'}
           `}
           title={t('sidebar.settings')}
+          aria-label={t('sidebar.settings')}
         >
           <MenuIcon size={18} />
         </button>
       </div>
 
       {floatingMenu}
-      <ShareDialog isOpen={shareDialogOpen} onClose={() => setShareDialogOpen(false)} />
       <ShareDialog isOpen={shareDialogOpen} onClose={() => setShareDialogOpen(false)} />
     </div>
   )

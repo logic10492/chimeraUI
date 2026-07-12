@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   invalidateAllRootDirectoryCaches: vi.fn(),
   resetActiveSessions: vi.fn(),
-  resetPanes: vi.fn(),
-  resetFollowups: vi.fn(),
+  activatePaneServer: vi.fn(),
+  activateFollowupServer: vi.fn(),
   syncTerminalSessions: vi.fn(),
   activateNotificationServer: vi.fn(),
   emitRuntimeInvalidation: vi.fn(),
@@ -19,11 +19,11 @@ vi.mock('../store/activeSessionStore', () => ({
 }))
 
 vi.mock('../store/paneLayoutStore', () => ({
-  paneLayoutStore: { reset: mocks.resetPanes },
+  paneLayoutStore: { activateServer: mocks.activatePaneServer },
 }))
 
 vi.mock('../store/followupQueueStore', () => ({
-  followupQueueStore: { reset: mocks.resetFollowups },
+  followupQueueStore: { activateServer: mocks.activateFollowupServer },
 }))
 
 vi.mock('../store/layoutStore', () => ({
@@ -49,12 +49,18 @@ describe('resetServerScopedRuntime', () => {
     resetServerScopedRuntime('server-next')
 
     expect(mocks.resetActiveSessions).toHaveBeenCalledTimes(1)
-    expect(mocks.resetPanes).toHaveBeenCalledTimes(1)
-    expect(mocks.resetFollowups).toHaveBeenCalledTimes(1)
+    expect(mocks.activatePaneServer).toHaveBeenCalledWith('server-next')
+    expect(mocks.activateFollowupServer).toHaveBeenCalledWith('server-next')
     expect(mocks.syncTerminalSessions).toHaveBeenCalledTimes(1)
     expect(mocks.syncTerminalSessions).toHaveBeenCalledWith(undefined, [])
     expect(mocks.activateNotificationServer).toHaveBeenCalledTimes(1)
     expect(mocks.activateNotificationServer).toHaveBeenCalledWith('server-next')
+    expect(mocks.activateNotificationServer.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.activatePaneServer.mock.invocationCallOrder[0],
+    )
+    expect(mocks.activateNotificationServer.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.activateFollowupServer.mock.invocationCallOrder[0],
+    )
     expect(mocks.invalidateAllRootDirectoryCaches).toHaveBeenCalledTimes(1)
     expect(mocks.emitRuntimeInvalidation).toHaveBeenNthCalledWith(1, {
       type: 'file',
