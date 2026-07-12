@@ -4,9 +4,8 @@
 // ============================================
 
 import { getSDKClient, unwrap } from './sdk'
-import { formatPathForApi } from '../utils/directoryUtils'
 import type { FileNode, FileContent, FileStatusItem, SymbolInfo } from './types'
-import { serverStore } from '../store/serverStore'
+import { apiScopeKey, apiScopeQuery, resolveApiScope, type ApiScope, type ApiScopeInput } from './scope'
 
 const ROOT_DIRECTORY_CACHE_TTL_MS = 10_000
 
@@ -17,19 +16,20 @@ function isRootDirectoryPath(path: string): boolean {
   return path === '' || path === '.' || path === './'
 }
 
-function getRootDirectoryCacheKey(directory?: string): string {
-  return `${serverStore.getActiveServerId()}::${formatPathForApi(directory) ?? ''}`
+function getRootDirectoryCacheKey(scope: ApiScope): string {
+  return apiScopeKey(scope)
 }
 
-async function fetchDirectory(path: string, directory?: string): Promise<FileNode[]> {
-  const sdk = getSDKClient()
+async function fetchDirectory(path: string, input?: ApiScopeInput): Promise<FileNode[]> {
+  const scope = resolveApiScope(input)
   const isAbsolute = /^[a-zA-Z]:/.test(path) || path.startsWith('/')
 
-  if (isAbsolute && !directory) {
-    return unwrap(await sdk.file.list({ directory: formatPathForApi(path), path: '' }))
+  if (isAbsolute && !scope.directory && !scope.workspace) {
+    const absoluteScope = resolveApiScope({ serverID: scope.serverID, directory: path })
+    return unwrap(await getSDKClient(absoluteScope).file.list({ ...apiScopeQuery(absoluteScope), path: '' }))
   }
 
-  return unwrap(await sdk.file.list({ path, directory: formatPathForApi(directory) }))
+  return unwrap(await getSDKClient(scope).file.list({ path, ...apiScopeQuery(scope) }))
 }
 
 /**
@@ -39,15 +39,16 @@ export async function searchFiles(
   query: string,
   options: {
     directory?: string
+    scope?: ApiScopeInput
     type?: 'file' | 'directory'
     limit?: number
   } = {},
 ): Promise<string[]> {
-  const sdk = getSDKClient()
+  const scope = resolveApiScope(options.scope ?? options.directory)
   return unwrap(
-    await sdk.find.files({
+    await getSDKClient(scope).find.files({
       query,
-      directory: formatPathForApi(options.directory),
+      ...apiScopeQuery(scope),
       type: options.type,
       limit: options.limit,
     }),
@@ -57,12 +58,13 @@ export async function searchFiles(
 /**
  * 列出目录内容
  */
-export async function listDirectory(path: string, directory?: string): Promise<FileNode[]> {
+export async function listDirectory(path: string, input?: ApiScopeInput): Promise<FileNode[]> {
   if (!isRootDirectoryPath(path)) {
-    return fetchDirectory(path, directory)
+    return fetchDirectory(path, input)
   }
 
-  const key = getRootDirectoryCacheKey(directory)
+  const scope = resolveApiScope(input)
+  const key = getRootDirectoryCacheKey(scope)
   const now = Date.now()
   const cached = rootDirectoryCache.get(key)
   if (cached && cached.expiresAt > now) {
@@ -74,7 +76,7 @@ export async function listDirectory(path: string, directory?: string): Promise<F
     return inflight
   }
 
-  const request = fetchDirectory(path === '' ? '.' : path, directory)
+  const request = fetchDirectory(path === '' ? '.' : path, scope)
     .then(data => {
       rootDirectoryCache.set(key, { data, expiresAt: Date.now() + ROOT_DIRECTORY_CACHE_TTL_MS })
       return data
@@ -87,40 +89,40 @@ export async function listDirectory(path: string, directory?: string): Promise<F
   return request
 }
 
-export async function prefetchRootDirectory(directory?: string): Promise<void> {
-  await listDirectory('.', directory)
+export async function prefetchRootDirectory(input?: ApiScopeInput): Promise<void> {
+  await listDirectory('.', input)
 }
 
 /**
  * 读取文件内容
  */
-export async function getFileContent(path: string, directory?: string): Promise<FileContent> {
-  const sdk = getSDKClient()
-  return unwrap(await sdk.file.read({ path, directory: formatPathForApi(directory) }))
+export async function getFileContent(path: string, input?: ApiScopeInput): Promise<FileContent> {
+  const scope = resolveApiScope(input)
+  return unwrap(await getSDKClient(scope).file.read({ path, ...apiScopeQuery(scope) }))
 }
 
 /**
  * 获取文件 git 状态
  */
-export async function getFileStatus(directory?: string): Promise<FileStatusItem[]> {
-  const sdk = getSDKClient()
-  return unwrap(await sdk.file.status({ directory: formatPathForApi(directory) }))
+export async function getFileStatus(input?: ApiScopeInput): Promise<FileStatusItem[]> {
+  const scope = resolveApiScope(input)
+  return unwrap(await getSDKClient(scope).file.status(apiScopeQuery(scope)))
 }
 
 /**
  * 搜索代码符号
  */
-export async function searchSymbols(query: string, directory?: string): Promise<SymbolInfo[]> {
-  const sdk = getSDKClient()
-  return unwrap(await sdk.find.symbols({ query, directory: formatPathForApi(directory) }))
+export async function searchSymbols(query: string, input?: ApiScopeInput): Promise<SymbolInfo[]> {
+  const scope = resolveApiScope(input)
+  return unwrap(await getSDKClient(scope).find.symbols({ query, ...apiScopeQuery(scope) }))
 }
 
 /**
  * 搜索目录（便捷方法）
  */
-export async function searchDirectories(query: string, baseDirectory?: string, limit: number = 50): Promise<string[]> {
+export async function searchDirectories(query: string, input?: ApiScopeInput, limit: number = 50): Promise<string[]> {
   return searchFiles(query, {
-    directory: baseDirectory,
+    scope: input,
     type: 'directory',
     limit,
   })

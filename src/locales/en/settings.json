@@ -6,6 +6,8 @@
   "tabs": {
     "servers": "Servers",
     "serversDesc": "Backend connections and fast active endpoint switching",
+    "providers": "Providers",
+    "providersDesc": "Connect API keys and OAuth accounts for model providers",
     "models": "Models",
     "modelsDesc": "Choose which models stay available in the selector",
     "agent": "Agent",

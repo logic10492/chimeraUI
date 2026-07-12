@@ -2,17 +2,30 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertCircleIcon, CheckIcon, CloseIcon, SettingsIcon, UndoIcon } from '../../../components/Icons'
 import { Dialog } from '../../../components/ui/Dialog'
-import { getConfig, getGlobalConfig, getProviderConfigs, listAvailableShells, updateGlobalConfig } from '../../../api'
+import {
+  getConfig,
+  getGlobalConfig,
+  getProviderConfigs,
+  listAvailableShells,
+  providerCatalog as buildProviderCatalog,
+  providerModelChoices,
+  updateGlobalConfig,
+} from '../../../api'
 import type { Config } from '../../../types/api/config'
 import { useCurrentDirectory, useIsMobile } from '../../../hooks'
 import { SettingsCard, SettingsSection } from './SettingsUI'
-import { validateConfig, validationDrillTargetForError, type ValidationDrillTarget, type ValidationError } from './configEditorValidation'
+import {
+  validateConfig,
+  validationDrillTargetForError,
+  type ValidationDrillTarget,
+  type ValidationError,
+} from './configEditorValidation'
 import { ValidationDrillTargetContext } from './configEditorDrillState'
 import { JsonDraftErrorContext } from './configEditorJsonDraft'
 import { SECTION_IDS, SECTION_META } from './configEditorMeta'
 import { SectionRouter } from './configEditorSections'
 import type { Choice, JsonRecord, SectionID } from './configEditorTypes'
-import { clone, getObject, isRecord, sameValue, tx } from './configEditorUtils'
+import { clone, getObject, sameValue, tx } from './configEditorUtils'
 
 function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { t, i18n } = useTranslation('settings')
@@ -65,20 +78,12 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         listAvailableShells(directory).catch(() => []),
         getProviderConfigs(directory).catch(() => undefined),
       ])
-      const modelChoices: Choice[] = []
-      if (isRecord(providers)) {
-        for (const [providerID, provider] of Object.entries(providers)) {
-          if (!isRecord(provider) || !isRecord(provider.models)) continue
-          for (const modelID of Object.keys(provider.models)) {
-            modelChoices.push({ value: `${providerID}/${modelID}`, label: `${providerID}/${modelID}` })
-          }
-        }
-      }
+      const modelChoices = providerModelChoices(providers)
       setOriginal(clone(global))
       setConfig(clone(global))
       setJsonDraftErrors(new Set())
       setEffective(nextEffective)
-      setProviderCatalog(isRecord(providers) ? providers : {})
+      setProviderCatalog(buildProviderCatalog(providers))
       setShells([
         { value: '', label: t('config.shellAuto') },
         ...shellList.map(shell => ({
@@ -120,21 +125,32 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       setValidating(false)
     }
     const schemaUnavailableMessage = officialResult.unavailable
-      ? tx('Official schema could not be loaded; this save relies on OpenCode server validation.', '无法加载官方 schema；本次保存将依赖 OpenCode 服务端校验。', lang)
-      : null
-    const nextValidationErrors = [...officialResult.errors, ...validateConfig(config, lang, original)]
+      ? tx(
+          'Online schema unavailable; the current Chimera server will validate this save.',
+          '在线 schema 不可用；当前 Chimera 服务端将校验本次保存。',
+          lang,
+        )
+      : officialResult.errors.length > 0
+        ? tx(
+            'The upstream online schema reported compatibility warnings; the current Chimera server remains authoritative.',
+            '上游在线 schema 报告了兼容性警告；仍以当前 Chimera 服务端校验为准。',
+            lang,
+          )
+        : null
+    const nextValidationErrors = validateConfig(config, lang, original)
     if (nextValidationErrors.length > 0) {
       if (schemaUnavailableMessage) setSchemaWarning(schemaUnavailableMessage)
       setValidationErrors(nextValidationErrors)
       return
     }
+    if (schemaUnavailableMessage) setSchemaWarning(schemaUnavailableMessage)
     setSaving(true)
     try {
       const saved = await updateGlobalConfig(config)
       setOriginal(clone(saved))
       setConfig(clone(saved))
       setEffective(await getConfig(directory))
-      setSchemaWarning(null)
+      setSchemaWarning(schemaUnavailableMessage)
     } catch (err) {
       if (schemaUnavailableMessage) setSchemaWarning(schemaUnavailableMessage)
       setError(err instanceof Error ? err.message : t('config.saveFailed'))
@@ -183,8 +199,12 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
               <div className="shrink-0">
                 <div className="flex items-center justify-center px-4 pt-3 pb-2">
                   <div className="text-center">
-                    <div className="truncate text-[length:var(--fs-heading-3)] font-semibold text-text-100">{t('config.editorTitle')}</div>
-                    {dirty && <div className="mt-0.5 text-[length:var(--fs-xs)] text-warning-100">{t('config.unsaved')}</div>}
+                    <div className="truncate text-[length:var(--fs-heading-3)] font-semibold text-text-100">
+                      {t('config.editorTitle')}
+                    </div>
+                    {dirty && (
+                      <div className="mt-0.5 text-[length:var(--fs-xs)] text-warning-100">{t('config.unsaved')}</div>
+                    )}
                   </div>
                 </div>
                 <div className="relative">
@@ -216,11 +236,19 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             ) : (
               <div className="flex items-center justify-between gap-3 border-b border-border-200/50 px-5 xl:px-6 py-3.5">
                 <div className="min-w-0 flex-1">
-                  <div className="text-[length:var(--fs-heading-3)] font-semibold text-text-100">{t('config.editorTitle')}</div>
-                  <div className="mt-0.5 truncate text-[length:var(--fs-xs)] leading-relaxed text-text-400">{t('config.noDeleteHint')}</div>
+                  <div className="text-[length:var(--fs-heading-3)] font-semibold text-text-100">
+                    {t('config.editorTitle')}
+                  </div>
+                  <div className="mt-0.5 truncate text-[length:var(--fs-xs)] leading-relaxed text-text-400">
+                    {t('config.noDeleteHint')}
+                  </div>
                 </div>
                 <div className="flex min-w-0 items-center gap-2">
-                  {dirty && <span className="hidden text-[length:var(--fs-xs)] text-warning-100 sm:inline">{t('config.unsaved')}</span>}
+                  {dirty && (
+                    <span className="hidden text-[length:var(--fs-xs)] text-warning-100 sm:inline">
+                      {t('config.unsaved')}
+                    </span>
+                  )}
                   <button
                     type="button"
                     disabled={!dirty || saving || validating}
@@ -237,19 +265,38 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                     className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-accent-main-100 px-3 py-1.5 text-[length:var(--fs-xs)] font-medium text-white transition-opacity disabled:opacity-40"
                   >
                     <CheckIcon size={13} />
-                    {saving ? t('config.saving') : validating ? tx('Validating…', '校验中…', lang) : t('config.saveAll')}
+                    {saving
+                      ? t('config.saving')
+                      : validating
+                        ? tx('Validating…', '校验中…', lang)
+                        : t('config.saveAll')}
                   </button>
-                  <button type="button" onClick={onClose} aria-label={t('closeSettings')} className="-mr-1 shrink-0 rounded-md p-2 text-text-400 transition-colors hover:bg-bg-100 hover:text-text-200">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    aria-label={t('closeSettings')}
+                    className="-mr-1 shrink-0 rounded-md p-2 text-text-400 transition-colors hover:bg-bg-100 hover:text-text-200"
+                  >
                     <CloseIcon size={18} />
                   </button>
                 </div>
               </div>
             )}
-            {error && <div className="break-words border-b border-error-100/20 bg-error-100/10 px-4 py-2 text-[length:var(--fs-xs)] text-error-100">{error}</div>}
-            {schemaWarning && <div className="break-words border-b border-warning-100/20 bg-warning-100/10 px-4 py-2 text-[length:var(--fs-xs)] text-warning-100">{schemaWarning}</div>}
+            {error && (
+              <div className="break-words border-b border-error-100/20 bg-error-100/10 px-4 py-2 text-[length:var(--fs-xs)] text-error-100">
+                {error}
+              </div>
+            )}
+            {schemaWarning && (
+              <div className="break-words border-b border-warning-100/20 bg-warning-100/10 px-4 py-2 text-[length:var(--fs-xs)] text-warning-100">
+                {schemaWarning}
+              </div>
+            )}
             {validationErrors.length > 0 && (
               <div className="max-h-32 overflow-y-auto border-b border-error-100/20 bg-error-100/10 px-4 py-2 text-[length:var(--fs-xs)] text-error-100 custom-scrollbar">
-                <div className="mb-1 font-medium">{t('config.validationFailed', { defaultValue: 'Config validation failed' })}</div>
+                <div className="mb-1 font-medium">
+                  {t('config.validationFailed', { defaultValue: 'Config validation failed' })}
+                </div>
                 <div className="space-y-1">
                   {validationErrors.slice(0, 12).map(error => (
                     <button
@@ -261,15 +308,36 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                       <span className="break-all font-mono">{error.path}</span>: {error.message}
                     </button>
                   ))}
-                  {validationErrors.length > 12 && <div>{tx(`${validationErrors.length - 12} more issue(s)…`, `还有 ${validationErrors.length - 12} 个问题…`, lang)}</div>}
+                  {validationErrors.length > 12 && (
+                    <div>
+                      {tx(
+                        `${validationErrors.length - 12} more issue(s)…`,
+                        `还有 ${validationErrors.length - 12} 个问题…`,
+                        lang,
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
-            {loading && <div className="border-b border-border-200/50 px-4 py-2 text-[length:var(--fs-xs)] text-text-400">{t('config.loading')}</div>}
+            {loading && (
+              <div className="border-b border-border-200/50 px-4 py-2 text-[length:var(--fs-xs)] text-text-400">
+                {t('config.loading')}
+              </div>
+            )}
             {isMobile ? (
               <>
                 <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-4 custom-scrollbar overscroll-contain">
-                  <SectionRouter section={section} config={config} setConfig={updateConfig} lang={lang} shells={shells} models={models} agents={agents} providerCatalog={providerCatalog} />
+                  <SectionRouter
+                    section={section}
+                    config={config}
+                    setConfig={updateConfig}
+                    lang={lang}
+                    shells={shells}
+                    models={models}
+                    agents={agents}
+                    providerCatalog={providerCatalog}
+                  />
                 </main>
                 <div className="relative shrink-0 px-4 py-3">
                   <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-border-200/30" />
@@ -290,7 +358,11 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                       className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent-main-100 px-3 py-2 text-[length:var(--fs-sm)] font-medium text-white transition-opacity disabled:opacity-40"
                     >
                       <CheckIcon size={14} />
-                      {saving ? t('config.saving') : validating ? tx('Validating…', '校验中…', lang) : t('config.saveAll')}
+                      {saving
+                        ? t('config.saving')
+                        : validating
+                          ? tx('Validating…', '校验中…', lang)
+                          : t('config.saveAll')}
                     </button>
                   </div>
                 </div>
@@ -305,7 +377,9 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                         type="button"
                         onClick={() => setSection(id)}
                         className={`w-full rounded-lg px-3 py-2 text-left text-[length:var(--fs-sm)] transition-colors ${
-                          section === id ? 'bg-accent-main-100/12 font-medium text-accent-main-100' : 'text-text-300 hover:bg-bg-100 hover:text-text-100'
+                          section === id
+                            ? 'bg-accent-main-100/12 font-medium text-accent-main-100'
+                            : 'text-text-300 hover:bg-bg-100 hover:text-text-100'
                         }`}
                       >
                         {tx(SECTION_META[id].en, SECTION_META[id].zh, lang)}
@@ -314,7 +388,16 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                   </div>
                 </aside>
                 <main className="min-h-0 min-w-0 overflow-y-auto p-5 custom-scrollbar xl:px-6">
-                  <SectionRouter section={section} config={config} setConfig={updateConfig} lang={lang} shells={shells} models={models} agents={agents} providerCatalog={providerCatalog} />
+                  <SectionRouter
+                    section={section}
+                    config={config}
+                    setConfig={updateConfig}
+                    lang={lang}
+                    shells={shells}
+                    models={models}
+                    agents={agents}
+                    providerCatalog={providerCatalog}
+                  />
                 </main>
               </div>
             )}

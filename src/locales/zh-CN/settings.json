@@ -6,6 +6,8 @@
   "tabs": {
     "servers": "服务器",
     "serversDesc": "后端连接和快速切换活跃端点",
+    "providers": "Provider",
+    "providersDesc": "连接模型 Provider 的 API 密钥和 OAuth 账户",
     "models": "模型",
     "modelsDesc": "控制哪些模型保留在选择器里",
     "agent": "Agent",
