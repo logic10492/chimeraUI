@@ -160,7 +160,7 @@ fn create_hidden_content_window(
         label,
         tauri::WebviewUrl::App("index.html".into()),
     ))
-    .title("OpenCode")
+    .title("Chimera")
     .inner_size(800.0, 600.0);
 
     builder.visible(false).build()
@@ -411,6 +411,10 @@ pub fn run() {
             commands::utils::get_dropped_paths_info,
             commands::utils::open_new_window,
             commands::utils::desktop_window_ready,
+            commands::opencode::check_chimera_service,
+            commands::opencode::detect_chimera_service,
+            commands::opencode::start_chimera_service,
+            commands::opencode::stop_chimera_service,
             commands::opencode::check_opencode_service,
             commands::opencode::detect_opencode_binary,
             commands::opencode::start_opencode_service,

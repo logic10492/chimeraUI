@@ -10,8 +10,8 @@ export const SECTION_META: Record<SectionID, { en: string; zh: string; descEn: s
   server: {
     en: 'Server',
     zh: '服务',
-    descEn: 'Options for the opencode serve and web commands.',
-    descZh: 'opencode serve 和 web 命令的服务端选项。',
+    descEn: 'Options for the chimera serve and web commands.',
+    descZh: 'chimera serve 和 web 命令的服务端选项。',
   },
   commands: {
     en: 'Commands',
@@ -94,7 +94,8 @@ export const SECTION_META: Record<SectionID, { en: string; zh: string; descEn: s
   advanced: {
     en: 'Unknown / Future',
     zh: '未知/未来字段',
-    descEn: 'Top-level fields not recognized by the current schema. They may be invalid or from a newer opencode version.',
+    descEn:
+      'Top-level fields not recognized by the current schema. They may be invalid or from a newer opencode version.',
     descZh: '当前 schema 不认识的顶层字段，可能无效，也可能来自更新版本的 opencode。',
   },
 }

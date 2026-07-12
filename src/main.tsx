@@ -84,7 +84,7 @@ serverStore.onServerChange(() => {
 const isNativeTauri = isTauri()
 const isNativeTauriMobile = isNativeTauri && isTauriMobile()
 
-interface StartOpencodeServiceResult {
+interface StartChimeraServiceResult {
   started: boolean
   startedByUs: boolean
   url?: string | null
@@ -116,13 +116,13 @@ async function initializeNativeDesktopService() {
     const { invoke } = await import('@tauri-apps/api/core')
 
     try {
-      const path = await invoke<string | null>('detect_opencode_binary', { envVars: serviceStore.envVarsRecord })
+      const path = await invoke<string | null>('detect_chimera_service', { envVars: serviceStore.envVarsRecord })
       serviceStore.setDetectedBinaryPath(path)
     } catch {
       // Starting with PATH fallback is still useful if detection fails.
     }
 
-    const result = await invoke<StartOpencodeServiceResult>('start_opencode_service', {
+    const result = await invoke<StartChimeraServiceResult>('start_chimera_service', {
       url: serverUrl,
       binaryPath: serviceStore.effectiveBinaryPath,
       envVars: serviceStore.envVarsRecord,
@@ -132,12 +132,12 @@ async function initializeNativeDesktopService() {
     serviceStore.setStartedByUs(result.startedByUs)
     serviceStore.setRunning(true)
     if (result.started) {
-      console.info('[Service] opencode serve started by app')
+      console.info('[Service] chimera serve started by app')
     } else {
-      console.info('[Service] opencode serve already running')
+      console.info('[Service] chimera serve already running')
     }
   } catch (err) {
-    apiErrorHandler('auto-start opencode serve', err)
+    apiErrorHandler('auto-start chimera serve', err)
   } finally {
     serviceStore.setStarting(false)
   }

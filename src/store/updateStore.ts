@@ -10,6 +10,7 @@ export interface UpdateRelease {
 
 export interface UpdateState {
   currentVersion: string
+  channel: string
   latestRelease: UpdateRelease | null
   lastCheckedAt: number | null
   dismissedVersion: string | null
@@ -32,10 +33,11 @@ export interface UpdateSettingsBackup {
 
 type Subscriber = () => void
 
-const STORAGE_KEY = 'opencode:update-check'
+const STORAGE_KEY = 'chimera:update-check'
+const LEGACY_STORAGE_KEY = 'opencode:update-check'
 const CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000
-export const RELEASES_API_URL = 'https://api.github.com/repos/lehhair/OpenCodeUI/releases/latest'
-export const RELEASES_PAGE_URL = 'https://github.com/lehhair/OpenCodeUI/releases/latest'
+export const RELEASES_API_URL = 'https://api.github.com/repos/coding-chimera/chimera/releases/latest'
+export const RELEASES_PAGE_URL = 'https://github.com/coding-chimera/chimera/releases/latest'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -73,21 +75,51 @@ export function shouldShowUpdateToast(state: UpdateState): boolean {
   return true
 }
 
+function emptyPersistedState(): PersistedUpdateState {
+  return { latestRelease: null, lastCheckedAt: null, dismissedVersion: null }
+}
+
+function parsePersistedRelease(value: unknown): UpdateRelease | null {
+  if (!isPlainObject(value)) return null
+  if (typeof value.version !== 'string' || typeof value.tagName !== 'string' || typeof value.url !== 'string') {
+    return null
+  }
+  return {
+    version: value.version,
+    tagName: value.tagName,
+    url: value.url,
+    publishedAt: typeof value.publishedAt === 'string' ? value.publishedAt : null,
+    name: typeof value.name === 'string' ? value.name : null,
+  }
+}
+
+function parsePersistedState(raw: string): PersistedUpdateState {
+  const parsed: unknown = JSON.parse(raw)
+  if (!isPlainObject(parsed)) throw new Error('Invalid persisted update state')
+  return {
+    latestRelease: parsePersistedRelease(parsed.latestRelease),
+    lastCheckedAt:
+      typeof parsed.lastCheckedAt === 'number' && Number.isFinite(parsed.lastCheckedAt) ? parsed.lastCheckedAt : null,
+    dismissedVersion: typeof parsed.dismissedVersion === 'string' ? parsed.dismissedVersion : null,
+  }
+}
+
 function loadPersistedState(): PersistedUpdateState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      return { latestRelease: null, lastCheckedAt: null, dismissedVersion: null }
+    const current = localStorage.getItem(STORAGE_KEY)
+    if (current !== null) return parsePersistedState(current)
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
+    if (legacy === null) return emptyPersistedState()
+    const parsed = parsePersistedState(legacy)
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed))
+      localStorage.removeItem(LEGACY_STORAGE_KEY)
+    } catch {
+      return parsed
     }
-
-    const parsed = JSON.parse(raw) as PersistedUpdateState
-    return {
-      latestRelease: parsed?.latestRelease ?? null,
-      lastCheckedAt: typeof parsed?.lastCheckedAt === 'number' ? parsed.lastCheckedAt : null,
-      dismissedVersion: typeof parsed?.dismissedVersion === 'string' ? parsed.dismissedVersion : null,
-    }
+    return parsed
   } catch {
-    return { latestRelease: null, lastCheckedAt: null, dismissedVersion: null }
+    return emptyPersistedState()
   }
 }
 
@@ -133,15 +165,24 @@ function getDefaultCurrentVersion(): string {
   }
 }
 
+function getDefaultChannel(): string {
+  try {
+    return __APP_CHANNEL__
+  } catch {
+    return 'latest'
+  }
+}
+
 export class UpdateStore {
   private state: UpdateState
   private subscribers = new Set<Subscriber>()
   private inflightCheck: Promise<void> | null = null
 
-  constructor(currentVersion?: string) {
+  constructor(currentVersion?: string, channel?: string) {
     const persisted = loadPersistedState()
     this.state = {
       currentVersion: normalizeVersion(currentVersion ?? getDefaultCurrentVersion()),
+      channel: channel?.trim() || getDefaultChannel(),
       latestRelease: persisted.latestRelease,
       lastCheckedAt: persisted.lastCheckedAt,
       dismissedVersion: persisted.dismissedVersion,

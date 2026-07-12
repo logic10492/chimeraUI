@@ -11,7 +11,7 @@ import { apiErrorHandler } from '../../../utils'
 import { applyLocalServiceUrl } from '../../../utils/localServiceUrl'
 import { Toggle, SettingRow, SettingsCard } from './SettingsUI'
 
-interface StartOpencodeServiceResult {
+interface StartChimeraServiceResult {
   started: boolean
   startedByUs: boolean
   url?: string | null
@@ -70,10 +70,10 @@ export function ServiceSettings() {
     setDetectingBinary(true)
     try {
       const { invoke } = await import('@tauri-apps/api/core')
-      const detected = await invoke<string | null>('detect_opencode_binary', { envVars: serviceStore.envVarsRecord })
+      const detected = await invoke<string | null>('detect_chimera_service', { envVars: serviceStore.envVarsRecord })
       serviceStore.setDetectedBinaryPath(detected)
     } catch (e) {
-      apiErrorHandler('detect opencode binary', e)
+      apiErrorHandler('detect chimera binary', e)
       serviceStore.setDetectedBinaryPath(null)
     } finally {
       setDetectingBinary(false)
@@ -85,11 +85,11 @@ export function ServiceSettings() {
     try {
       const { invoke } = await import('@tauri-apps/api/core')
       serviceStore.setStarting(true)
-      const detected = await invoke<string | null>('detect_opencode_binary', { envVars: serviceStore.envVarsRecord }).catch(
-        () => null,
-      )
+      const detected = await invoke<string | null>('detect_chimera_service', {
+        envVars: serviceStore.envVarsRecord,
+      }).catch(() => null)
       serviceStore.setDetectedBinaryPath(detected)
-      const result = await invoke<StartOpencodeServiceResult>('start_opencode_service', {
+      const result = await invoke<StartChimeraServiceResult>('start_chimera_service', {
         url: getServerUrl(),
         binaryPath: serviceStore.effectiveBinaryPath,
         envVars: serviceStore.envVarsRecord,
@@ -110,7 +110,7 @@ export function ServiceSettings() {
     setServiceError('')
     try {
       const { invoke } = await import('@tauri-apps/api/core')
-      await invoke('stop_opencode_service')
+      await invoke('stop_chimera_service')
       serviceStore.setStartedByUs(false)
       serviceStore.setRunning(false)
     } catch (e) {
@@ -121,7 +121,7 @@ export function ServiceSettings() {
   const handleCheckService = async () => {
     try {
       const { invoke } = await import('@tauri-apps/api/core')
-      const running = await invoke<boolean>('check_opencode_service', { url: getServerUrl() })
+      const running = await invoke<boolean>('check_chimera_service', { url: getServerUrl() })
       serviceStore.setRunning(running)
       if (running) {
         const byUs = await invoke<boolean>('get_service_started_by_us')

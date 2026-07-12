@@ -175,8 +175,8 @@
     "selectFile": "Select a file to view changes"
   },
   "closeService": {
-    "title": "Close OpenCode",
-    "description": "The opencode service was started by this app. Do you want to stop it as well?",
+    "title": "Close Chimera",
+    "description": "The Chimera service was started by this app. Do you want to stop it as well?",
     "closeAndStop": "Close and stop service",
     "closeKeepRunning": "Close, keep service running"
   },

@@ -1,5 +1,5 @@
 // ============================================
-// OpenCode Service Management (desktop only)
+// Chimera Service Management (desktop only)
 // Android 不支持子进程管理和 window.destroy()
 // ============================================
 
@@ -20,18 +20,18 @@ use tauri::State;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StartOpencodeServiceResult {
+pub struct StartChimeraServiceResult {
     started: bool,
     started_by_us: bool,
     url: Option<String>,
 }
 
-struct SpawnedOpencodeServe {
+struct SpawnedChimeraServe {
     child: Child,
     output: mpsc::Receiver<String>,
 }
 
-/// 检查 opencode 服务是否在运行（通过 health endpoint）
+/// 检查 Chimera 服务是否在运行（通过 health endpoint）
 pub async fn is_service_running(url: &str) -> bool {
     let health_url = format!("{}/global/health", url.trim_end_matches('/'));
     match reqwest::Client::builder()
@@ -49,19 +49,19 @@ pub async fn is_service_running(url: &str) -> bool {
     }
 }
 
-/// 启动 opencode serve 进程
-fn spawn_opencode_serve(
+/// 启动 chimera serve 进程
+fn spawn_chimera_serve(
     binary_path: &str,
     env_vars: &std::collections::HashMap<String, String>,
-) -> Result<SpawnedOpencodeServe, String> {
-    log::info!("Starting opencode serve with binary: {}", binary_path);
+) -> Result<SpawnedChimeraServe, String> {
+    log::info!("Starting chimera serve with binary: {}", binary_path);
     if !env_vars.is_empty() {
         log::info!("Injecting {} environment variable(s)", env_vars.len());
     }
 
     let serve_args = ["serve".to_string()];
 
-    let mut cmd = build_opencode_command(binary_path, &serve_args);
+    let mut cmd = build_chimera_command(binary_path, &serve_args);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     // 注入用户配置的环境变量
@@ -91,7 +91,7 @@ fn spawn_opencode_serve(
         spawn_output_reader(stderr, tx);
     }
 
-    Ok(SpawnedOpencodeServe { child, output })
+    Ok(SpawnedChimeraServe { child, output })
 }
 
 fn spawn_output_reader<R>(reader: R, tx: mpsc::Sender<String>)
@@ -146,7 +146,7 @@ fn format_recent_output(recent_output: &VecDeque<String>) -> String {
     )
 }
 
-fn build_opencode_command(binary_path: &str, args: &[String]) -> Command {
+fn build_chimera_command(binary_path: &str, args: &[String]) -> Command {
     #[cfg(target_os = "windows")]
     {
         let path = Path::new(binary_path);
@@ -185,7 +185,7 @@ fn patched_env_var(
 fn path_candidates(env_vars: &std::collections::HashMap<String, String>) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
-    if let Some(bin) = patched_env_var(env_vars, "OPENCODE_BIN") {
+    if let Some(bin) = patched_env_var(env_vars, "CHIMERA_BIN") {
         if !bin.is_empty() {
             candidates.push(PathBuf::from(bin));
         }
@@ -196,9 +196,9 @@ fn path_candidates(env_vars: &std::collections::HashMap<String, String>) -> Vec<
     };
 
     let names: Vec<&str> = if cfg!(windows) {
-        vec!["opencode.exe", "opencode.cmd", "opencode.bat", "opencode"]
+        vec!["chimera.exe", "chimera.cmd", "chimera.bat", "chimera"]
     } else {
-        vec!["opencode"]
+        vec!["chimera"]
     };
 
     for dir in env::split_paths(&path) {
@@ -210,13 +210,26 @@ fn path_candidates(env_vars: &std::collections::HashMap<String, String>) -> Vec<
     candidates
 }
 
+fn compatibility_path_candidates(
+    env_vars: &std::collections::HashMap<String, String>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(bin) = patched_env_var(env_vars, "OPENCODE_BIN") {
+        if !bin.is_empty() {
+            candidates.push(PathBuf::from(bin));
+        }
+    }
+    candidates.extend(path_candidates(env_vars));
+    candidates
+}
+
 fn is_runnable_file(path: &Path) -> bool {
     path.is_file()
 }
 
-/// 自动检测 opencode 可执行文件，行为接近直接在终端输入 `opencode`。
+/// 自动检测 Chimera 可执行文件，行为接近直接在终端输入 `chimera`。
 #[tauri::command]
-pub async fn detect_opencode_binary(
+pub async fn detect_chimera_service(
     env_vars: std::collections::HashMap<String, String>,
 ) -> Result<Option<String>, String> {
     for candidate in path_candidates(&env_vars) {
@@ -252,26 +265,26 @@ pub fn kill_process_by_pid(pid: u32) {
     }
 }
 
-/// 检查 opencode 服务是否在运行
+/// 检查 Chimera 服务是否在运行
 #[tauri::command]
-pub async fn check_opencode_service(url: String) -> Result<bool, String> {
+pub async fn check_chimera_service(url: String) -> Result<bool, String> {
     Ok(is_service_running(&url).await)
 }
 
-/// 启动 opencode serve
+/// 启动 chimera serve
 #[tauri::command]
-pub async fn start_opencode_service(
+pub async fn start_chimera_service(
     state: State<'_, ServiceState>,
     url: String,
     binary_path: String,
     env_vars: std::collections::HashMap<String, String>,
-) -> Result<StartOpencodeServiceResult, String> {
+) -> Result<StartChimeraServiceResult, String> {
     if state.we_started.load(Ordering::SeqCst) {
         let current_url = state.service_url.lock().map_err(|e| e.to_string())?.clone();
         if let Some(current_url) = current_url {
             if is_service_running(&current_url).await {
-                log::info!("opencode service already running at {}", current_url);
-                return Ok(StartOpencodeServiceResult {
+                log::info!("Chimera service already running at {}", current_url);
+                return Ok(StartChimeraServiceResult {
                     started: false,
                     started_by_us: true,
                     url: Some(current_url),
@@ -281,17 +294,17 @@ pub async fn start_opencode_service(
     }
 
     if is_service_running(&url).await {
-        log::info!("opencode service already running at {}", url);
-        return Ok(StartOpencodeServiceResult {
+        log::info!("Chimera service already running at {}", url);
+        return Ok(StartChimeraServiceResult {
             started: false,
             started_by_us: false,
             url: Some(url),
         });
     }
 
-    let mut spawned = spawn_opencode_serve(&binary_path, &env_vars)?;
+    let mut spawned = spawn_chimera_serve(&binary_path, &env_vars)?;
     let pid = spawned.child.id();
-    log::info!("Started opencode serve, PID: {}", pid);
+    log::info!("Started chimera serve, PID: {}", pid);
 
     state.child_pid.store(pid, Ordering::SeqCst);
     state.we_started.store(true, Ordering::SeqCst);
@@ -303,7 +316,7 @@ pub async fn start_opencode_service(
     for _ in 0..30 {
         while let Ok(line) = spawned.output.try_recv() {
             if let Some(parsed_url) = parse_listening_url(&line) {
-                log::info!("Detected opencode serve URL: {}", parsed_url);
+                log::info!("Detected chimera serve URL: {}", parsed_url);
                 *state.service_url.lock().map_err(|e| e.to_string())? = Some(parsed_url.clone());
                 detected_url = Some(parsed_url);
             }
@@ -315,7 +328,7 @@ pub async fn start_opencode_service(
             state.we_started.store(false, Ordering::SeqCst);
             *state.service_url.lock().map_err(|e| e.to_string())? = None;
             return Err(format!(
-                "opencode serve exited during startup with status {}.{}",
+                "chimera serve exited during startup with status {}.{}",
                 status,
                 format_recent_output(&recent_output)
             ));
@@ -323,9 +336,9 @@ pub async fn start_opencode_service(
 
         let health_url = detected_url.as_deref().unwrap_or(&url);
         if is_service_running(health_url).await {
-            log::info!("opencode service is ready at {}", health_url);
+            log::info!("Chimera service is ready at {}", health_url);
             *state.service_url.lock().map_err(|e| e.to_string())? = Some(health_url.to_string());
-            return Ok(StartOpencodeServiceResult {
+            return Ok(StartChimeraServiceResult {
                 started: true,
                 started_by_us: true,
                 url: Some(health_url.to_string()),
@@ -335,30 +348,62 @@ pub async fn start_opencode_service(
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
-    log::warn!("opencode service started but health check not passing yet");
-    Ok(StartOpencodeServiceResult {
+    log::warn!("Chimera service started but health check not passing yet");
+    Ok(StartChimeraServiceResult {
         started: true,
         started_by_us: true,
         url: detected_url,
     })
 }
 
-/// 停止 opencode serve
+/// 停止 chimera serve
 #[tauri::command]
-pub async fn stop_opencode_service(state: State<'_, ServiceState>) -> Result<(), String> {
+pub async fn stop_chimera_service(state: State<'_, ServiceState>) -> Result<(), String> {
     let pid = state.child_pid.swap(0, Ordering::SeqCst);
     state.we_started.store(false, Ordering::SeqCst);
     *state.service_url.lock().map_err(|e| e.to_string())? = None;
 
     if pid > 0 {
-        log::info!("Stopping opencode serve, PID: {}", pid);
+        log::info!("Stopping chimera serve, PID: {}", pid);
         kill_process_by_pid(pid);
     }
 
     Ok(())
 }
 
-/// 查询是否由我们启动了 opencode 服务
+#[tauri::command]
+pub async fn detect_opencode_binary(
+    env_vars: std::collections::HashMap<String, String>,
+) -> Result<Option<String>, String> {
+    for candidate in compatibility_path_candidates(&env_vars) {
+        if is_runnable_file(&candidate) {
+            return Ok(Some(candidate.to_string_lossy().to_string()));
+        }
+    }
+    Ok(None)
+}
+
+#[tauri::command]
+pub async fn check_opencode_service(url: String) -> Result<bool, String> {
+    check_chimera_service(url).await
+}
+
+#[tauri::command]
+pub async fn start_opencode_service(
+    state: State<'_, ServiceState>,
+    url: String,
+    binary_path: String,
+    env_vars: std::collections::HashMap<String, String>,
+) -> Result<StartChimeraServiceResult, String> {
+    start_chimera_service(state, url, binary_path, env_vars).await
+}
+
+#[tauri::command]
+pub async fn stop_opencode_service(state: State<'_, ServiceState>) -> Result<(), String> {
+    stop_chimera_service(state).await
+}
+
+/// 查询是否由我们启动了 Chimera 服务
 #[tauri::command]
 pub async fn get_service_started_by_us(state: State<'_, ServiceState>) -> Result<bool, String> {
     Ok(state.we_started.load(Ordering::SeqCst))
@@ -374,14 +419,78 @@ pub async fn confirm_close_app(
     if stop_service {
         let pid = state.child_pid.swap(0, Ordering::SeqCst);
         if pid > 0 {
-            log::info!("Closing app and stopping opencode serve, PID: {}", pid);
+            log::info!("Closing app and stopping chimera serve, PID: {}", pid);
             kill_process_by_pid(pid);
         }
         state.we_started.store(false, Ordering::SeqCst);
         *state.service_url.lock().map_err(|e| e.to_string())? = None;
     } else {
-        log::info!("Closing app, keeping opencode serve running");
+        log::info!("Closing app, keeping chimera serve running");
     }
 
     window.destroy().map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_chimera_command, compatibility_path_candidates, path_candidates};
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    #[test]
+    fn candidates_prefer_chimera_bin_and_never_guess_opencode() {
+        let env_vars = HashMap::from([
+            (
+                "CHIMERA_BIN".to_string(),
+                "/opt/chimera/bin/chimera".to_string(),
+            ),
+            ("PATH".to_string(), "/usr/local/bin".to_string()),
+        ]);
+        let candidates = path_candidates(&env_vars);
+
+        assert_eq!(
+            candidates.first(),
+            Some(&PathBuf::from("/opt/chimera/bin/chimera"))
+        );
+        assert!(candidates.iter().any(|path| path.ends_with("chimera")));
+        assert!(!candidates.iter().any(|path| path.ends_with("opencode")));
+    }
+
+    #[test]
+    fn explicit_legacy_binary_path_is_preserved() {
+        let command = build_chimera_command("/opt/legacy/opencode", &["serve".to_string()]);
+
+        assert_eq!(command.get_program(), "/opt/legacy/opencode");
+    }
+
+    #[test]
+    fn legacy_detection_accepts_only_explicit_opencode_bin() {
+        let env_vars = HashMap::from([
+            (
+                "OPENCODE_BIN".to_string(),
+                "/opt/legacy/opencode".to_string(),
+            ),
+            (
+                "CHIMERA_BIN".to_string(),
+                "/opt/chimera/bin/chimera".to_string(),
+            ),
+            ("PATH".to_string(), "/usr/local/bin".to_string()),
+        ]);
+        let candidates = compatibility_path_candidates(&env_vars);
+
+        assert_eq!(
+            candidates.first(),
+            Some(&PathBuf::from("/opt/legacy/opencode"))
+        );
+        assert!(candidates
+            .iter()
+            .any(|path| path == &PathBuf::from("/opt/chimera/bin/chimera")));
+        assert_eq!(
+            candidates
+                .iter()
+                .filter(|path| path.ends_with("opencode"))
+                .count(),
+            1
+        );
+    }
 }

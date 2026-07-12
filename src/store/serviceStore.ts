@@ -1,19 +1,62 @@
 // ============================================
-// Service Store - opencode serve 进程管理
+// Service Store - chimera serve 进程管理
 // 管理自动启动设置 + 可执行文件路径 + 环境变量 + 进程生命周期
 // 仅在 Tauri 桌面端有效
 // ============================================
 
 import { useSyncExternalStore } from 'react'
 
-const STORAGE_KEY_AUTO_START = 'opencode-auto-start-service'
-const STORAGE_KEY_BINARY_PATH = 'opencode-binary-path'
-const STORAGE_KEY_ENV_VARS = 'opencode-service-env-vars'
+const STORAGE_KEY_AUTO_START = 'chimera-auto-start-service'
+const STORAGE_KEY_BINARY_PATH = 'chimera-binary-path'
+const STORAGE_KEY_ENV_VARS = 'chimera-service-env-vars'
+const LEGACY_STORAGE_KEYS = {
+  autoStart: 'opencode-auto-start-service',
+  binaryPath: 'opencode-binary-path',
+  envVars: 'opencode-service-env-vars',
+} as const
 
 /** 环境变量键值对 */
 export interface EnvVar {
   key: string
   value: string
+}
+
+function readMigratedStorage<T>(key: string, legacyKey: string, parse: (raw: string) => T): T | null {
+  const current = localStorage.getItem(key)
+  if (current !== null) return parse(current)
+  const legacy = localStorage.getItem(legacyKey)
+  if (legacy === null) return null
+  const parsed = parse(legacy)
+  try {
+    localStorage.setItem(key, legacy)
+    localStorage.removeItem(legacyKey)
+  } catch {
+    return parsed
+  }
+  return parsed
+}
+
+function parseStoredBoolean(raw: string): boolean {
+  if (raw === 'true') return true
+  if (raw === 'false') return false
+  throw new Error('Invalid stored boolean')
+}
+
+function parseStoredEnvVars(raw: string): EnvVar[] {
+  const parsed: unknown = JSON.parse(raw)
+  if (
+    !Array.isArray(parsed) ||
+    !parsed.every(
+      (item): item is EnvVar =>
+        !!item &&
+        typeof item === 'object' &&
+        typeof (item as Record<string, unknown>).key === 'string' &&
+        typeof (item as Record<string, unknown>).value === 'string',
+    )
+  ) {
+    throw new Error('Invalid stored environment variables')
+  }
+  return parsed.map(item => ({ key: item.key, value: item.value }))
 }
 
 export interface ServiceSettingsBackup {
@@ -24,11 +67,11 @@ export interface ServiceSettingsBackup {
 
 interface ServiceStoreSnapshot {
   autoStart: boolean
-  /** opencode 可执行文件路径，空字符串表示使用默认 "opencode" */
+  /** chimera 可执行文件路径，空字符串表示使用默认 "chimera" */
   binaryPath: string
   /** 传给子进程的额外环境变量 */
   envVars: EnvVar[]
-  /** 自动检测到的 opencode 可执行文件路径 */
+  /** 自动检测到的 chimera 可执行文件路径 */
   detectedBinaryPath: string | null
   /** 服务是否正在运行（最后一次检测结果） */
   running: boolean
@@ -38,7 +81,7 @@ interface ServiceStoreSnapshot {
   starting: boolean
 }
 
-class ServiceStore {
+export class ServiceStore {
   private _autoStart: boolean
   private _binaryPath: string
   private _envVars: EnvVar[]
@@ -51,18 +94,19 @@ class ServiceStore {
 
   constructor() {
     try {
-      this._autoStart = localStorage.getItem(STORAGE_KEY_AUTO_START) === 'true'
+      this._autoStart =
+        readMigratedStorage(STORAGE_KEY_AUTO_START, LEGACY_STORAGE_KEYS.autoStart, parseStoredBoolean) ?? false
     } catch {
       this._autoStart = false
     }
     try {
-      this._binaryPath = localStorage.getItem(STORAGE_KEY_BINARY_PATH) || ''
+      this._binaryPath =
+        readMigratedStorage(STORAGE_KEY_BINARY_PATH, LEGACY_STORAGE_KEYS.binaryPath, value => value) ?? ''
     } catch {
       this._binaryPath = ''
     }
     try {
-      const raw = localStorage.getItem(STORAGE_KEY_ENV_VARS)
-      this._envVars = raw ? JSON.parse(raw) : []
+      this._envVars = readMigratedStorage(STORAGE_KEY_ENV_VARS, LEGACY_STORAGE_KEYS.envVars, parseStoredEnvVars) ?? []
     } catch {
       this._envVars = []
     }
@@ -90,9 +134,9 @@ class ServiceStore {
     return this._starting
   }
 
-  /** 返回实际要用的可执行文件路径：手动路径 > 自动检测 > PATH 里的 opencode */
+  /** 将手动路径作为最高优先级；留空时使用检测结果或 PATH 中的 chimera。 */
   get effectiveBinaryPath() {
-    return this._binaryPath.trim() || this._detectedBinaryPath || 'opencode'
+    return this._binaryPath.trim() || this._detectedBinaryPath || 'chimera'
   }
 
   /** 将 envVars 转为 Record<string, string>，方便传给 Rust */

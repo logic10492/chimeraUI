@@ -103,11 +103,17 @@ export function AboutSettings() {
       <SettingsSection title={t('about.title')}>
         <SettingsCard title={t('about.versionCardTitle')} description={t('about.versionCardDesc')}>
           <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-border-200/50 bg-bg-000/35 px-3 py-2.5">
                 <div className="text-[length:var(--fs-xs)] text-text-400 mb-1">{t('about.currentVersion')}</div>
                 <div className="text-[length:var(--fs-base)] font-semibold text-text-100 font-mono">
                   v{updateState.currentVersion}
+                </div>
+              </div>
+              <div className="rounded-lg border border-border-200/50 bg-bg-000/35 px-3 py-2.5">
+                <div className="text-[length:var(--fs-xs)] text-text-400 mb-1">{t('about.channel')}</div>
+                <div className="text-[length:var(--fs-base)] font-semibold text-text-100 font-mono">
+                  {updateState.channel}
                 </div>
               </div>
               <div className="rounded-lg border border-border-200/50 bg-bg-000/35 px-3 py-2.5">

@@ -4,6 +4,8 @@ import tailwindcss from '@tailwindcss/vite'
 import { readFileSync } from 'node:fs'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8')) as { version: string }
+const appVersion = process.env.CHIMERA_VERSION?.trim() || pkg.version || '0.0.0'
+const appChannel = process.env.CHIMERA_CHANNEL?.trim() || 'latest'
 
 function katexWoff2Only() {
   return {
@@ -27,7 +29,8 @@ function katexWoff2Only() {
 export default defineConfig({
   base: process.env.VITE_BASE_PATH || '/',
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_VERSION__: JSON.stringify(appVersion),
+    __APP_CHANNEL__: JSON.stringify(appChannel),
   },
   plugins: [katexWoff2Only(), react(), tailwindcss()],
   build: {

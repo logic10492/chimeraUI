@@ -173,8 +173,8 @@
     "selectFile": "选择文件以查看变更"
   },
   "closeService": {
-    "title": "关闭 OpenCode",
-    "description": "opencode 服务由此应用启动。是否同时停止服务？",
+    "title": "关闭 Chimera",
+    "description": "Chimera 服务由此应用启动。是否同时停止服务？",
     "closeAndStop": "关闭并停止服务",
     "closeKeepRunning": "关闭，保持服务运行"
   },
