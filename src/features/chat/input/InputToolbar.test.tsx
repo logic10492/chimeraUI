@@ -5,6 +5,7 @@ import type { ApiAgent } from '../../../api/client'
 import { InputToolbar } from './InputToolbar'
 
 const useIsMobileMock = vi.fn()
+const useChatViewportMock = vi.fn()
 const isTauriMock = vi.fn()
 const isTauriMobileMock = vi.fn()
 const openMock = vi.fn()
@@ -35,23 +36,13 @@ vi.mock('../../../hooks', () => ({
 }))
 
 vi.mock('../chatViewport', () => ({
-  useChatViewport: () => ({
-    presentation: { surfaceVariant: 'desktop', isCompact: false },
-    interaction: {
-      mode: 'pointer',
-      touchCapable: false,
-      sidebarBehavior: 'docked',
-      rightPanelBehavior: 'docked',
-      bottomPanelBehavior: 'docked',
-      outlineInteraction: 'pointer',
-      enableCollapsedInputDock: false,
-    },
-  }),
+  useChatViewport: () => useChatViewportMock(),
 }))
 
 vi.mock('../../../utils/tauri', () => ({
   isTauri: () => isTauriMock(),
   isTauriMobile: () => isTauriMobileMock(),
+  isTauriAndroid: () => false,
   extToMime: (ext: string) => {
     if (ext === 'png') return 'image/png'
     return 'application/octet-stream'
@@ -121,9 +112,12 @@ vi.mock('../sidebar/ContextDetailsDialog', () => ({
   ContextDetailsDialog: () => null,
 }))
 
-describe('InputToolbar file selection', () => {
+describe('InputToolbar', () => {
   beforeEach(() => {
     useIsMobileMock.mockReturnValue(false)
+    useChatViewportMock.mockReturnValue({
+      presentation: { surfaceVariant: 'desktop', isCompact: false },
+    })
     isTauriMock.mockReturnValue(false)
     isTauriMobileMock.mockReturnValue(false)
     openMock.mockReset()
@@ -189,6 +183,55 @@ describe('InputToolbar file selection', () => {
     expect(files).toHaveLength(1)
     expect(files[0].name).toBe('photo.png')
     expect(files[0].type).toBe('image/png')
+  })
+
+  it('keeps the full context usage summary on desktop', () => {
+    render(
+      <InputToolbar
+        agents={[]}
+        fileCapabilities={{ image: false, pdf: false, audio: false, video: false }}
+        onFilesSelected={vi.fn()}
+        canSend={false}
+        onSend={vi.fn()}
+      />,
+    )
+
+    const trigger = screen.getByRole('button', { name: /Context Usage:/ })
+
+    expect(trigger).toHaveTextContent('0 / 400000')
+    expect(trigger).toHaveTextContent('0%')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('collapses context usage to a ring in compact layouts and preserves its summary popover', () => {
+    useChatViewportMock.mockReturnValue({
+      presentation: { surfaceVariant: 'compact', isCompact: true },
+    })
+
+    render(
+      <InputToolbar
+        agents={[]}
+        fileCapabilities={{ image: false, pdf: false, audio: false, video: false }}
+        onFilesSelected={vi.fn()}
+        canSend={false}
+        onSend={vi.fn()}
+      />,
+    )
+
+    const trigger = screen.getByRole('button', { name: /Context Usage:/ })
+
+    expect(trigger).toHaveClass('h-8', 'w-8')
+    expect(trigger).not.toHaveTextContent('0 / 400000')
+    expect(trigger).not.toHaveTextContent('0%')
+    expect(trigger.querySelector('svg')).toBeInTheDocument()
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(trigger)
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('dialog', { name: 'Context Usage' })).toBeInTheDocument()
+    expect(screen.getByText('0 / 400000')).toBeInTheDocument()
   })
 
   it('moves focus into the opened agent menu and exposes menu semantics', async () => {

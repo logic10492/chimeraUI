@@ -8,9 +8,10 @@ import { useSessionStats, useConnectionState, formatTokens, formatCost } from '.
 interface ContextUsageButtonProps {
   inputContainerRef?: React.RefObject<HTMLElement | null>
   contextLimit?: number
+  compact?: boolean
 }
 
-export function ContextUsageButton({ inputContainerRef, contextLimit }: ContextUsageButtonProps) {
+export function ContextUsageButton({ inputContainerRef, contextLimit, compact = false }: ContextUsageButtonProps) {
   const { t } = useTranslation(['chat', 'common'])
   const stats = useSessionStats(contextLimit ?? 200000)
   const connectionState = useConnectionState()
@@ -66,20 +67,26 @@ export function ContextUsageButton({ inputContainerRef, contextLimit }: ContextU
         onClick={toggleMenu}
         className={`
           h-8 flex items-center rounded-lg transition-all duration-300 group overflow-hidden
+          ${compact ? 'w-8 justify-center p-0' : ''}
           ${menuOpen ? 'bg-bg-200 text-text-100' : 'text-text-300 hover:text-text-100 hover:bg-bg-200'}
         `}
-        style={{ paddingLeft: 6, paddingRight: 8 }}
+        style={compact ? undefined : { paddingLeft: 6, paddingRight: 8 }}
         title={`Context: ${formatTokens(stats.contextUsed)} tokens • ${Math.round(stats.contextPercent)}% • ${formatCost(stats.totalCost)}`}
+        aria-label={`${t('sidebar.contextUsage')}: ${formatTokens(stats.contextUsed)} / ${formatTokens(stats.contextLimit)} • ${Math.round(stats.contextPercent)}% • ${formatCost(stats.totalCost)}`}
+        aria-haspopup="dialog"
+        aria-expanded={menuOpen}
       >
         <StatusIndicator percent={stats.contextPercent} connectionState={connectionState} size={18} />
-        <span className="ml-2 flex items-center justify-between min-w-0 transition-opacity duration-300">
-          <span className="text-[length:var(--fs-sm)] font-mono text-text-300 truncate">
-            {formatTokens(stats.contextUsed)} / {formatTokens(stats.contextLimit)}
+        {!compact && (
+          <span className="ml-2 flex items-center justify-between min-w-0 transition-opacity duration-300">
+            <span className="text-[length:var(--fs-sm)] font-mono text-text-300 truncate">
+              {formatTokens(stats.contextUsed)} / {formatTokens(stats.contextLimit)}
+            </span>
+            <span className={`text-[length:var(--fs-sm)] font-medium ml-2 ${percentTextColor}`}>
+              {Math.round(stats.contextPercent)}%
+            </span>
           </span>
-          <span className={`text-[length:var(--fs-sm)] font-medium ml-2 ${percentTextColor}`}>
-            {Math.round(stats.contextPercent)}%
-          </span>
-        </span>
+        )}
       </button>
 
       <DropdownMenu
@@ -90,7 +97,12 @@ export function ContextUsageButton({ inputContainerRef, contextLimit }: ContextU
         constrainToRef={inputContainerRef}
         className="p-0 overflow-hidden"
       >
-        <div ref={menuRef} className="relative p-3 w-[260px]">
+        <div
+          ref={menuRef}
+          role="dialog"
+          aria-label={t('sidebar.contextUsage')}
+          className="relative p-3 w-[260px]"
+        >
           <div className="flex items-center justify-between mb-2">
             <span className="text-[length:var(--fs-sm)] font-medium text-text-200">{t('sidebar.contextUsage')}</span>
             <div className="flex items-center gap-2">

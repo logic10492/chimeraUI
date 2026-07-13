@@ -500,7 +500,7 @@ export function InputToolbar({
       </div>
       {/* Action Buttons */}
       <div className="flex items-center gap-1">
-        <ContextUsageButton inputContainerRef={inputContainerRef} contextLimit={currentModelContextLimit} />
+        <ContextUsageButton compact={isCompact} inputContainerRef={inputContainerRef} contextLimit={currentModelContextLimit} />
         <AnimatedPresence show={supportsAnyFile}>
           <>
             {/* 浏览器模式下的隐藏文件输入 */}
