@@ -427,7 +427,8 @@ export function useGlobalEvents(directories?: string[]) {
       const meta = activeSessionStore.getSessionMeta(sessionID, scope.serverID)
       const sessionLabel = meta?.title || `Session ${sessionID.slice(0, 6)}`
       void sendNotification(`${sessionLabel} - ${label}`, body, {
-        sessionId: sessionID,
+        sessionID,
+        serverID: scope.serverID,
         directory: meta?.directory ?? (scope.directory === 'global' ? undefined : scope.directory),
       })
     }

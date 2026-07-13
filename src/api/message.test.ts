@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getPartOutput, getSessionMessageCount, getSessionMessages } from './message'
+import { getPartOutput, getSessionMessageCount, getSessionMessagesPage } from './message'
 
 const messagesMock = vi.fn()
 const messageMock = vi.fn()
@@ -23,13 +23,16 @@ describe('message API contract', () => {
     messageMock.mockReset()
   })
 
-  it('uses only the current session.messages query contract', async () => {
+  it('returns the opaque next cursor from the fixed-size message page', async () => {
     const messages = [{ info: { id: 'message-1' }, parts: [] }]
-    messagesMock.mockResolvedValue({ data: messages })
+    messagesMock.mockResolvedValue({
+      data: messages,
+      response: { headers: new Headers({ 'x-next-cursor': 'cursor-2' }) },
+    })
 
-    await expect(getSessionMessages('session-1', 25, '/workspace/project/', { before: 'cursor-1' })).resolves.toBe(
-      messages,
-    )
+    await expect(
+      getSessionMessagesPage('session-1', 25, '/workspace/project/', { before: 'cursor-1' }),
+    ).resolves.toEqual({ items: messages, nextCursor: 'cursor-2' })
 
     expect(messagesMock).toHaveBeenCalledWith({
       sessionID: 'session-1',

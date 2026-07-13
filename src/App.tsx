@@ -37,7 +37,7 @@ import { createPtySession } from './api/pty'
 import { activeApiScope, apiScopeKey, resolveSessionApiScope } from './api/scope'
 import type { TerminalTab } from './store/layoutStore'
 import type { SettingsTab } from './features/settings/SettingsDialog'
-import { isTauri, isTauriMobile } from './utils/tauri'
+import { isTauriDesktop } from './utils/tauri'
 import { InternalDragLayer } from './components/InternalDragLayer'
 
 const SettingsDialog = lazy(() =>
@@ -98,7 +98,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!isTauri() || isTauriMobile()) return
+    if (!isTauriDesktop()) return
 
     void invoke('desktop_window_ready').catch(() => {
       // best effort only

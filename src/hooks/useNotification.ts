@@ -11,70 +11,120 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { STORAGE_KEY_NOTIFICATIONS_ENABLED } from '../constants/storage'
+import { serverStore } from '../store/serverStore'
 import { isTauri } from '../utils/tauri'
 
-// ============================================
-// Types
-// ============================================
+export const NATIVE_NOTIFICATION_SCHEMA_VERSION = 1
 
-interface NotificationData {
-  sessionId: string
+export interface NotificationData {
+  sessionID: string
+  serverID: string
   directory?: string
 }
 
-// ============================================
-// Service Worker 注册（模块级单例，浏览器环境用）
-// ============================================
+interface NativeNotificationExtra extends NotificationData {
+  schemaVersion: typeof NATIVE_NOTIFICATION_SCHEMA_VERSION
+}
 
 let swRegistration: ServiceWorkerRegistration | null = null
-let swRegistering = false
+let swRegistrationPromise: Promise<ServiceWorkerRegistration | null> | null = null
+let nativeActionListenerPromise: Promise<void> | null = null
 
-async function ensureServiceWorker(): Promise<ServiceWorkerRegistration | null> {
-  if (isTauri()) return null // Tauri 不需要 SW
-  if (swRegistration) return swRegistration
-  if (swRegistering) return null
-  if (!('serviceWorker' in navigator)) return null
+export function buildNotificationSessionHash(data: Pick<NotificationData, 'sessionID' | 'directory'>) {
+  const directory = data.directory ? `?dir=${encodeURIComponent(data.directory)}` : ''
+  return `#/session/${encodeURIComponent(data.sessionID)}${directory}`
+}
 
-  swRegistering = true
-  try {
-    swRegistration = await navigator.serviceWorker.register('/notification-sw.js')
-    return swRegistration
-  } catch {
-    return null
-  } finally {
-    swRegistering = false
+export function buildNotificationAssetURL(asset: string, baseURL = import.meta.env.BASE_URL || '/') {
+  return new URL(asset, new URL(baseURL, window.location.origin)).href
+}
+
+export function parseNativeNotificationExtra(value: unknown): NativeNotificationExtra | null {
+  if (!value || typeof value !== 'object') return null
+  const extra = value as Record<string, unknown>
+  if (extra.schemaVersion !== NATIVE_NOTIFICATION_SCHEMA_VERSION) return null
+  if (typeof extra.serverID !== 'string' || !extra.serverID) return null
+  if (typeof extra.sessionID !== 'string' || !extra.sessionID) return null
+  if (extra.directory !== undefined && typeof extra.directory !== 'string') return null
+  return {
+    schemaVersion: NATIVE_NOTIFICATION_SCHEMA_VERSION,
+    serverID: extra.serverID,
+    sessionID: extra.sessionID,
+    directory: extra.directory,
   }
 }
 
-// ============================================
-// Tauri 通知工具
-// ============================================
+export function registerNotificationServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+  if (isTauri()) return Promise.resolve(null)
+  if (swRegistration) return Promise.resolve(swRegistration)
+  if (swRegistrationPromise) return swRegistrationPromise
+  if (!('serviceWorker' in navigator)) return Promise.resolve(null)
 
-async function sendTauriNotification(title: string, body: string): Promise<void> {
+  const baseURL = new URL(import.meta.env.BASE_URL || '/', window.location.origin)
+  swRegistrationPromise = navigator.serviceWorker
+    .register(new URL('notification-sw.js', baseURL), { scope: baseURL.pathname })
+    .then(registration => {
+      swRegistration = registration
+      return registration
+    })
+    .catch(() => null)
+    .finally(() => {
+      swRegistrationPromise = null
+    })
+  return swRegistrationPromise
+}
+
+export function installNativeNotificationActionHandler(): Promise<void> {
+  if (!isTauri()) return Promise.resolve()
+  if (nativeActionListenerPromise) return nativeActionListenerPromise
+
+  nativeActionListenerPromise = Promise.all([
+    import('@tauri-apps/plugin-notification'),
+    import('@tauri-apps/api/window'),
+  ]).then(async ([notification, tauriWindow]) => {
+    await notification.onAction(action => {
+      const extra = parseNativeNotificationExtra(action.extra)
+      if (!extra) return
+      if (!serverStore.getServers().some(server => server.id === extra.serverID)) return
+
+      const currentWindow = tauriWindow.getCurrentWindow()
+      void currentWindow.show()
+      void currentWindow.setFocus()
+      serverStore.setActiveServer(extra.serverID)
+      window.location.hash = buildNotificationSessionHash(extra)
+    })
+  })
+
+  return nativeActionListenerPromise
+}
+
+export async function sendTauriNotification(title: string, body: string, data?: NotificationData): Promise<void> {
   try {
     const { isPermissionGranted, requestPermission, sendNotification } = await import('@tauri-apps/plugin-notification')
+    const granted = (await isPermissionGranted()) || (await requestPermission()) === 'granted'
+    if (!granted) return
 
-    let permitted = await isPermissionGranted()
-    if (!permitted) {
-      const result = await requestPermission()
-      permitted = result === 'granted'
-    }
-
-    if (permitted) {
-      sendNotification({ title, body })
-    }
-  } catch (e) {
-    if (import.meta.env.DEV) {
-      console.warn('[Notification/Tauri] Failed:', e)
-    }
+    sendNotification({
+      title,
+      body,
+      extra: data
+        ? {
+            schemaVersion: NATIVE_NOTIFICATION_SCHEMA_VERSION,
+            serverID: data.serverID,
+            directory: data.directory,
+            sessionID: data.sessionID,
+          }
+        : undefined,
+    })
+  } catch (error) {
+    if (import.meta.env.DEV) console.warn('[Notification/Tauri] Failed:', error)
   }
 }
 
 async function checkTauriPermission(): Promise<NotificationPermission> {
   try {
     const { isPermissionGranted } = await import('@tauri-apps/plugin-notification')
-    const granted = await isPermissionGranted()
-    return granted ? 'granted' : 'default'
+    return (await isPermissionGranted()) ? 'granted' : 'default'
   } catch {
     return 'denied'
   }
@@ -83,16 +133,11 @@ async function checkTauriPermission(): Promise<NotificationPermission> {
 async function requestTauriPermission(): Promise<NotificationPermission> {
   try {
     const { requestPermission } = await import('@tauri-apps/plugin-notification')
-    const result = await requestPermission()
-    return result === 'granted' ? 'granted' : 'denied'
+    return (await requestPermission()) === 'granted' ? 'granted' : 'denied'
   } catch {
     return 'denied'
   }
 }
-
-// ============================================
-// Hook
-// ============================================
 
 export function useNotification() {
   const [enabled, setEnabledState] = useState(() => {
@@ -102,54 +147,44 @@ export function useNotification() {
       return false
     }
   })
-
   const [permission, setPermission] = useState<NotificationPermission>(() => {
-    if (isTauri()) return 'default' // Tauri 异步检查
+    if (isTauri()) return 'default'
     if (typeof Notification === 'undefined') return 'denied'
     return Notification.permission
   })
-
-  // 跟踪最新的 enabled 值，供 sendNotification 闭包使用
   const enabledRef = useRef(enabled)
+
   useEffect(() => {
     enabledRef.current = enabled
   }, [enabled])
 
-  // Tauri: 异步获取初始权限状态
   useEffect(() => {
-    if (isTauri()) {
-      checkTauriPermission().then(setPermission)
-    }
+    if (isTauri()) void checkTauriPermission().then(setPermission)
   }, [])
 
-  // 启用时预注册 SW（浏览器环境）
   useEffect(() => {
-    if (enabled && !isTauri()) {
-      ensureServiceWorker()
-    }
+    if (enabled && !isTauri()) void registerNotificationServiceWorker()
   }, [enabled])
 
-  // 监听 SW 的 notificationclick 消息（浏览器环境用于跳转）
   useEffect(() => {
-    if (isTauri()) return
-    if (!('serviceWorker' in navigator)) return
+    if (isTauri() || !('serviceWorker' in navigator)) return
 
     const handler = (event: MessageEvent) => {
-      if (event.data?.type === 'notification-click') {
-        window.focus()
-        const { sessionId, directory } = event.data
-        if (sessionId) {
-          const dir = directory ? `?dir=${directory}` : ''
-          window.location.hash = `#/session/${sessionId}${dir}`
-        }
-      }
+      if (event.data?.type !== 'notification-click') return
+      const data = event.data as { type: string; sessionID?: unknown; sessionId?: unknown; directory?: unknown }
+      const sessionID = typeof data.sessionID === 'string' ? data.sessionID : data.sessionId
+      if (typeof sessionID !== 'string' || !sessionID) return
+      window.focus()
+      window.location.hash = buildNotificationSessionHash({
+        sessionID,
+        directory: typeof data.directory === 'string' ? data.directory : undefined,
+      })
     }
 
     navigator.serviceWorker.addEventListener('message', handler)
     return () => navigator.serviceWorker.removeEventListener('message', handler)
   }, [])
 
-  // 切换通知开关
   const setEnabled = useCallback(async (value: boolean) => {
     if (value) {
       if (isTauri()) {
@@ -165,77 +200,58 @@ export function useNotification() {
 
     setEnabledState(value)
     try {
-      if (value) {
-        localStorage.setItem(STORAGE_KEY_NOTIFICATIONS_ENABLED, 'true')
-      } else {
-        localStorage.removeItem(STORAGE_KEY_NOTIFICATIONS_ENABLED)
-      }
+      if (value) localStorage.setItem(STORAGE_KEY_NOTIFICATIONS_ENABLED, 'true')
+      if (!value) localStorage.removeItem(STORAGE_KEY_NOTIFICATIONS_ENABLED)
     } catch {
-      /* ignore */
+      // Ignore unavailable storage.
     }
 
-    // 启用时注册 SW（浏览器环境）
-    if (value && !isTauri()) {
-      ensureServiceWorker()
-    }
+    if (value && !isTauri()) void registerNotificationServiceWorker()
   }, [])
 
-  // 发送通知
   const sendNotification = useCallback(async (title: string, body: string, data?: NotificationData) => {
     if (!enabledRef.current) return
 
-    // Tauri 原生通知
     if (isTauri()) {
-      await sendTauriNotification(title, body)
+      await sendTauriNotification(title, body, data)
       return
     }
 
-    // 浏览器通知
-    if (typeof Notification === 'undefined') return
-    if (Notification.permission !== 'granted') return
-
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
     const notificationOptions: NotificationOptions = {
       body,
-      icon: '/opencode.svg',
-      tag: data?.sessionId || 'opencode',
+      icon: buildNotificationAssetURL('opencode.svg'),
+      tag: data?.sessionID || 'opencode',
       data,
     }
 
-    // 优先用 SW showNotification（Android Chrome 必须用这个）
     try {
-      const reg = await ensureServiceWorker()
-      if (reg) {
-        await reg.showNotification(title, notificationOptions)
+      const registration = await registerNotificationServiceWorker()
+      if (registration) {
+        await registration.showNotification(title, notificationOptions)
         return
       }
     } catch {
-      // SW 不可用，降级到 new Notification
+      // Fall back to the desktop browser Notification API.
     }
 
-    // 降级：桌面浏览器直接用 new Notification
     try {
       const notification = new Notification(title, notificationOptions)
       notification.onclick = () => {
         window.focus()
-        if (data?.sessionId) {
-          const path = `#/session/${data.sessionId}`
-          const dir = data.directory ? `?dir=${data.directory}` : ''
-          window.location.hash = `${path}${dir}`
-        }
+        if (data?.sessionID) window.location.hash = buildNotificationSessionHash(data)
         notification.close()
       }
     } catch {
-      // 通知 API 可能在某些环境不可用
+      // Notification API may be unavailable in this environment.
     }
   }, [])
-
-  const supported = isTauri() || typeof Notification !== 'undefined'
 
   return {
     enabled,
     setEnabled,
     permission,
-    supported,
+    supported: isTauri() || typeof Notification !== 'undefined',
     sendNotification,
   }
 }

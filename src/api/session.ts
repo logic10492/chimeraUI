@@ -79,6 +79,32 @@ export async function getLastTurnDiff(sessionId: string, input?: ApiScopeInput):
 // Session CRUD
 // ============================================
 
+export interface SessionPage {
+  items: ApiSession[]
+  nextCursor?: string
+}
+
+/**
+ * 获取固定大小的 session 页
+ */
+export async function getSessionsPage(
+  params: Omit<SessionListParams, 'cursor'> & { apiScope?: ApiScope; cursor?: string } = {},
+): Promise<SessionPage> {
+  const { apiScope, directory, workspace, ...query } = params
+  const scope = apiScope ? resolveApiScope(apiScope) : activeApiScope(directory, workspace)
+  const client = getSDKClient(scope)
+  const result = await client.session.list({
+    ...apiScopeQuery(scope),
+    ...query,
+  } as unknown as Parameters<typeof client.session.list>[0])
+  const sessions = normalizeSessionList(unwrap(result))
+  rememberSessionApiScopes(sessions, scope)
+  return {
+    items: sessions,
+    nextCursor: result.response?.headers.get('x-next-cursor') ?? undefined,
+  }
+}
+
 /**
  * 获取 session 列表
  */

@@ -115,6 +115,68 @@ describe('serverStore local runtime URL', () => {
   })
 })
 
+describe('serverStore native mobile initialization', () => {
+  const win = window as Window & {
+    __TAURI_INTERNALS__?: object
+    __CHIMERA_RUNTIME_PLATFORM__?: 'tauri-desktop' | 'tauri-android'
+  }
+
+  beforeEach(() => {
+    vi.resetModules()
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  afterEach(() => {
+    delete win.__TAURI_INTERNALS__
+    delete win.__CHIMERA_RUNTIME_PLATFORM__
+  })
+
+  it('preserves the Local server in browser/WebUI runtimes', async () => {
+    const { serverStore } = await import('./serverStore')
+
+    expect(serverStore.getActiveServer()).toMatchObject({ id: 'local', name: 'Local' })
+  })
+
+  it('preserves the Local server in Tauri desktop runtimes', async () => {
+    win.__TAURI_INTERNALS__ = {}
+    win.__CHIMERA_RUNTIME_PLATFORM__ = 'tauri-desktop'
+
+    const { serverStore } = await import('./serverStore')
+
+    expect(serverStore.getActiveServer()).toMatchObject({ id: 'local', name: 'Local' })
+  })
+
+  it('does not create or select Local on a fresh native Android launch', async () => {
+    win.__TAURI_INTERNALS__ = {}
+    win.__CHIMERA_RUNTIME_PLATFORM__ = 'tauri-android'
+
+    const { serverStore } = await import('./serverStore')
+
+    expect(serverStore.getServers()).toEqual([])
+    expect(serverStore.getActiveServer()).toBeNull()
+    expect(serverStore.hasActiveServer()).toBe(false)
+  })
+
+  it('restores a persisted valid remote server on native Android', async () => {
+    win.__TAURI_INTERNALS__ = {}
+    win.__CHIMERA_RUNTIME_PLATFORM__ = 'tauri-android'
+    localStorage.setItem(
+      'opencode-servers',
+      JSON.stringify([
+        { id: 'local', name: 'Local', url: 'https://webview.localhost', isDefault: true },
+        { id: 'remote-1', name: 'Remote', url: 'https://chimera.example' },
+      ]),
+    )
+    localStorage.setItem('opencode-active-server', 'remote-1')
+
+    const { serverStore } = await import('./serverStore')
+
+    expect(serverStore.getServers()).toEqual([{ id: 'remote-1', name: 'Remote', url: 'https://chimera.example' }])
+    expect(serverStore.getActiveServer()).toMatchObject({ id: 'remote-1', url: 'https://chimera.example' })
+  })
+})
+
 describe('serverStore health check', () => {
   beforeEach(() => {
     vi.resetModules()

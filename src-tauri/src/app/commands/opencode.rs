@@ -3,7 +3,7 @@
 // Android 不支持子进程管理和 window.destroy()
 // ============================================
 
-use crate::app::service::ServiceState;
+use crate::app::service::{OwnedServiceProcess, ServiceState};
 use serde::Serialize;
 use std::{
     collections::VecDeque,
@@ -14,7 +14,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{atomic::Ordering, mpsc},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::State;
 
@@ -29,6 +29,17 @@ pub struct StartChimeraServiceResult {
 struct SpawnedChimeraServe {
     child: Child,
     output: mpsc::Receiver<String>,
+}
+
+fn owned_service_process(child: Child) -> OwnedServiceProcess {
+    #[cfg(unix)]
+    let process_group_id = child.id() as i32;
+
+    OwnedServiceProcess {
+        child,
+        #[cfg(unix)]
+        process_group_id,
+    }
 }
 
 /// 检查 Chimera 服务是否在运行（通过 health endpoint）
@@ -67,6 +78,12 @@ fn spawn_chimera_serve(
     // 注入用户配置的环境变量
     for (key, value) in env_vars {
         cmd.env(key, value);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
     }
 
     #[cfg(target_os = "windows")]
@@ -241,28 +258,159 @@ pub async fn detect_chimera_service(
     Ok(None)
 }
 
-/// 跨平台杀进程
-pub fn kill_process_by_pid(pid: u32) {
+const SERVICE_STOP_GRACE: Duration = Duration::from_secs(2);
+
+#[cfg(unix)]
+fn signal_process_group(process_group_id: i32, signal: i32) -> Result<(), String> {
+    let result = unsafe { libc::kill(-process_group_id, signal) };
+    if result == 0 {
+        return Ok(());
+    }
+
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        return Ok(());
+    }
+    Err(format!(
+        "Failed to signal service process group {}: {}",
+        process_group_id, error
+    ))
+}
+
+#[cfg(unix)]
+fn process_group_exists(process_group_id: i32) -> Result<bool, String> {
+    let result = unsafe { libc::kill(-process_group_id, 0) };
+    if result == 0 {
+        return Ok(true);
+    }
+
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        return Ok(false);
+    }
+    if error.raw_os_error() == Some(libc::EPERM) {
+        return Ok(true);
+    }
+    Err(format!(
+        "Failed to inspect service process group {}: {}",
+        process_group_id, error
+    ))
+}
+
+#[cfg(unix)]
+fn wait_for_process_group_exit(
+    process: &mut OwnedServiceProcess,
+    deadline: Instant,
+) -> Result<bool, String> {
+    loop {
+        process
+            .child
+            .try_wait()
+            .map_err(|error| error.to_string())?;
+        if !process_group_exists(process.process_group_id)? {
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn terminate_owned_process(process: &mut OwnedServiceProcess) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let pid = process.child.id();
+
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let _ = Command::new("taskkill")
+        let status = Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/F", "/T"])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .creation_flags(CREATE_NO_WINDOW)
-            .spawn();
+            .status()
+            .map_err(|error| format!("Failed to stop service process tree {pid}: {error}"))?;
+        if !status.success()
+            && process
+                .child
+                .try_wait()
+                .map_err(|error| error.to_string())?
+                .is_none()
+        {
+            return Err(format!(
+                "taskkill failed for service process tree {pid}: {status}"
+            ));
+        }
+        process
+            .child
+            .wait()
+            .map_err(|error| format!("Failed to reap service process {pid}: {error}"))?;
+        return Ok(());
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(unix)]
     {
-        let _ = Command::new("kill")
-            .arg(pid.to_string())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
+        signal_process_group(process.process_group_id, libc::SIGTERM)?;
+        if wait_for_process_group_exit(process, Instant::now() + SERVICE_STOP_GRACE)? {
+            return Ok(());
+        }
+
+        signal_process_group(process.process_group_id, libc::SIGKILL)?;
+        if wait_for_process_group_exit(process, Instant::now() + SERVICE_STOP_GRACE)? {
+            return Ok(());
+        }
+
+        return Err(format!(
+            "Service process group {} did not exit after SIGKILL",
+            process.process_group_id
+        ));
     }
+
+    #[cfg(not(any(target_os = "windows", unix)))]
+    {
+        let pid = process.child.id();
+        Err(format!(
+            "Unsupported desktop platform while stopping service process {pid}"
+        ))
+    }
+}
+
+fn clear_owned_service_metadata(state: &ServiceState) -> Result<(), String> {
+    state.child_pid.store(0, Ordering::SeqCst);
+    state.we_started.store(false, Ordering::SeqCst);
+    *state
+        .service_url
+        .lock()
+        .map_err(|error| error.to_string())? = None;
+    Ok(())
+}
+
+pub fn cleanup_owned_service(state: &ServiceState) -> Result<(), String> {
+    let mut owned_process = state
+        .owned_process
+        .lock()
+        .map_err(|error| error.to_string())?;
+    if let Some(process) = owned_process.as_mut() {
+        log::info!(
+            "Stopping app-owned chimera serve, PID: {}",
+            process.child.id()
+        );
+        terminate_owned_process(process)?;
+        owned_process.take();
+    }
+    drop(owned_process);
+    clear_owned_service_metadata(state)
+}
+
+fn release_owned_service(state: &ServiceState) -> Result<(), String> {
+    state
+        .owned_process
+        .lock()
+        .map_err(|error| error.to_string())?
+        .take();
+    clear_owned_service_metadata(state)
 }
 
 /// 检查 Chimera 服务是否在运行
@@ -279,6 +427,8 @@ pub async fn start_chimera_service(
     binary_path: String,
     env_vars: std::collections::HashMap<String, String>,
 ) -> Result<StartChimeraServiceResult, String> {
+    let _start_guard = state.start_lock.lock().await;
+
     if state.we_started.load(Ordering::SeqCst) {
         let current_url = state.service_url.lock().map_err(|e| e.to_string())?.clone();
         if let Some(current_url) = current_url {
@@ -292,6 +442,7 @@ pub async fn start_chimera_service(
             }
         }
     }
+    cleanup_owned_service(&state)?;
 
     if is_service_running(&url).await {
         log::info!("Chimera service already running at {}", url);
@@ -302,19 +453,26 @@ pub async fn start_chimera_service(
         });
     }
 
-    let mut spawned = spawn_chimera_serve(&binary_path, &env_vars)?;
-    let pid = spawned.child.id();
+    let SpawnedChimeraServe { child, output } = spawn_chimera_serve(&binary_path, &env_vars)?;
+    let pid = child.id();
     log::info!("Started chimera serve, PID: {}", pid);
 
-    state.child_pid.store(pid, Ordering::SeqCst);
-    state.we_started.store(true, Ordering::SeqCst);
-    *state.service_url.lock().map_err(|e| e.to_string())? = None;
+    {
+        let mut owned_process = state
+            .owned_process
+            .lock()
+            .map_err(|error| error.to_string())?;
+        *owned_process = Some(owned_service_process(child));
+        state.child_pid.store(pid, Ordering::SeqCst);
+        state.we_started.store(true, Ordering::SeqCst);
+        *state.service_url.lock().map_err(|e| e.to_string())? = None;
+    }
 
     let mut detected_url: Option<String> = None;
     let mut recent_output = VecDeque::new();
 
     for _ in 0..30 {
-        while let Ok(line) = spawned.output.try_recv() {
+        while let Ok(line) = output.try_recv() {
             if let Some(parsed_url) = parse_listening_url(&line) {
                 log::info!("Detected chimera serve URL: {}", parsed_url);
                 *state.service_url.lock().map_err(|e| e.to_string())? = Some(parsed_url.clone());
@@ -323,19 +481,58 @@ pub async fn start_chimera_service(
             remember_recent_output(&mut recent_output, line);
         }
 
-        if let Some(status) = spawned.child.try_wait().map_err(|e| e.to_string())? {
-            state.child_pid.store(0, Ordering::SeqCst);
-            state.we_started.store(false, Ordering::SeqCst);
-            *state.service_url.lock().map_err(|e| e.to_string())? = None;
-            return Err(format!(
+        let child_status = {
+            let mut owned_process = state
+                .owned_process
+                .lock()
+                .map_err(|error| error.to_string())?;
+            let Some(process) = owned_process.as_mut() else {
+                return Err("chimera serve startup was cancelled".to_string());
+            };
+            process
+                .child
+                .try_wait()
+                .map_err(|error| error.to_string())?
+        };
+        if let Some(status) = child_status {
+            let message = format!(
                 "chimera serve exited during startup with status {}.{}",
                 status,
                 format_recent_output(&recent_output)
-            ));
+            );
+            if let Err(error) = cleanup_owned_service(&state) {
+                return Err(format!("{message} Cleanup failed: {error}"));
+            }
+            return Err(message);
         }
 
         let health_url = detected_url.as_deref().unwrap_or(&url);
         if is_service_running(health_url).await {
+            let owns_running_process = {
+                let mut owned_process = state
+                    .owned_process
+                    .lock()
+                    .map_err(|error| error.to_string())?;
+                let Some(process) = owned_process.as_mut() else {
+                    return Err("chimera serve startup was cancelled".to_string());
+                };
+                process
+                    .child
+                    .try_wait()
+                    .map_err(|error| error.to_string())?
+                    .is_none()
+            };
+            if !owns_running_process {
+                let message = format!(
+                    "chimera serve exited while completing startup.{}",
+                    format_recent_output(&recent_output)
+                );
+                if let Err(error) = cleanup_owned_service(&state) {
+                    return Err(format!("{message} Cleanup failed: {error}"));
+                }
+                return Err(message);
+            }
+
             log::info!("Chimera service is ready at {}", health_url);
             *state.service_url.lock().map_err(|e| e.to_string())? = Some(health_url.to_string());
             return Ok(StartChimeraServiceResult {
@@ -348,27 +545,20 @@ pub async fn start_chimera_service(
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
-    log::warn!("Chimera service started but health check not passing yet");
-    Ok(StartChimeraServiceResult {
-        started: true,
-        started_by_us: true,
-        url: detected_url,
-    })
+    let message = format!(
+        "chimera serve did not become healthy before the startup timeout.{}",
+        format_recent_output(&recent_output)
+    );
+    if let Err(error) = cleanup_owned_service(&state) {
+        return Err(format!("{message} Cleanup failed: {error}"));
+    }
+    Err(message)
 }
 
 /// 停止 chimera serve
 #[tauri::command]
 pub async fn stop_chimera_service(state: State<'_, ServiceState>) -> Result<(), String> {
-    let pid = state.child_pid.swap(0, Ordering::SeqCst);
-    state.we_started.store(false, Ordering::SeqCst);
-    *state.service_url.lock().map_err(|e| e.to_string())? = None;
-
-    if pid > 0 {
-        log::info!("Stopping chimera serve, PID: {}", pid);
-        kill_process_by_pid(pid);
-    }
-
-    Ok(())
+    cleanup_owned_service(&state)
 }
 
 #[tauri::command]
@@ -417,15 +607,10 @@ pub async fn confirm_close_app(
     stop_service: bool,
 ) -> Result<(), String> {
     if stop_service {
-        let pid = state.child_pid.swap(0, Ordering::SeqCst);
-        if pid > 0 {
-            log::info!("Closing app and stopping chimera serve, PID: {}", pid);
-            kill_process_by_pid(pid);
-        }
-        state.we_started.store(false, Ordering::SeqCst);
-        *state.service_url.lock().map_err(|e| e.to_string())? = None;
+        cleanup_owned_service(&state)?;
     } else {
         log::info!("Closing app, keeping chimera serve running");
+        release_owned_service(&state)?;
     }
 
     window.destroy().map_err(|e| e.to_string())
@@ -433,7 +618,11 @@ pub async fn confirm_close_app(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_chimera_command, compatibility_path_candidates, path_candidates};
+    use super::{
+        build_chimera_command, cleanup_owned_service, compatibility_path_candidates,
+        path_candidates, terminate_owned_process,
+    };
+    use crate::app::service::{OwnedServiceProcess, ServiceState};
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -491,6 +680,76 @@ mod tests {
                 .filter(|path| path.ends_with("opencode"))
                 .count(),
             1
+        );
+    }
+
+    #[test]
+    fn cleanup_without_owned_process_is_idempotent() {
+        let state = ServiceState::default();
+
+        cleanup_owned_service(&state).expect("first cleanup should succeed");
+        cleanup_owned_service(&state).expect("second cleanup should succeed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_cleanup_terminates_and_reaps_process_group() {
+        use std::os::unix::process::CommandExt;
+        use std::process::{Command, Stdio};
+
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("trap '' TERM; while :; do sleep 30; done")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0);
+        let child = command.spawn().expect("spawn process-group fixture");
+        let process_group_id = child.id() as i32;
+        let mut process = OwnedServiceProcess {
+            child,
+            process_group_id,
+        };
+
+        terminate_owned_process(&mut process).expect("terminate process group");
+
+        let result = unsafe { libc::kill(-process_group_id, 0) };
+        assert_eq!(result, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_cleanup_kills_descendants_after_group_leader_exits() {
+        use std::os::unix::process::CommandExt;
+        use std::process::{Command, Stdio};
+
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("trap '' TERM; sleep 30 & exit 0")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0);
+        let child = command.spawn().expect("spawn descendant fixture");
+        let process_group_id = child.id() as i32;
+        let mut process = OwnedServiceProcess {
+            child,
+            process_group_id,
+        };
+        process.child.wait().expect("wait for process-group leader");
+
+        assert_eq!(unsafe { libc::kill(-process_group_id, 0) }, 0);
+        terminate_owned_process(&mut process).expect("terminate remaining descendants");
+
+        let result = unsafe { libc::kill(-process_group_id, 0) };
+        assert_eq!(result, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
         );
     }
 }

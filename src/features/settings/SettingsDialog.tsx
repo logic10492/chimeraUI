@@ -16,7 +16,7 @@ import {
   CogIcon,
 } from '../../components/Icons'
 import { useIsMobile } from '../../hooks'
-import { isTauri } from '../../utils/tauri'
+import { isTauriDesktop } from '../../utils/tauri'
 import { KeybindingsSection } from './KeybindingsSection'
 import { AgentSettings } from './components/AgentSettings'
 import { AppearanceSettings } from './components/AppearanceSettings'
@@ -168,7 +168,7 @@ function TabContent({ tab }: { tab: SettingsTab }) {
 export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: SettingsDialogProps) {
   const { t } = useTranslation(['settings'])
   const isMobile = useIsMobile()
-  const isTauriDesktop = isTauri() && !isMobile
+  const hasDesktopCapabilities = isTauriDesktop()
   const scrollRef = useRef<HTMLDivElement>(null)
   const normalizeTab = useCallback((next: SettingsDialogProps['initialTab']): SettingsTab => {
     if (!next || next === 'general') return 'chat'
@@ -177,8 +177,8 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
   const [tab, setTab] = useState<SettingsTab>(normalizeTab(initialTab))
 
   const visibleTabIds = useMemo(
-    () => (isTauriDesktop ? TAB_IDS : TAB_IDS.filter(id => id !== 'service')),
-    [isTauriDesktop],
+    () => (hasDesktopCapabilities ? TAB_IDS : TAB_IDS.filter(id => id !== 'service')),
+    [hasDesktopCapabilities],
   )
 
   const visibleTabs = useMemo(

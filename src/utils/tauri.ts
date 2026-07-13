@@ -2,23 +2,54 @@
 // Tauri 平台检测 & 工具
 // ============================================
 
+export type RuntimePlatform = 'web' | 'tauri-desktop' | 'tauri-android' | 'tauri-ios'
+
+type RuntimeWindow = Window & {
+  __CHIMERA_RUNTIME_PLATFORM__?: RuntimePlatform
+}
+
 /**
- * 检测当前是否运行在 Tauri 环境中
- * 通过检查 window.__TAURI_INTERNALS__ 来判断
+ * Detect the application runtime. Native shells may inject an authoritative
+ * platform marker; older shells fall back conservatively to their WebView UA.
  */
+export function getRuntimePlatform(): RuntimePlatform {
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return 'web'
+
+  const declared = (window as RuntimeWindow).__CHIMERA_RUNTIME_PLATFORM__
+  if (declared && declared !== 'web') return declared
+  if (typeof navigator === 'undefined') return 'tauri-desktop'
+
+  const ua = navigator.userAgent
+  if (/Android/i.test(ua)) return 'tauri-android'
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'tauri-ios'
+  return 'tauri-desktop'
+}
+
 export function isTauri(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+  return getRuntimePlatform() !== 'web'
 }
 
 export function isTauriMobile(): boolean {
-  if (!isTauri() || typeof navigator === 'undefined') return false
-  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+  const platform = getRuntimePlatform()
+  return platform === 'tauri-android' || platform === 'tauri-ios'
+}
+
+export function isTauriDesktop(): boolean {
+  return getRuntimePlatform() === 'tauri-desktop'
+}
+
+export function isTauriAndroid(): boolean {
+  return getRuntimePlatform() === 'tauri-android'
+}
+
+export function isTauriIOS(): boolean {
+  return getRuntimePlatform() === 'tauri-ios'
 }
 
 export type DesktopPlatform = 'windows' | 'macos' | 'linux' | 'other'
 
 export function getDesktopPlatform(): DesktopPlatform {
-  if (!isTauri() || isTauriMobile() || typeof navigator === 'undefined') return 'other'
+  if (!isTauriDesktop() || typeof navigator === 'undefined') return 'other'
 
   const ua = navigator.userAgent.toLowerCase()
   if (ua.includes('windows')) return 'windows'

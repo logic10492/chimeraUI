@@ -4,6 +4,7 @@
 
 import { API_BASE_URL } from '../constants'
 import { checkCandidateServerHealth } from '../api/health'
+import { isTauriAndroid } from '../utils/tauri'
 export { makeBasicAuthHeader } from '../api/health'
 
 /**
@@ -88,15 +89,19 @@ class ServerStore {
   // ============================================
 
   private loadFromStorage(): void {
+    const allowLocalServer = !isTauriAndroid()
+
     try {
-      // 加载服务器列表
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
         this.servers = JSON.parse(stored)
       }
 
-      // 如果没有服务器，添加默认的本地服务器
-      if (this.servers.length === 0) {
+      if (!allowLocalServer) {
+        this.servers = this.servers.filter(server => server.id !== this.DEFAULT_SERVER_ID)
+      }
+
+      if (this.servers.length === 0 && allowLocalServer) {
         this.servers = [
           {
             id: this.DEFAULT_SERVER_ID,
@@ -107,27 +112,25 @@ class ServerStore {
         ]
       }
 
-      // 加载当前选中的服务器
-      // 优先从 sessionStorage 读取（per-window 隔离，刷新保持）
-      // 回退到 localStorage（新窗口首次打开时继承上次默认）
       const activeId = sessionStorage.getItem(ACTIVE_SERVER_KEY) ?? localStorage.getItem(ACTIVE_SERVER_KEY)
       if (activeId && this.servers.some(s => s.id === activeId)) {
         this.activeServerId = activeId
-      } else {
-        // 默认选中第一个
-        this.activeServerId = this.servers[0]?.id ?? null
+        return
       }
+
+      this.activeServerId = this.servers[0]?.id ?? null
     } catch {
-      // 初始化默认值
-      this.servers = [
-        {
-          id: this.DEFAULT_SERVER_ID,
-          name: 'Local',
-          url: API_BASE_URL,
-          isDefault: true,
-        },
-      ]
-      this.activeServerId = this.DEFAULT_SERVER_ID
+      this.servers = allowLocalServer
+        ? [
+            {
+              id: this.DEFAULT_SERVER_ID,
+              name: 'Local',
+              url: API_BASE_URL,
+              isDefault: true,
+            },
+          ]
+        : []
+      this.activeServerId = allowLocalServer ? this.DEFAULT_SERVER_ID : null
     }
   }
 
@@ -215,6 +218,10 @@ class ServerStore {
    */
   getActiveServer(): ServerConfig | null {
     return this._activeServerSnapshot
+  }
+
+  hasActiveServer(): boolean {
+    return this._activeServerSnapshot !== null
   }
 
   getLocalServer(): ServerConfig | null {

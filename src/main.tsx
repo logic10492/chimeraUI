@@ -20,6 +20,8 @@ import { isTauri, isTauriMobile } from './utils/tauri'
 import { apiErrorHandler, globalErrorHandler } from './utils/errorHandling'
 import { applyLocalServiceUrl } from './utils/localServiceUrl'
 import { resetServerScopedRuntime } from './utils/serverTransition'
+import { NativePlatformGate } from './features/server/NativePlatformGate'
+import { installNativeNotificationActionHandler, registerNotificationServiceWorker } from './hooks/useNotification'
 
 // Polyfill: randomUUID 在非 HTTPS 环境可能缺失（如局域网 HTTP）
 // 统一补齐，避免业务层 scattered fallback。
@@ -165,13 +167,15 @@ function bootstrap() {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <Suspense fallback={null}>
-        <DirectoryProvider>
-          <SessionProvider>
-            <FullscreenProvider>
-              <App />
-            </FullscreenProvider>
-          </SessionProvider>
-        </DirectoryProvider>
+        <NativePlatformGate>
+          <DirectoryProvider>
+            <SessionProvider>
+              <FullscreenProvider>
+                <App />
+              </FullscreenProvider>
+            </SessionProvider>
+          </DirectoryProvider>
+        </NativePlatformGate>
       </Suspense>
     </StrictMode>,
   )
@@ -181,8 +185,15 @@ function startApp() {
   bootstrap()
 
   void initializeNativeDesktopService()
-
   if (isNativeTauri) {
+    void installNativeNotificationActionHandler().catch(err =>
+      apiErrorHandler('install notification action handler', err),
+    )
+  } else if (import.meta.env.PROD) {
+    void registerNotificationServiceWorker()
+  }
+
+  if (isNativeTauri && serverStore.hasActiveServer()) {
     void getSDKClientAsync().catch(err => apiErrorHandler('initialize sdk client', err))
   }
 }

@@ -1,37 +1,66 @@
-import { describe, expect, it, afterEach } from 'vitest'
-import { isTauri, isTauriMobile, extToMime } from './tauri'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  getRuntimePlatform,
+  isTauri,
+  isTauriAndroid,
+  isTauriDesktop,
+  isTauriIOS,
+  isTauriMobile,
+  extToMime,
+} from './tauri'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 需要动态修改 window 属性做测试
-const win = window as any
+const win = window as Window & {
+  __TAURI_INTERNALS__?: object
+  __CHIMERA_RUNTIME_PLATFORM__?: 'web' | 'tauri-desktop' | 'tauri-android' | 'tauri-ios'
+}
+const originalUserAgent = navigator.userAgent
 
-describe('isTauri', () => {
-  afterEach(() => {
-    delete win.__TAURI_INTERNALS__
-  })
+function setUserAgent(userAgent: string) {
+  Object.defineProperty(navigator, 'userAgent', { configurable: true, value: userAgent })
+}
 
-  it('returns false in browser environment (no __TAURI_INTERNALS__)', () => {
-    expect(isTauri()).toBe(false)
-  })
-
-  it('returns true when __TAURI_INTERNALS__ is present', () => {
-    win.__TAURI_INTERNALS__ = {}
-    expect(isTauri()).toBe(true)
-  })
+afterEach(() => {
+  delete win.__TAURI_INTERNALS__
+  delete win.__CHIMERA_RUNTIME_PLATFORM__
+  setUserAgent(originalUserAgent)
 })
 
-describe('isTauriMobile', () => {
-  afterEach(() => {
-    delete win.__TAURI_INTERNALS__
+describe('runtime platform detection', () => {
+  it('classifies normal browser and iOS PWA runtimes as web', () => {
+    setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)')
+
+    expect(getRuntimePlatform()).toBe('web')
+    expect(isTauri()).toBe(false)
+    expect(isTauriIOS()).toBe(false)
   })
 
-  it('returns false when not in Tauri environment', () => {
-    expect(isTauriMobile()).toBe(false)
-  })
-
-  it('returns false in Tauri desktop environment', () => {
+  it('uses the native shell platform marker authoritatively', () => {
     win.__TAURI_INTERNALS__ = {}
-    // jsdom 默认 userAgent 不含移动端标识
-    expect(isTauriMobile()).toBe(false)
+    win.__CHIMERA_RUNTIME_PLATFORM__ = 'tauri-android'
+    setUserAgent('desktop-like-webview')
+
+    expect(getRuntimePlatform()).toBe('tauri-android')
+    expect(isTauriAndroid()).toBe(true)
+    expect(isTauriMobile()).toBe(true)
+    expect(isTauriDesktop()).toBe(false)
+  })
+
+  it('distinguishes native iOS from iOS web', () => {
+    win.__TAURI_INTERNALS__ = {}
+    win.__CHIMERA_RUNTIME_PLATFORM__ = 'tauri-ios'
+
+    expect(getRuntimePlatform()).toBe('tauri-ios')
+    expect(isTauriIOS()).toBe(true)
+    expect(isTauriMobile()).toBe(true)
+  })
+
+  it('falls back safely to the WebView user agent for older native shells', () => {
+    win.__TAURI_INTERNALS__ = {}
+    setUserAgent('Mozilla/5.0 (Linux; Android 15)')
+    expect(getRuntimePlatform()).toBe('tauri-android')
+
+    setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)')
+    expect(getRuntimePlatform()).toBe('tauri-desktop')
   })
 })
 

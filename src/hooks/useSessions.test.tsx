@@ -21,7 +21,10 @@ let latestEventCallbacks: Partial<EventCallbacks> = {}
 let latestServerChange: (() => void) | undefined
 
 vi.mock('../api', () => ({
-  getSessions: (...args: unknown[]) => getSessionsMock(...args),
+  getSessionsPage: async (...args: unknown[]) => {
+    const result = await getSessionsMock(...args)
+    return Array.isArray(result) ? { items: result } : result
+  },
   createSession: (...args: unknown[]) => createSessionMock(...args),
   deleteSession: (...args: unknown[]) => deleteSessionMock(...args),
   updateSession: (...args: unknown[]) => updateSessionMock(...args),
@@ -98,6 +101,37 @@ describe('useSessions', () => {
       limit: 20,
       directory: '/workspace/demo',
     })
+  })
+
+  it('loads the next fixed-size page with the server cursor and appends without duplicates', async () => {
+    getSessionsMock
+      .mockResolvedValueOnce({
+        items: [makeSession('session-2'), makeSession('session-1')],
+        nextCursor: 'cursor-1',
+      })
+      .mockResolvedValueOnce({
+        items: [makeSession('session-1'), makeSession('session-0')],
+      })
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo', pageSize: 2 }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      await result.current.loadMore()
+    })
+
+    expect(getSessionsMock).toHaveBeenNthCalledWith(2, {
+      roots: true,
+      limit: 2,
+      directory: '/workspace/demo',
+      cursor: 'cursor-1',
+    })
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-2', 'session-1', 'session-0'])
+    expect(result.current.hasMore).toBe(false)
   })
 
   it('passes the scoped directory when removing a session', async () => {

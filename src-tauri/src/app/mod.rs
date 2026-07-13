@@ -4,8 +4,9 @@
 // ============================================
 mod bridge;
 mod commands;
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod dir_state;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod service;
 
 use bridge::BridgeState;
@@ -17,14 +18,14 @@ use tauri::Manager;
 use tauri_plugin_decorum::WebviewWindowExt;
 
 // Desktop-only imports for service management
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use dir_state::OpenDirectoryState;
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::sync::Arc;
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use tauri::Emitter;
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SavedWindowState {
     width: u32,
@@ -34,20 +35,20 @@ struct SavedWindowState {
     maximized: bool,
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn window_state_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     let dir = app.path().app_config_dir().ok()?;
     Some(dir.join("window-state.json"))
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn load_window_state(app: &tauri::AppHandle) -> Option<SavedWindowState> {
     let path = window_state_path(app)?;
     let data = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&data).ok()
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn save_window_state(window: &tauri::Window) {
     if window.label() != "main" {
         return;
@@ -81,7 +82,7 @@ fn save_window_state(window: &tauri::Window) {
     }
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn restore_window_state(window: &tauri::WebviewWindow) {
     let app = window.app_handle();
     let Some(state) = load_window_state(app) else {
@@ -99,7 +100,7 @@ fn restore_window_state(window: &tauri::WebviewWindow) {
 }
 
 /// 从命令行参数中提取目录路径
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn extract_directory_from_args(args: &[String]) -> Option<String> {
     for arg in args.iter().skip(1) {
         if arg.starts_with('-') {
@@ -112,7 +113,14 @@ fn extract_directory_from_args(args: &[String]) -> Option<String> {
     None
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(target_os = "android")]
+const RUNTIME_PLATFORM_SCRIPT: &str = "window.__CHIMERA_RUNTIME_PLATFORM__ = 'tauri-android';";
+#[cfg(target_os = "ios")]
+const RUNTIME_PLATFORM_SCRIPT: &str = "window.__CHIMERA_RUNTIME_PLATFORM__ = 'tauri-ios';";
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+const RUNTIME_PLATFORM_SCRIPT: &str = "window.__CHIMERA_RUNTIME_PLATFORM__ = 'tauri-desktop';";
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn create_main_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
     if let Some(window) = app.get_webview_window("main") {
         return Ok(window);
@@ -132,7 +140,7 @@ fn create_main_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, ta
         .build()
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn create_main_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
     if let Some(window) = app.get_webview_window("main") {
         return Ok(window);
@@ -147,10 +155,12 @@ fn create_main_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, ta
         .cloned()
         .expect("main window config missing");
 
-    tauri::WebviewWindowBuilder::from_config(app, &config)?.build()
+    tauri::WebviewWindowBuilder::from_config(app, &config)?
+        .initialization_script(RUNTIME_PLATFORM_SCRIPT)
+        .build()
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn create_hidden_content_window(
     app: &tauri::AppHandle,
     label: &str,
@@ -189,7 +199,7 @@ fn fullscreen_state() -> &'static std::sync::Mutex<std::collections::HashMap<Str
     STATE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn finish_desktop_window_setup(window: &tauri::WebviewWindow) {
     #[cfg(windows)]
     let _ = window.create_overlay_titlebar();
@@ -199,7 +209,7 @@ fn finish_desktop_window_setup(window: &tauri::WebviewWindow) {
     reposition_traffic_lights(window);
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) fn mark_window_ready<R: tauri::Runtime>(
     window: &tauri::Window<R>,
 ) -> Result<(), tauri::Error> {
@@ -210,7 +220,7 @@ pub(crate) fn mark_window_ready<R: tauri::Runtime>(
 }
 
 /// 创建新窗口，可选地关联一个目录（多窗口支持）
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) fn create_new_window(app: &tauri::AppHandle, directory: Option<String>) {
     static WIN_COUNTER: AtomicU64 = AtomicU64::new(1);
     let label = format!("win-{}", WIN_COUNTER.fetch_add(1, Ordering::SeqCst));
@@ -238,12 +248,11 @@ pub(crate) fn create_new_window(app: &tauri::AppHandle, directory: Option<String
     }
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn configure_desktop_window_builder<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
     window_builder: tauri::WebviewWindowBuilder<'a, R, M>,
 ) -> tauri::WebviewWindowBuilder<'a, R, M> {
-    let window_builder = window_builder;
-
+    let window_builder = window_builder.initialization_script(RUNTIME_PLATFORM_SCRIPT);
     #[cfg(target_os = "macos")]
     let window_builder = window_builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
@@ -256,11 +265,11 @@ fn configure_desktop_window_builder<'a, R: tauri::Runtime, M: tauri::Manager<R>>
 pub fn run() {
     let builder = tauri::Builder::default().manage(BridgeState::default());
 
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let builder = builder.plugin(tauri_plugin_decorum::init());
 
     // Desktop: 注册 OpenDirectoryState + single-instance 插件（需在 setup 之前）
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let builder =
         builder
             .manage(OpenDirectoryState::default())
@@ -285,7 +294,7 @@ pub fn run() {
                     .build(),
             )?;
 
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             {
                 let main_window = create_main_window(&app.handle())?;
                 finish_desktop_window_setup(&main_window);
@@ -295,13 +304,13 @@ pub fn run() {
                 main_window.open_devtools();
             }
 
-            #[cfg(target_os = "android")]
+            #[cfg(any(target_os = "android", target_os = "ios"))]
             {
                 let _main_window = create_main_window(&app.handle())?;
             }
 
             // Desktop: 解析 CLI 参数，存入 pending state
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             {
                 let args: Vec<String> = std::env::args().collect();
                 if let Some(dir) = extract_directory_from_args(&args) {
@@ -319,7 +328,7 @@ pub fn run() {
         });
 
     // Desktop: 注册 service management commands + 窗口关闭拦截
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let builder = builder
         .manage(service::ServiceState::default())
         .on_window_event(|window, event| {
@@ -369,37 +378,29 @@ pub fn run() {
                     let state = window.state::<BridgeState>();
                     state.disconnect_window(window.label());
                 }
-                tauri::WindowEvent::DragDrop(event) => {
-                    match event {
-                        tauri::DragDropEvent::Enter { paths, position } => {
-                            let paths: Vec<String> = paths
-                                .into_iter()
-                                .map(|p| p.to_string_lossy().to_string())
-                                .collect();
-                            let _ = window.emit(
-                                "file-drop-enter",
-                                (paths, position.x, position.y),
-                            );
-                        }
-                        tauri::DragDropEvent::Over { position } => {
-                            let _ = window.emit("file-drop-over", (position.x, position.y));
-                        }
-                        tauri::DragDropEvent::Drop { paths, position } => {
-                            let paths: Vec<String> = paths
-                                .into_iter()
-                                .map(|p| p.to_string_lossy().to_string())
-                                .collect();
-                            let _ = window.emit(
-                                "file-drop-drop",
-                                (paths, position.x, position.y),
-                            );
-                        }
-                        tauri::DragDropEvent::Leave => {
-                            let _ = window.emit("file-drop-leave", ());
-                        }
-                        _ => {}
+                tauri::WindowEvent::DragDrop(event) => match event {
+                    tauri::DragDropEvent::Enter { paths, position } => {
+                        let paths: Vec<String> = paths
+                            .into_iter()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect();
+                        let _ = window.emit("file-drop-enter", (paths, position.x, position.y));
                     }
-                }
+                    tauri::DragDropEvent::Over { position } => {
+                        let _ = window.emit("file-drop-over", (position.x, position.y));
+                    }
+                    tauri::DragDropEvent::Drop { paths, position } => {
+                        let paths: Vec<String> = paths
+                            .into_iter()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect();
+                        let _ = window.emit("file-drop-drop", (paths, position.x, position.y));
+                    }
+                    tauri::DragDropEvent::Leave => {
+                        let _ = window.emit("file-drop-leave", ());
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         })
@@ -424,7 +425,7 @@ pub fn run() {
         ]);
 
     // Android: 注册 bridge commands
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::bridge::bridge_connect,
         commands::bridge::bridge_send,
@@ -437,6 +438,17 @@ pub fn run() {
         .unwrap_or_else(|err| panic!("error while building tauri application: {err}"));
 
     app.run(|_app_handle, _event| {
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        if matches!(
+            _event,
+            tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
+        ) {
+            if let Some(state) = _app_handle.try_state::<service::ServiceState>() {
+                if let Err(error) = commands::opencode::cleanup_owned_service(&state) {
+                    log::error!("Failed to clean up app-owned chimera service on exit: {error}");
+                }
+            }
+        }
         // macOS: 处理 Finder "Open with" / 拖文件夹到 Dock 图标
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Opened { urls } = &_event {
@@ -444,16 +456,16 @@ pub fn run() {
                 if let Ok(path) = url.to_file_path() {
                     if path.is_dir() {
                         let dir = path.to_string_lossy().to_string();
-                            log::info!("macOS Opened directory: {}", dir);
+                        log::info!("macOS Opened directory: {}", dir);
 
-                            // 如果只有 main 窗口且它还没消费目录，说明是冷启动，设给 main
-                            // 否则新建窗口
-                            if let Some(state) = _app_handle.try_state::<OpenDirectoryState>() {
-                                let pending = state.pending().pin();
-                                let win_count = _app_handle.webview_windows().len();
-                                if win_count <= 1 && !pending.contains_key("main") {
-                                    pending.insert("main".to_string(), Arc::from(dir.clone()));
-                                    let _ = _app_handle.emit("open-directory", dir);
+                        // 如果只有 main 窗口且它还没消费目录，说明是冷启动，设给 main
+                        // 否则新建窗口
+                        if let Some(state) = _app_handle.try_state::<OpenDirectoryState>() {
+                            let pending = state.pending().pin();
+                            let win_count = _app_handle.webview_windows().len();
+                            if win_count <= 1 && !pending.contains_key("main") {
+                                pending.insert("main".to_string(), Arc::from(dir.clone()));
+                                let _ = _app_handle.emit("open-directory", dir);
                             } else {
                                 create_new_window(_app_handle, Some(dir));
                             }

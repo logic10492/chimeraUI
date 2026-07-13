@@ -47,6 +47,33 @@ function isAgentUserContentPart(part: UserContentSource['parts'][number]): part 
 // Message Query
 // ============================================
 
+export interface MessagePage {
+  items: ApiMessageWithParts[]
+  nextCursor?: string
+}
+
+/**
+ * 获取 session 的固定大小消息页
+ */
+export async function getSessionMessagesPage(
+  sessionId: string,
+  limit = 100,
+  input?: ApiScopeInput,
+  options?: { before?: string },
+): Promise<MessagePage> {
+  const scope = resolveSessionApiScope(sessionId, input)
+  const result = await getSDKClient(scope).session.messages({
+    sessionID: sessionId,
+    ...apiScopeQuery(scope),
+    limit,
+    before: options?.before,
+  })
+  return {
+    items: unwrap<ApiMessageWithParts[]>(result),
+    nextCursor: result.response?.headers.get('x-next-cursor') ?? undefined,
+  }
+}
+
 /**
  * 获取 session 的消息列表
  */
@@ -56,15 +83,7 @@ export async function getSessionMessages(
   input?: ApiScopeInput,
   options?: { before?: string },
 ): Promise<ApiMessageWithParts[]> {
-  const scope = resolveSessionApiScope(sessionId, input)
-  return unwrap<ApiMessageWithParts[]>(
-    await getSDKClient(scope).session.messages({
-      sessionID: sessionId,
-      ...apiScopeQuery(scope),
-      limit,
-      before: options?.before,
-    }),
-  )
+  return (await getSessionMessagesPage(sessionId, limit, input, options)).items
 }
 
 /**

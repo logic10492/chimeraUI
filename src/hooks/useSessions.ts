@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  getSessions,
+  getSessionsPage,
   createSession,
   deleteSession,
   updateSession,
@@ -71,15 +71,15 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
   const requestIdRef = useRef(0)
   // 防抖 timer
   const searchTimerRef = useRef<number | null>(null)
-  // 当前 limit，loadMore 时递增（与 SessionContext 保持一致）
-  const currentLimitRef = useRef(pageSize)
+  // 下一页游标；仅由服务端响应更新，避免 SSE 重排影响分页边界
+  const nextCursorRef = useRef<string | undefined>(undefined)
   const searchRef = useRef(search)
   // 防止 onReconnected 密集触发时重复请求
   const isFetchingRef = useRef(false)
   const queuedReconnectRefreshRef = useRef(false)
   const retryTimerRef = useRef<number | null>(null)
   const fetchSessionsRef = useRef<
-    (params?: SessionListParams & { append?: boolean; retryAttempt?: number }) => Promise<void>
+    (params?: Omit<SessionListParams, 'cursor'> & { append?: boolean; retryAttempt?: number }) => Promise<void>
   >(() => Promise.resolve())
 
   useEffect(() => {
@@ -91,11 +91,9 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
     [normalizedDirectory],
   )
 
-  // 获取会话列表
-  // append 仅用于控制 loading 状态：true 时用 isLoadingMore，false 时用 isLoading
-  // 数据始终全量替换（递增 limit 策略）
+  // 获取固定大小的会话页；刷新替换，loadMore 追加并去重
   const fetchSessions = useCallback(
-    async (params: SessionListParams & { append?: boolean; retryAttempt?: number } = {}) => {
+    async (params: Omit<SessionListParams, 'cursor'> & { append?: boolean; retryAttempt?: number } = {}) => {
       if (!enabled) return
 
       const { append = false, retryAttempt = 0, ...queryParams } = params
@@ -110,13 +108,15 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
       }
 
       try {
-        const data = await getSessions({
+        const page = await getSessionsPage({
           roots: rootsOnly,
-          limit: currentLimitRef.current,
+          limit: pageSize,
           directory: normalizedDirectory,
           ...(archived ? { archived: true } : {}),
+          ...(append && nextCursorRef.current ? { cursor: nextCursorRef.current } : {}),
           ...queryParams,
         })
+        const data = page.items
 
         // 检查是否是最新的请求
         if (requestId !== requestIdRef.current) return
@@ -125,8 +125,13 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
           autoDetectPathStyle(data[0].directory)
         }
 
-        setSessions(data)
-        setHasMore(data.length >= currentLimitRef.current)
+        nextCursorRef.current = page.nextCursor
+        setSessions(prev => {
+          if (!append) return data
+          const ids = new Set(prev.map(session => session.id))
+          return [...prev, ...data.filter(session => !ids.has(session.id))]
+        })
+        setHasMore(Boolean(page.nextCursor))
       } catch (e) {
         if (requestId !== requestIdRef.current) return
         setError(e instanceof Error ? e : new Error('Failed to fetch sessions'))
@@ -149,13 +154,14 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
           setIsLoadingMore(false)
           if (queuedReconnectRefreshRef.current) {
             queuedReconnectRefreshRef.current = false
+            nextCursorRef.current = undefined
             setSessions([])
             void fetchSessionsRef.current({ search: searchRef.current || undefined })
           }
         }
       }
     },
-    [rootsOnly, normalizedDirectory, enabled, archived],
+    [rootsOnly, normalizedDirectory, enabled, archived, pageSize],
   )
 
   fetchSessionsRef.current = fetchSessions
@@ -168,8 +174,8 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
       return
     }
 
-    // 搜索或 enabled 变化时重置 limit
-    currentLimitRef.current = pageSize
+    // 搜索或 enabled 变化时重置游标
+    nextCursorRef.current = undefined
 
     // 防抖处理搜索
     if (searchTimerRef.current) {
@@ -254,6 +260,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
           queuedReconnectRefreshRef.current = true
           return
         }
+        nextCursorRef.current = undefined
         setSessions([])
         void fetchSessionsRef.current({ search: searchRef.current || undefined })
       },
@@ -266,26 +273,26 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
     if (!enabled) return
 
     return serverStore.onServerChange(() => {
-      currentLimitRef.current = pageSize
+      nextCursorRef.current = undefined
       setSessions([])
       void fetchSessionsRef.current({ search: searchRef.current || undefined })
     })
   }, [enabled, pageSize])
 
-  // 加载更多：递增 limit 重新拉取完整列表（与 SessionContext 一致）
+  // 加载更多：使用服务端游标请求固定大小的下一页
   const loadMore = useCallback(async () => {
-    if (!enabled || isLoadingMore || !hasMore || sessions.length === 0) return
+    if (!enabled || isLoadingMore || !hasMore || sessions.length === 0 || !nextCursorRef.current) return
 
-    currentLimitRef.current += pageSize
     await fetchSessions({
       search: search || undefined,
       append: true,
     })
-  }, [sessions, search, hasMore, isLoadingMore, fetchSessions, enabled, pageSize])
+  }, [sessions, search, hasMore, isLoadingMore, fetchSessions, enabled])
 
   // 刷新
   const refresh = useCallback(async () => {
     if (!enabled) return
+    nextCursorRef.current = undefined
     await fetchSessions({ search: search || undefined })
   }, [search, fetchSessions, enabled])
 

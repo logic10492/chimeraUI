@@ -41,7 +41,7 @@ vi.mock('./scope', () => ({
   resolveSessionApiScope: resolveSessionApiScopeMock,
 }))
 
-import { getSessions, updateSession } from './session'
+import { getSessions, getSessionsPage, updateSession } from './session'
 
 describe('session ApiScope routing', () => {
   beforeEach(() => {
@@ -71,6 +71,26 @@ describe('session ApiScope routing', () => {
     await getSessions({ directory: '/remote', roots: true, archived: true })
 
     expect(listMock).toHaveBeenCalledWith({ directory: '/remote', roots: true, archived: true })
+  })
+
+  it('returns the opaque next cursor for fixed-size session pages', async () => {
+    const scope = { serverID: 'server-a', directory: '/remote' }
+    const sessions = [{ id: 'session-1', title: 'Session', directory: '/remote' }]
+    activeApiScopeMock.mockReturnValue(scope)
+    listMock.mockResolvedValue({
+      data: sessions,
+      response: { headers: new Headers({ 'x-next-cursor': 'cursor-2' }) },
+    })
+
+    await expect(
+      getSessionsPage({ directory: '/remote', roots: true, limit: 20, cursor: 'cursor-1' }),
+    ).resolves.toEqual({ items: sessions, nextCursor: 'cursor-2' })
+    expect(listMock).toHaveBeenCalledWith({
+      directory: '/remote',
+      roots: true,
+      limit: 20,
+      cursor: 'cursor-1',
+    })
   })
 
   it('sends null explicitly when restoring a session', async () => {
