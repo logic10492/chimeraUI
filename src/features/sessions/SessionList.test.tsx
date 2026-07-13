@@ -130,7 +130,10 @@ describe('SessionListItem', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Archive session' }))
+    const archiveButton = screen.getByRole('button', { name: 'Archive session' })
+    expect(archiveButton.querySelector('svg')).toBeInTheDocument()
+    expect(archiveButton).not.toHaveTextContent('Archive')
+    fireEvent.click(archiveButton)
     expect(onArchive).toHaveBeenCalledTimes(1)
 
     rerender(
@@ -145,8 +148,31 @@ describe('SessionListItem', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Restore session' }))
+    const restoreButton = screen.getByRole('button', { name: 'Restore session' })
+    expect(restoreButton.querySelector('svg')).toBeInTheDocument()
+    expect(restoreButton).not.toHaveTextContent('Restore')
+    fireEvent.click(restoreButton)
     expect(onRestore).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders the minimal archive action as an icon-only button', () => {
+    render(
+      <SessionListItem
+        session={session}
+        isSelected={false}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+        onRename={vi.fn()}
+        onArchive={vi.fn()}
+        preferTouchUi={false}
+        density="minimal"
+      />,
+    )
+
+    const archiveButton = screen.getByRole('button', { name: 'Archive session' })
+    expect(archiveButton.querySelector('svg')).toBeInTheDocument()
+    expect(archiveButton).not.toHaveTextContent('Archive')
+    expect(archiveButton).toHaveAttribute('title', 'Archive session')
   })
 
   it('keeps session list failures visible', () => {

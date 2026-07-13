@@ -1,6 +1,15 @@
 import { useRef, useEffect, useCallback, useState, useMemo, useSyncExternalStore, type PointerEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { SearchIcon, PencilIcon, TrashIcon, ComposeIcon, CheckIcon, PinIcon } from '../../components/Icons'
+import {
+  SearchIcon,
+  PencilIcon,
+  TrashIcon,
+  ComposeIcon,
+  CheckIcon,
+  PinIcon,
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+} from '../../components/Icons'
 import { formatRelativeTime } from '../../utils/dateUtils'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { useInputCapabilities } from '../../hooks/useInputCapabilities'
@@ -389,8 +398,8 @@ export function SessionListItem({
   const isMinimal = density === 'minimal'
   const hasSummaryStats = Boolean(
     showStats &&
-      session.summary &&
-      (session.summary.additions > 0 || session.summary.deletions > 0 || session.summary.files > 0),
+    session.summary &&
+    (session.summary.additions > 0 || session.summary.deletions > 0 || session.summary.files > 0),
   )
   const itemPaddingClass = isCompact ? (isEditMode ? 'px-3 py-2' : 'pl-[6px] pr-3 py-2') : 'px-3 py-2.5'
   const pinnedEntries = useSyncExternalStore(
@@ -756,22 +765,22 @@ export function SessionListItem({
               <button
                 type="button"
                 onClick={handleArchiveAction}
-                className="rounded px-1.5 py-1 text-[length:var(--fs-xxs)] text-text-500 hover:bg-bg-300 hover:text-text-200"
+                className="p-1 rounded hover:bg-bg-300 text-text-500 hover:text-text-200 transition-colors focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset"
                 aria-label="Archive session"
                 title="Archive session"
               >
-                Archive
+                <ArchiveIcon className="w-3 h-3" />
               </button>
             )}
             {onRestore && (
               <button
                 type="button"
                 onClick={handleRestoreAction}
-                className="rounded px-1.5 py-1 text-[length:var(--fs-xxs)] text-text-500 hover:bg-bg-300 hover:text-text-200"
+                className="p-1 rounded hover:bg-bg-300 text-text-500 hover:text-text-200 transition-colors focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset"
                 aria-label="Restore session"
                 title="Restore session"
               >
-                Restore
+                <ArchiveRestoreIcon className="w-3 h-3" />
               </button>
             )}
             <button
@@ -1001,22 +1010,22 @@ export function SessionListItem({
             <button
               type="button"
               onClick={handleArchiveAction}
-              className="rounded-md px-1.5 py-1 text-[length:var(--fs-xxs)] text-text-400 hover:bg-bg-300 hover:text-text-100"
+              className="p-1.5 rounded-md hover:bg-bg-300 active:bg-bg-300 text-text-400 hover:text-text-100 transition-colors focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset"
               aria-label="Archive session"
               title="Archive session"
             >
-              Archive
+              <ArchiveIcon className="w-3.5 h-3.5" />
             </button>
           )}
           {onRestore && (
             <button
               type="button"
               onClick={handleRestoreAction}
-              className="rounded-md px-1.5 py-1 text-[length:var(--fs-xxs)] text-text-400 hover:bg-bg-300 hover:text-text-100"
+              className="p-1.5 rounded-md hover:bg-bg-300 active:bg-bg-300 text-text-400 hover:text-text-100 transition-colors focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset"
               aria-label="Restore session"
               title="Restore session"
             >
-              Restore
+              <ArchiveRestoreIcon className="w-3.5 h-3.5" />
             </button>
           )}
           <button

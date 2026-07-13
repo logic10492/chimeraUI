@@ -37,6 +37,8 @@ import {
   Search,
   Pencil,
   Trash2,
+  Archive,
+  ArchiveRestore,
   CornerDownLeft,
   Eye,
   Maximize,
@@ -143,6 +145,8 @@ export const FolderOpenIcon = wrap(FolderOpen)
 export const SearchIcon = wrap(Search)
 export const PencilIcon = wrap(Pencil)
 export const TrashIcon = wrap(Trash2)
+export const ArchiveIcon = wrap(Archive)
+export const ArchiveRestoreIcon = wrap(ArchiveRestore)
 export const ReturnIcon = wrap(CornerDownLeft)
 export const EyeIcon = wrap(Eye)
 export const MaximizeIcon = wrap(Maximize)
