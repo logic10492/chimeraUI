@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Button } from '../../../components/ui/Button'
 import { SunIcon, MoonIcon, SystemIcon, CheckIcon, ChevronDownIcon } from '../../../components/Icons'
@@ -7,6 +7,7 @@ import { useTheme } from '../../../hooks'
 import { getThemePreset } from '../../../themes'
 import type { CustomCSSSnippet } from '../../../store/themeStore'
 import { FONT_SCALE_MIN, FONT_SCALE_MAX } from '../../../store/themeStore'
+import { preferenceStore, type ColorModePreferenceScope } from '../../../store/preferenceStore'
 import { saveData } from '../../../utils/downloadUtils'
 
 // ============================================
@@ -512,6 +513,9 @@ export function AppearanceSettings() {
     codeFontScale,
     setCodeFontScale,
   } = useTheme()
+  const preferenceState = useSyncExternalStore(preferenceStore.subscribe, preferenceStore.getSnapshot)
+  const colorModeScope: ColorModePreferenceScope =
+    preferenceState.deviceColorModeOverride === undefined ? 'shared' : 'device'
 
   const activeSnippet = customCSSSnippets.find(item => item.id === activeCustomCSSSnippetId) || null
   const hasUnsavedSnippetChanges = activeSnippet != null && activeSnippet.css !== customCSS
@@ -658,6 +662,21 @@ export function AppearanceSettings() {
       </SettingsSection>
 
       <SettingsSection title={t('appearance.display')}>
+        <div>
+          <p className="text-[length:var(--fs-md)] text-text-100 mb-1.5">Color mode scope</p>
+          <p className="text-[length:var(--fs-sm)] text-text-400 mb-3">
+            Choose whether color mode follows this server on every device or only this device.
+          </p>
+          <SegmentedControl
+            value={colorModeScope}
+            options={[
+              { value: 'shared', label: 'All devices' },
+              { value: 'device', label: 'This device' },
+            ]}
+            onChange={value => preferenceStore.setColorModeScope(value as ColorModePreferenceScope)}
+          />
+        </div>
+
         <div>
           <p className="text-[length:var(--fs-md)] text-text-100 mb-1.5">{t('appearance.colorMode')}</p>
           <SegmentedControl

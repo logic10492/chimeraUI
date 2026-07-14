@@ -8,6 +8,7 @@ import App from './App.tsx'
 import { DirectoryProvider, FullscreenProvider, SessionProvider } from './contexts'
 import { themeStore } from './store/themeStore'
 import { serverStore } from './store/serverStore'
+import { preferenceStore } from './store/preferenceStore'
 import { messageStore } from './store/messageStore'
 import { childSessionStore } from './store/childSessionStore'
 import { todoStore } from './store/todoStore'
@@ -52,6 +53,7 @@ if ('scrollRestoration' in history) {
 
 // 初始化主题系统（在 React 渲染前注入 CSS 变量，避免闪烁）
 themeStore.init()
+preferenceStore.init()
 
 // 全局 overlay 滚动条 — 等 DOM 就绪后启动
 if (document.readyState === 'loading') {
@@ -65,6 +67,7 @@ if (document.readyState === 'loading') {
 serverStore.onServerChange((serverID, reason) => {
   abortInFlightApiRequests()
   invalidateSDKClient()
+  preferenceStore.switchServer(serverID)
   if (isTauri()) {
     void getSDKClientAsync().catch(err => apiErrorHandler('reinitialize sdk client after server endpoint change', err))
   }

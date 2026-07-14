@@ -16,18 +16,18 @@ export function ChatSettings() {
     setOutlineCurrentHighlight,
     renderUserMarkdown,
     setRenderUserMarkdown,
+    collapseUserMessages,
+    setCollapseUserMessages,
+    reasoningDisplayMode,
+    setReasoningDisplayMode,
   } = useTheme()
-  const [collapseUserMessages, setCollapseUserMessages] = useState(themeStore.collapseUserMessages)
   const [stepFinishDisplay, setStepFinishDisplay] = useState(themeStore.stepFinishDisplay)
   const [completedAtFormat, setCompletedAtFormat] = useState(themeStore.completedAtFormat)
-  const [reasoningDisplayMode, setReasoningDisplayMode] = useState(themeStore.reasoningDisplayMode)
   const isMobile = useIsMobile()
   void isMobile
 
   const handleCollapseToggle = () => {
-    const v = !collapseUserMessages
-    setCollapseUserMessages(v)
-    themeStore.setCollapseUserMessages(v)
+    setCollapseUserMessages(!collapseUserMessages)
   }
 
   const handleRenderUserMarkdownToggle = () => {
@@ -36,7 +36,6 @@ export function ChatSettings() {
 
   const handleReasoningDisplayModeChange = (mode: ReasoningDisplayMode) => {
     setReasoningDisplayMode(mode)
-    themeStore.setReasoningDisplayMode(mode)
   }
 
   const externalDropAlwaysMention = externalFileDropMode === 'mention'

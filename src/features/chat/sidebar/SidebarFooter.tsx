@@ -14,7 +14,6 @@ import {
 } from '../../../components/Icons'
 import { useTheme } from '../../../hooks'
 
-
 export interface SidebarFooterProps {
   showLabels: boolean
   connectionState: string
@@ -42,7 +41,6 @@ export function SidebarFooter({ showLabels, connectionState, onOpenSettings }: S
       disconnected: 'bg-text-500',
       error: 'bg-danger-100',
     }[connectionState] || 'bg-text-500'
-
 
   // 打开菜单
   const openMenu = useCallback(() => {
@@ -157,7 +155,6 @@ export function SidebarFooter({ showLabels, connectionState, onOpenSettings }: S
             transformOrigin: showLabels ? 'bottom left' : 'bottom left',
           }}
         >
-
           {/* Theme Selector */}
           <div className="relative p-2">
             <div className="text-[length:var(--fs-xxs)] font-bold text-text-400 uppercase tracking-wider px-1 mb-1.5">
