@@ -360,4 +360,42 @@ describe('subscribeToEvents', () => {
     secondFetch.reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
     unsubscribe()
   })
+
+  it('dispatches global preference snapshots with the captured server scope', async () => {
+    getActiveServerIdMock.mockReturnValue('server-a')
+    const snapshot = {
+      schemaVersion: 1 as const,
+      revision: 4,
+      initialized: true,
+      preferences: { appearance: { colorMode: 'dark' as const } },
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        createFetchResponse(
+          createEventChunk(
+            { type: EventTypes.GLOBAL_PREFERENCES_UPDATED, properties: snapshot },
+            { directory: 'global' },
+          ),
+        ),
+      ),
+    )
+
+    const { subscribeToEvents } = await import('./events')
+    const received = await new Promise<{ snapshot: unknown; serverID: string }>((resolve, reject) => {
+      const unsubscribe = subscribeToEvents({
+        onWebUIPreferencesUpdated(value, scope) {
+          unsubscribe()
+          resolve({ snapshot: value, serverID: scope.serverID })
+        },
+        onError(error) {
+          unsubscribe()
+          reject(error)
+        },
+      })
+    })
+
+    expect(received).toEqual({ snapshot, serverID: 'server-a' })
+  })
+
 })

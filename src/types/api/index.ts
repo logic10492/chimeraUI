@@ -134,8 +134,19 @@ export type {
   ServerInstanceDisposedPayload,
   GlobalDisposedPayload,
   EventGapPayload,
+  WebUIPreferencesUpdatedPayload,
 } from './event'
 export { EventTypes } from './event'
+
+export type {
+  WebUIColorMode,
+  WebUIReasoningDisplayMode,
+  WebUIPreferences,
+  WebUIPreferencesSnapshot,
+  WebUIPreferencesUpdate,
+  WebUIPreferencesRevisionConflictData,
+  WebUIPreferencesRevisionConflictResponse,
+} from './preferences'
 
 // Config types
 export type {

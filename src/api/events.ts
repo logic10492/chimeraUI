@@ -779,6 +779,9 @@ function handleEventForSubscriber(payload: GlobalEvent['payload'], callbacks: Ev
     case EventTypes.SERVER_INSTANCE_DISPOSED:
       callbacks.onServerInstanceDisposed?.(payload.properties, scope)
       break
+    case EventTypes.GLOBAL_PREFERENCES_UPDATED:
+      callbacks.onWebUIPreferencesUpdated?.(payload.properties, scope)
+      break
     case EventTypes.GLOBAL_DISPOSED:
       callbacks.onGlobalDisposed?.(payload.properties, scope)
       break

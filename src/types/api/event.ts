@@ -31,6 +31,7 @@ import type { Session } from './session'
 import type { Message, Part } from './message'
 import type { PermissionRequest, QuestionRequest } from './permission'
 import type { Project } from './project'
+import type { WebUIPreferencesSnapshot } from './preferences'
 
 // ============================================
 // Event Payload Types
@@ -99,7 +100,16 @@ export interface EventScope {
 // Global Event Type
 // ============================================
 
-export type GlobalEvent = SDKGlobalEvent
+export type WebUIPreferencesUpdatedPayload = WebUIPreferencesSnapshot
+
+export type GlobalEvent = Omit<SDKGlobalEvent, 'payload'> & {
+  payload:
+    | SDKGlobalEvent['payload']
+    | {
+        type: 'global.preferences.updated'
+        properties: WebUIPreferencesUpdatedPayload
+      }
+}
 
 /**
  * 事件类型常量
@@ -149,6 +159,7 @@ export const EventTypes = {
   SERVER_EVENT_GAP: 'server.event-gap',
   SERVER_INSTANCE_DISPOSED: 'server.instance.disposed',
   GLOBAL_DISPOSED: 'global.disposed',
+  GLOBAL_PREFERENCES_UPDATED: 'global.preferences.updated',
 
   // File events
   FILE_EDITED: 'file.edited',
@@ -208,6 +219,7 @@ export interface EventCallbacks {
   onServerInstanceDisposed?: (data: ServerInstanceDisposedPayload, scope: EventScope) => void
   onGlobalDisposed?: (data: GlobalDisposedPayload, scope: EventScope) => void
   onEventGap?: (data: EventGapPayload, scope: EventScope) => void
+  onWebUIPreferencesUpdated?: (data: WebUIPreferencesUpdatedPayload, scope: EventScope) => void
   onError?: (error: Error) => void
   onReconnected?: (reason: 'network' | 'server-switch', serverID: string) => void
 }

@@ -10,6 +10,7 @@
 
 import { getThemePreset, themeColorsToCSSVars, builtinThemes, DEFAULT_THEME_ID } from '../themes'
 import type { ThemePreset, ThemeColors } from '../themes'
+import type { WebUIPreferences } from '../types/api/preferences'
 
 // ============================================
 // Color Conversion Utility
@@ -450,6 +451,64 @@ class ThemeStore {
   }
   get outlineCurrentHighlight() {
     return this.state.outlineCurrentHighlight
+  }
+
+  getWebUIPreferences(): WebUIPreferences {
+    return {
+      appearance: {
+        presetId: this.state.presetId,
+        colorMode: this.state.colorMode,
+      },
+      chat: {
+        collapseUserMessages: this.state.collapseUserMessages,
+        renderUserMarkdown: this.state.renderUserMarkdown,
+        reasoningDisplayMode: this.state.reasoningDisplayMode,
+      },
+    }
+  }
+
+  applyWebUIPreferences(preferences: WebUIPreferences, colorModeOverride?: ColorMode) {
+    const presetId =
+      typeof preferences.appearance?.presetId === 'string' && getThemePreset(preferences.appearance.presetId)
+        ? preferences.appearance.presetId
+        : DEFAULT_THEME_ID
+    const sharedColorMode = preferences.appearance?.colorMode
+    const colorMode =
+      colorModeOverride ??
+      (sharedColorMode === 'light' || sharedColorMode === 'dark' || sharedColorMode === 'system' ? sharedColorMode : 'system')
+    const collapseUserMessages = preferences.chat?.collapseUserMessages ?? true
+    const renderUserMarkdown = preferences.chat?.renderUserMarkdown ?? DEFAULT_RENDER_USER_MARKDOWN
+    const reasoningDisplayMode =
+      preferences.chat?.reasoningDisplayMode === 'italic' || preferences.chat?.reasoningDisplayMode === 'markdown'
+        ? preferences.chat.reasoningDisplayMode
+        : DEFAULT_REASONING_DISPLAY_MODE
+
+    if (
+      this.state.presetId === presetId &&
+      this.state.colorMode === colorMode &&
+      this.state.collapseUserMessages === collapseUserMessages &&
+      this.state.renderUserMarkdown === renderUserMarkdown &&
+      this.state.reasoningDisplayMode === reasoningDisplayMode
+    ) {
+      return
+    }
+
+    const themeChanged = this.state.presetId !== presetId || this.state.colorMode !== colorMode
+    this.state = {
+      ...this.state,
+      presetId,
+      colorMode,
+      collapseUserMessages,
+      renderUserMarkdown,
+      reasoningDisplayMode,
+    }
+    localStorage.setItem(STORAGE_KEY_PRESET, presetId)
+    localStorage.setItem(STORAGE_KEY_COLOR_MODE, colorMode)
+    localStorage.setItem(STORAGE_KEY_COLLAPSE_USER_MESSAGES, String(collapseUserMessages))
+    localStorage.setItem(STORAGE_KEY_RENDER_USER_MARKDOWN, String(renderUserMarkdown))
+    localStorage.setItem(STORAGE_KEY_REASONING_DISPLAY_MODE, reasoningDisplayMode)
+    if (themeChanged) this.applyTheme()
+    this.emit()
   }
 
   /** 获取当前主题预设（内置主题返回对象，自定义返回 undefined） */
