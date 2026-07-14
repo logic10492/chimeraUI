@@ -16,6 +16,7 @@ export type SectionID =
   | 'lsp'
   | 'attachments'
   | 'runtime'
+  | 'memories'
   | 'experimental'
   | 'compatibility'
   | 'advanced'

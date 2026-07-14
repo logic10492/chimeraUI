@@ -79,6 +79,12 @@ export const SECTION_META: Record<SectionID, { en: string; zh: string; descEn: s
     descEn: 'Tool output limits, context compaction, watcher and enterprise.',
     descZh: '工具输出限制、上下文压缩、文件监听和企业设置。',
   },
+  memories: {
+    en: 'Memories',
+    zh: '记忆',
+    descEn: 'Cross-session memory enablement and dedicated agent tools.',
+    descZh: '跨会话记忆总开关，以及面向 agent 的专用记忆工具。',
+  },
   experimental: {
     en: 'Experimental',
     zh: '实验性',
@@ -114,6 +120,7 @@ export const SECTION_IDS: SectionID[] = [
   'lsp',
   'attachments',
   'runtime',
+  'memories',
   'experimental',
   'compatibility',
   'advanced',
@@ -153,6 +160,7 @@ export const KNOWN_ROOT_KEYS = new Set([
   'enterprise',
   'tool_output',
   'compaction',
+  'memories',
   'experimental',
 ])
 

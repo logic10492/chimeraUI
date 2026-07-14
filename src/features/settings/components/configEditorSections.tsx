@@ -427,6 +427,34 @@ function RuntimeSection({ config, setConfig, lang }: SectionProps) {
   )
 }
 
+function MemoriesSection({ config, setConfig, lang }: SectionProps) {
+  const memories = getObject(config, 'memories')
+  const set = (key: string, value: unknown) => setConfig(setNested(config, ['memories', key], value))
+  const fields: FieldDef[] = [
+    {
+      key: 'enabled',
+      label: 'memories.enabled',
+      desc: tx('Enable Chimera cross-session memory. Defaults to false.', '启用 Chimera 跨会话记忆。默认 false。', lang),
+      control: <BoolField value={memories.enabled} onChange={v => set('enabled', v)} />,
+    },
+    {
+      key: 'dedicated_tools',
+      label: 'memories.dedicated_tools',
+      desc: tx(
+        'Expose agent-facing memory tools (memory_remember, memory_list, memory_forget, memory_read) when memory is enabled. Defaults to false.',
+        '记忆启用时，暴露面向 agent 的记忆工具（memory_remember / memory_list / memory_forget / memory_read）。默认 false。',
+        lang,
+      ),
+      control: <BoolField value={memories.dedicated_tools} onChange={v => set('dedicated_tools', v)} />,
+    },
+  ]
+  return (
+    <SectionShell id="memories" lang={lang}>
+      <DrillFields fields={fields} isConfigured={key => hasNested(config, ['memories', key])} lang={lang} />
+    </SectionShell>
+  )
+}
+
 function ExperimentalSection({ config, setConfig, lang }: SectionProps) {
   const exp = getObject(config, 'experimental')
   const set = (key: string, v: unknown) => setConfig(setNested(config, ['experimental', key], v))
@@ -608,6 +636,8 @@ export function SectionRouter(props: SectionProps & { section: SectionID }) {
       return <AttachmentsSection {...props} />
     case 'runtime':
       return <RuntimeSection {...props} />
+    case 'memories':
+      return <MemoriesSection {...props} />
     case 'experimental':
       return <ExperimentalSection {...props} />
     case 'compatibility':

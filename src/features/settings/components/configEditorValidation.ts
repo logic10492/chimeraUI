@@ -245,6 +245,7 @@ function sectionForValidationPath(path: string): SectionID {
   if (path.startsWith('lsp.')) return 'lsp'
   if (path.startsWith('attachment.')) return 'attachments'
   if (path.startsWith('tool_output.') || path.startsWith('compaction.') || path.startsWith('watcher.') || path.startsWith('enterprise.')) return 'runtime'
+  if (path.startsWith('memories.')) return 'memories'
   if (path.startsWith('experimental.')) return 'experimental'
   if (path === '$schema' || path === 'autoshare' || path === 'layout' || path.startsWith('mode.')) return 'compatibility'
   return 'general'
