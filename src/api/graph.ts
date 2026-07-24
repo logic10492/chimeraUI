@@ -71,8 +71,8 @@ export async function getGraphFileSymbols(
     await getSDKClient(scope).graph.file.symbols({
       ...apiScopeQuery(scope),
       ...params,
-      startLine: params.startLine === undefined ? undefined : String(params.startLine),
-      endLine: params.endLine === undefined ? undefined : String(params.endLine),
+      startLine: params.startLine,
+      endLine: params.endLine,
     }),
   )
 }
@@ -86,7 +86,7 @@ export async function getGraphImpact(
     await getSDKClient(scope).graph.impact({
       ...apiScopeQuery(scope),
       ...params,
-      depth: params.depth === undefined ? undefined : String(params.depth),
+      depth: params.depth,
     }),
   )
 }

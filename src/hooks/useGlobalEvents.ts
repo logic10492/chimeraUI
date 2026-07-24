@@ -21,6 +21,8 @@ import { subscribeToEvents, getSessionStatus, getPendingPermissions, getPendingQ
 import { invalidateRootDirectoryCache } from '../api/file'
 import { replyPermission } from '../api/permission'
 import { autoApproveStore } from '../store/autoApproveStore'
+import { serverDisposedDirectoryStore } from '../store/serverDisposedDirectoryStore'
+import { isSameDirectory } from '../utils'
 import { useNotification } from './useNotification'
 import type { ApiMessage, ApiPart, ApiPermissionRequest, ApiQuestionRequest, EventScope } from '../api/types'
 import type { SessionStatusMap } from '../types/api/session'
@@ -225,8 +227,13 @@ async function fetchActiveScopeData(serverID: string, directories?: string[]) {
   }
 }
 
-/**
- * 检查 sessionID 是否属于当前活跃的 session family。
+// 与服务器端 InstanceStore.LRU_DISPOSE_REASONS 对应：只有 LRU 驱逐才标记休眠，
+// reload / 显式 dispose 仍按原逻辑立即 resync。
+const LRU_DISPOSE_REASONS = new Set(['idle-sweep', 'post-load-lru', 'post-request-lru'])
+// 同一 scope 的连续 dispose resync 在该窗口内合并为一次拉取
+const DISPOSE_RESYNC_DEBOUNCE_MS = 250
+
+/** 检查 sessionID 是否属于当前活跃的 session family。
  * 依次检查：
  *   1. focused pane 的 session family
  *   2. pub/sub 消费者注册表（其他 pane）
@@ -267,8 +274,9 @@ function isSessionDirectlyOpen(sessionId: string): boolean {
   return false
 }
 
-export function useGlobalEvents(directories?: string[]) {
+export function useGlobalEvents(directories?: string[], options?: { pinnedDirectories?: string[] }) {
   const directoriesRef = useRef<string[] | undefined>(directories)
+  const pinnedDirectoriesRef = useRef<string[] | undefined>(options?.pinnedDirectories)
   const refreshRef = useRef<((strategy?: 'replace' | 'merge') => void) | null>(null)
   const initializedDirectoriesRef = useRef(false)
   const { sendNotification } = useNotification()
@@ -280,6 +288,7 @@ export function useGlobalEvents(directories?: string[]) {
     let fetchVersion = 0
     let activeFetchVersion = 0
     let disposed = false
+    let disposeResyncTimer: ReturnType<typeof setTimeout> | undefined
     const latePendingRequests = new Map<
       string,
       {
@@ -307,7 +316,20 @@ export function useGlobalEvents(directories?: string[]) {
       })
     }
 
-    // ============================================
+    // 自动全量刷新要跳过的“休眠”目录：被服务器 LRU 驱逐且用户当前没有在看。
+    // 用户正在看的目录（route/current/pane）仍然拉取——那是真实需求，服务器端
+    // 振荡保护会阻止它再次被立即驱逐。
+    const getFetchDirectories = () => {
+      const serverID = serverStore.getActiveServerId()
+      const dirs = directoriesRef.current
+      if (!dirs || dirs.length === 0) return dirs
+      return dirs.filter(directory => {
+        if (!serverDisposedDirectoryStore.isDisposed(serverID, directory)) return true
+        return pinnedDirectoriesRef.current?.some(pinned => isSameDirectory(pinned, directory)) ?? false
+      })
+    }
+
+// ============================================
     // 拉取 session 状态 + pending requests（初始化 & 重连共用）
     // ============================================
 
@@ -315,7 +337,7 @@ export function useGlobalEvents(directories?: string[]) {
       const currentVersion = ++fetchVersion
       const serverID = serverStore.getActiveServerId()
       activeFetchVersion = currentVersion
-      void fetchActiveScopeData(serverID, directoriesRef.current)
+      void fetchActiveScopeData(serverID, getFetchDirectories())
         .then(({ statusMap, permissions, questions, sessionMetaEntries }) => {
           if (disposed || currentVersion !== fetchVersion || serverStore.getActiveServerId() !== serverID) return
           if (strategy === 'merge') {
@@ -394,7 +416,16 @@ export function useGlobalEvents(directories?: string[]) {
       messageStore.markAllSessionsStale()
       invalidateRuntimeScope(scope, event)
       refreshActiveServerHealth()
-      fetchAndInitialize()
+      if (reason === 'dispose') {
+        // 多个目录被连续驱逐时合并为一次拉取，避免 N 个 disposed 事件放大成 N 次全量刷新
+        if (disposeResyncTimer) clearTimeout(disposeResyncTimer)
+        disposeResyncTimer = setTimeout(() => {
+          disposeResyncTimer = undefined
+          fetchAndInitialize()
+        }, DISPOSE_RESYNC_DEBOUNCE_MS)
+      } else {
+        fetchAndInitialize()
+      }
       for (const consumer of sessionConsumers.values()) {
         consumer.callbacks.onReconnected?.(reason, scope.serverID)
       }
@@ -454,8 +485,8 @@ export function useGlobalEvents(directories?: string[]) {
     const approveGlobalPendingPermissions = () => {
       if (!autoApproveStore.approvePendingOnFullAuto || autoApproveStore.fullAutoMode !== 'global') return
 
-      const directoriesToFetch =
-        directoriesRef.current && directoriesRef.current.length > 0 ? directoriesRef.current : [undefined]
+      const fetchDirectories = getFetchDirectories()
+      const directoriesToFetch = fetchDirectories && fetchDirectories.length > 0 ? fetchDirectories : [undefined]
 
       void Promise.all(
         directoriesToFetch.map(async directory => {
@@ -807,6 +838,12 @@ export function useGlobalEvents(directories?: string[]) {
       },
 
       onServerInstanceDisposed: (data, scope) => {
+        // 只有 LRU 驱逐才标记休眠并停止自动重拉；reload/显式 dispose 保持原有 resync 行为。
+        // 旧版本服务器不携带 reason，按 LRU 处理以获得风暴保护。
+        const reason = (data as { reason?: string }).reason
+        if (!reason || LRU_DISPOSE_REASONS.has(reason)) {
+          serverDisposedDirectoryStore.markDisposed(scope.serverID, data.directory)
+        }
         disposeRuntimeScope({ ...scope, directory: data.directory })
       },
 
@@ -835,6 +872,7 @@ export function useGlobalEvents(directories?: string[]) {
 
     return () => {
       disposed = true
+      if (disposeResyncTimer) clearTimeout(disposeResyncTimer)
       if (refreshRef.current === fetchAndInitialize) {
         refreshRef.current = null
       }
@@ -846,10 +884,16 @@ export function useGlobalEvents(directories?: string[]) {
 
   useLayoutEffect(() => {
     directoriesRef.current = directories
+    pinnedDirectoriesRef.current = options?.pinnedDirectories
+    // 用户显式切入的目录视为真实需求：清除休眠标记，允许重新拉取/boot
+    const serverID = serverStore.getActiveServerId()
+    for (const directory of options?.pinnedDirectories ?? []) {
+      serverDisposedDirectoryStore.clear(serverID, directory)
+    }
     if (initializedDirectoriesRef.current) {
       refreshRef.current?.('merge')
       return
     }
     initializedDirectoriesRef.current = true
-  }, [directories])
+  }, [directories, options?.pinnedDirectories])
 }

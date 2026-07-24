@@ -950,4 +950,58 @@ describe('useGlobalEvents', () => {
       expect(playNotificationSoundDedupedMock).not.toHaveBeenCalled()
     },
   )
+
+  it('excludes LRU-disposed directories from automatic refetch until re-pinned', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+
+    const { rerender } = renderHook(({ pinned }) => useGlobalEvents(['/one', '/two'], { pinnedDirectories: pinned }), {
+      initialProps: { pinned: ['/one'] },
+    })
+    await waitFor(() => expect(callbacks).toBeDefined())
+    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalled())
+    getSessionStatusMock.mockClear()
+
+    callbacks!.onServerInstanceDisposed?.({ directory: '/two', reason: 'post-load-lru' } as never, {
+      serverID: 'local',
+      directory: '/two',
+    })
+
+    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalled(), { timeout: 2000 })
+    const directories = getSessionStatusMock.mock.calls.map(call => call[0]?.directory)
+    expect(directories).toContain('/one')
+    expect(directories).not.toContain('/two')
+
+    // 用户切回该目录（进入 pinned）后解除休眠，自动刷新恢复覆盖
+    getSessionStatusMock.mockClear()
+    rerender({ pinned: ['/one', '/two'] })
+    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalled())
+    const revived = getSessionStatusMock.mock.calls.map(call => call[0]?.directory)
+    expect(revived).toContain('/two')
+  })
+
+  it('does not mark directories dormant for non-LRU dispose reasons', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+
+    renderHook(() => useGlobalEvents(['/reload-me']))
+    await waitFor(() => expect(callbacks).toBeDefined())
+    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalled())
+    getSessionStatusMock.mockClear()
+
+    callbacks!.onServerInstanceDisposed?.({ directory: '/reload-me', reason: 'reload' } as never, {
+      serverID: 'local',
+      directory: '/reload-me',
+    })
+
+    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalled(), { timeout: 2000 })
+    const directories = getSessionStatusMock.mock.calls.map(call => call[0]?.directory)
+    expect(directories).toContain('/reload-me')
+  })
 })

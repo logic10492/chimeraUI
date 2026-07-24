@@ -126,8 +126,22 @@ function App() {
     [routeDirectory, currentDirectory, paneControllers, savedDirectories],
   )
 
+  // 用户“在场”的目录（路由/当前/打开的 pane，不含仅保存的项目）。
+  // 被服务器 LRU 驱逐的目录只有不在 pinned 里时才停止自动重拉。
+  const pinnedDirectories = useMemo(
+    () =>
+      collectActiveDirectories({
+        routeDirectory,
+        currentDirectory,
+        paneDirectories: paneControllers
+          .map(controller => controller.effectiveDirectory)
+          .filter((directory): directory is string => Boolean(directory)),
+      }),
+    [routeDirectory, currentDirectory, paneControllers],
+  )
+
   // 全局唯一 SSE 连接。所有 pane 通过 consumer 机制接收自己的 session 事件。
-  useGlobalEvents(activeDirectories)
+  useGlobalEvents(activeDirectories, { pinnedDirectories })
 
   // URL -> focused pane session
   useEffect(() => {

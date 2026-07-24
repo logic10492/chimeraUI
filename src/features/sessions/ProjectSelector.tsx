@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderIcon, GlobeIcon, ChevronDownIcon, PlusIcon, TrashIcon } from '../../components/Icons'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { useIsServerDisposedDirectory } from '../../store/serverDisposedDirectoryStore'
 import type { ApiProject } from '../../api'
 
 // ============================================
@@ -215,6 +216,8 @@ interface ProjectItemProps {
 function ProjectItem({ project, displayName, path, onSelect, onRemove }: ProjectItemProps) {
   const { t } = useTranslation(['commands', 'common'])
   const isGlobal = project.id === 'global'
+  const dormant = useIsServerDisposedDirectory(isGlobal ? undefined : project.worktree)
+
 
   return (
     <div className="group w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-bg-100 transition-colors" onClick={onSelect}>
@@ -237,7 +240,17 @@ function ProjectItem({ project, displayName, path, onSelect, onRemove }: Project
         </div>
 
         <div className="flex-1 min-w-0 text-left">
-          <div className="text-[length:var(--fs-base)] text-text-200 truncate">{displayName}</div>
+          <div className="flex items-center gap-1.5">
+            <div className="text-[length:var(--fs-base)] text-text-200 truncate">{displayName}</div>
+            {dormant && (
+              <span
+                className="shrink-0 rounded px-1 py-px text-[length:var(--fs-xxs)] bg-bg-200 text-text-400"
+                title={t('commands:sessions.projectDormantHint')}
+              >
+                {t('commands:sessions.projectDormant')}
+              </span>
+            )}
+          </div>
           <div className="text-[length:var(--fs-xxs)] text-text-400/60 truncate font-mono">{path}</div>
         </div>
       </button>

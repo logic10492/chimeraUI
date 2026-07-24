@@ -76,6 +76,8 @@
     "noProject": "No project",
     "removeProjectTitle": "Remove Project",
     "removeProjectConfirm": "Remove this project folder from the list? Files won't be deleted.",
+    "projectDormant": "Dormant",
+    "projectDormantHint": "The server evicted this project (LRU limit). Click to reconnect.",
     "groups": {
       "today": "Today",
       "yesterday": "Yesterday",
