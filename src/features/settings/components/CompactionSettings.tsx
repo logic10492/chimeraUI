@@ -6,21 +6,36 @@ import type {
   RemoteCompactionPolicyPatch,
   RemoteCompactionResolution,
 } from '@opencode-ai/sdk/v2'
+import type { ApiProject } from '../../../api'
+import { getCurrentProject } from '../../../api/client'
 import {
   getRemoteCompactionEligibility,
   getRemoteCompactionStatus,
   updateRemoteCompactionEligibility,
   updateRemoteCompactionPolicy,
 } from '../../../api/config'
+import { CheckIcon, FolderIcon, SpinnerIcon } from '../../../components/Icons'
+import { useDirectory } from '../../../contexts/useDirectory'
 import { usePaneController } from '../../../store/paneControllerStore'
 import { usePaneLayout } from '../../../store/paneLayoutStore'
-import { SettingsSection } from './SettingsUI'
+import { getDirectoryName, isSameDirectory, normalizeForComparison } from '../../../utils'
+import { SegmentedControl, SettingsSection } from './SettingsUI'
 
 const protocolChoices = ['v2,legacy', 'v2', 'legacy,v2', 'legacy'] as const
 type ProtocolChoice = (typeof protocolChoices)[number]
 type Selection = { directory: string; providerID: string; modelID: string }
 type StatusIdentity = Selection & { sessionID?: string }
 type StatusEntry = { key: string; value: RemoteCompactionResolution }
+type PolicyMode = RemoteCompactionResolution['configured']['mode']
+type PolicyProtocol = RemoteCompactionResolution['configured']['protocol']
+type PolicyDraft = { directory: string; remote: PolicyMode; remote_protocol: PolicyProtocol }
+type ProjectScopeEntry = { directory: string; project: ApiProject }
+type PolicySaveResult = {
+  status: 'saving' | 'success' | 'error'
+  directory: string
+  projectName: string
+  error?: string
+}
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
@@ -44,7 +59,8 @@ export function CompactionSettings() {
   const { t } = useTranslation(['settings'])
   const paneLayout = usePaneLayout()
   const controller = usePaneController(paneLayout.focusedPaneId)
-  const directory = controller?.effectiveDirectory ?? ''
+  const { currentDirectory } = useDirectory()
+  const directory = controller?.effectiveDirectory || currentDirectory || ''
   const focused = useMemo(
     () =>
       controller?.currentProviderId && controller.currentModelId
@@ -57,13 +73,19 @@ export function CompactionSettings() {
   const [selection, setSelection] = useState<Selection | null>(null)
   const [protocolOverrides, setProtocolOverrides] = useState<Record<string, ProtocolChoice>>({})
   const [status, setStatus] = useState<StatusEntry | null>(null)
+  const [projectScope, setProjectScope] = useState<ProjectScopeEntry | null>(null)
+  const [policyDraft, setPolicyDraft] = useState<PolicyDraft | null>(null)
+  const [policySaveResult, setPolicySaveResult] = useState<PolicySaveResult | null>(null)
+  const [projectScopeError, setProjectScopeError] = useState<{ directory: string; message: string } | null>(null)
   const [eligibilityError, setEligibilityError] = useState<{ directory: string; message: string } | null>(null)
   const [statusError, setStatusError] = useState<{ key: string; message: string } | null>(null)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const [eligibilitySaveError, setEligibilitySaveError] = useState<string | null>(null)
+  const [projectScopeLoading, setProjectScopeLoading] = useState<string | null>(null)
   const [eligibilityLoading, setEligibilityLoading] = useState<string | null>(null)
   const [statusLoading, setStatusLoading] = useState<string | null>(null)
   const [policySaving, setPolicySaving] = useState(false)
   const [eligibilitySaving, setEligibilitySaving] = useState(false)
+  const projectScopeRequestID = useRef(0)
   const eligibilityRequestID = useRef(0)
   const statusRequestID = useRef(0)
   const policySavingRef = useRef(false)
@@ -105,6 +127,43 @@ export function CompactionSettings() {
   const isStatusLoading = statusLoading === currentStatusKey
   const isEligibilityLoading = eligibilityLoading === directory
   const visibleEligibilityError = eligibilityError?.directory === directory ? eligibilityError.message : null
+  const currentProject = projectScope?.directory === directory ? projectScope.project : null
+  const projectName =
+    currentProject?.name?.trim() ||
+    getDirectoryName(currentProject?.worktree || directory) ||
+    t('compaction.scopeUnknown')
+  const projectWorktree = currentProject?.worktree || directory
+  const normalizedDirectory = normalizeForComparison(directory)
+  const matchingSandbox = currentProject?.sandboxes.find(sandbox => {
+    const normalizedSandbox = normalizeForComparison(sandbox)
+    return (
+      normalizedSandbox &&
+      (normalizedDirectory === normalizedSandbox || normalizedDirectory.startsWith(`${normalizedSandbox}/`))
+    )
+  })
+  const scopeKind = currentProject
+    ? isSameDirectory(directory, currentProject.worktree)
+      ? t('compaction.scopeProjectRoot')
+      : matchingSandbox
+        ? t('compaction.scopeSandbox')
+        : t('compaction.scopeSubdirectory')
+    : t('compaction.scopeDirectory')
+  const visibleProjectScopeError = projectScopeError?.directory === directory ? projectScopeError.message : null
+  const isProjectScopeLoading = projectScopeLoading === directory
+  const activePolicyDraft = policyDraft?.directory === directory ? policyDraft : null
+  const policyMode = activePolicyDraft?.remote ?? visibleStatus?.configured.mode ?? 'auto'
+  const policyProtocol = activePolicyDraft?.remote_protocol ?? visibleStatus?.configured.protocol ?? 'auto'
+  const policyDirty =
+    !!visibleStatus &&
+    (policyMode !== visibleStatus.configured.mode || policyProtocol !== visibleStatus.configured.protocol)
+  const visiblePolicySaveResult = policySaveResult?.directory === directory ? policySaveResult : null
+  const eligibilityState = selected ? t(`compaction.eligibilityStates.${selected.modelRemoteCompaction}`) : ''
+  const eligibilityStateClass =
+    selected?.modelRemoteCompaction === 'enabled'
+      ? 'text-success-100'
+      : selected?.modelRemoteCompaction === 'unset'
+        ? 'text-warning-100'
+        : 'text-text-100'
 
   currentDirectoryRef.current = directory
   currentIdentityRef.current = currentStatusIdentity
@@ -209,22 +268,79 @@ export function CompactionSettings() {
       })
   }, [])
 
+  const loadProjectScope = useCallback(async (targetDirectory = currentDirectoryRef.current) => {
+    if (!targetDirectory) return
+    const request = ++projectScopeRequestID.current
+    setProjectScopeError(null)
+    setProjectScopeLoading(targetDirectory)
+    return getCurrentProject(targetDirectory)
+      .then(project => {
+        if (request !== projectScopeRequestID.current || currentDirectoryRef.current !== targetDirectory) return
+        setProjectScope({ directory: targetDirectory, project })
+      })
+      .catch(error => {
+        if (request !== projectScopeRequestID.current || currentDirectoryRef.current !== targetDirectory) return
+        setProjectScopeError({ directory: targetDirectory, message: errorMessage(error) })
+      })
+      .finally(() => {
+        if (request === projectScopeRequestID.current) setProjectScopeLoading(null)
+      })
+  }, [])
+
   useEffect(() => {
-    queueMicrotask(() => void loadEligibility(directory))
-  }, [directory, loadEligibility])
+    queueMicrotask(() => {
+      if (currentDirectoryRef.current !== directory) return
+      setPolicyDraft(null)
+      setPolicySaveResult(null)
+      void loadProjectScope(directory)
+      void loadEligibility(directory)
+    })
+  }, [directory, loadEligibility, loadProjectScope])
 
   useEffect(() => {
     queueMicrotask(() => void requestStatus(currentIdentityRef.current))
   }, [currentStatusKey, requestStatus])
 
-  const savePolicy = async (patch: RemoteCompactionPolicyPatch) => {
-    if (policySavingRef.current || !directory || !visibleStatus) return
+  const updatePolicyDraft = (patch: Partial<Omit<PolicyDraft, 'directory'>>) => {
+    if (!directory || !visibleStatus) return
+    setPolicySaveResult(null)
+    setPolicyDraft(current => ({
+      ...(current?.directory === directory
+        ? current
+        : {
+            directory,
+            remote: visibleStatus.configured.mode,
+            remote_protocol: visibleStatus.configured.protocol,
+          }),
+      ...patch,
+    }))
+  }
+
+  const savePolicy = async () => {
+    if (policySavingRef.current || !directory || !visibleStatus || !policyDirty) return
+    const targetDirectory = directory
+    const targetProjectName = projectName
+    const patch: RemoteCompactionPolicyPatch = {
+      ...(policyMode !== visibleStatus.configured.mode ? { remote: policyMode } : {}),
+      ...(policyProtocol !== visibleStatus.configured.protocol ? { remote_protocol: policyProtocol } : {}),
+    }
     policySavingRef.current = true
     setPolicySaving(true)
-    setSaveError(null)
-    return updateRemoteCompactionPolicy(patch, undefined, directory)
+    setPolicySaveResult({ status: 'saving', directory: targetDirectory, projectName: targetProjectName })
+    return updateRemoteCompactionPolicy(patch, undefined, targetDirectory)
       .then(() => refreshCurrentStatus())
-      .catch(error => setSaveError(errorMessage(error)))
+      .then(() => {
+        setPolicyDraft(current => (current?.directory === targetDirectory ? null : current))
+        setPolicySaveResult({ status: 'success', directory: targetDirectory, projectName: targetProjectName })
+      })
+      .catch(error =>
+        setPolicySaveResult({
+          status: 'error',
+          directory: targetDirectory,
+          projectName: targetProjectName,
+          error: errorMessage(error),
+        }),
+      )
       .finally(() => {
         policySavingRef.current = false
         setPolicySaving(false)
@@ -236,7 +352,7 @@ export function CompactionSettings() {
     const targetDirectory = selectedIdentity.directory
     eligibilitySavingRef.current = true
     setEligibilitySaving(true)
-    setSaveError(null)
+    setEligibilitySaveError(null)
     const patch: RemoteCompactionEligibilityPatch = {
       providerID: selected.providerID,
       modelID: selected.modelID,
@@ -245,7 +361,7 @@ export function CompactionSettings() {
     }
     return updateRemoteCompactionEligibility(patch, targetDirectory)
       .then(() => Promise.all([loadEligibility(currentDirectoryRef.current), refreshCurrentStatus()]))
-      .catch(error => setSaveError(errorMessage(error)))
+      .catch(error => setEligibilitySaveError(errorMessage(error)))
       .finally(() => {
         eligibilitySavingRef.current = false
         setEligibilitySaving(false)
@@ -269,7 +385,7 @@ export function CompactionSettings() {
         [t('compaction.credential'), visibleStatus.credential],
         [t('compaction.protocolOrder'), visibleStatus.protocols.join(' → ') || t('compaction.none')],
         [t('compaction.localFallback'), String(visibleStatus.localFallback)],
-        [t('compaction.reason'), visibleStatus.reason],
+        [t('compaction.reason'), t(`compaction.reasons.${visibleStatus.reason}`)],
         [t('compaction.lock'), lock],
         [t('compaction.replay'), `${visibleStatus.replay.mode} · ${visibleStatus.replay.reason}`],
       ]
@@ -277,53 +393,156 @@ export function CompactionSettings() {
 
   return (
     <div>
+      <section aria-labelledby="compaction-scope-title" className="mb-7 border-b border-border-200/50 pb-7">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <FolderIcon size={18} className="mt-0.5 shrink-0 text-text-400" />
+            <div className="min-w-0">
+              <p id="compaction-scope-title" className="text-[length:var(--fs-xs)] font-medium text-text-400">
+                {t('compaction.scopeTitle')}
+              </p>
+              <h2 className="mt-0.5 text-[length:var(--fs-base)] font-semibold text-text-100">{projectName}</h2>
+            </div>
+          </div>
+          <span className="rounded-md border border-border-200 bg-bg-100 px-2 py-1 text-[length:var(--fs-xs)] font-medium text-text-300">
+            {scopeKind}
+          </span>
+        </div>
+        <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="min-w-0">
+            <dt className="text-[length:var(--fs-xs)] text-text-400">{t('compaction.scopeProjectWorktree')}</dt>
+            <dd className="mt-1 break-all font-mono text-[length:var(--fs-sm)] text-text-100">
+              {projectWorktree || t('compaction.scopeUnavailable')}
+            </dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-[length:var(--fs-xs)] text-text-400">{t('compaction.scopeDirectoryLabel')}</dt>
+            <dd className="mt-1 break-all font-mono text-[length:var(--fs-sm)] text-text-100">
+              {directory || t('compaction.scopeUnavailable')}
+            </dd>
+          </div>
+        </dl>
+        {isProjectScopeLoading && (
+          <p role="status" className="mt-3 text-[length:var(--fs-xs)] text-text-400">
+            {t('compaction.scopeLoading')}
+          </p>
+        )}
+        {visibleProjectScopeError && (
+          <p role="alert" className="mt-3 text-[length:var(--fs-xs)] text-warning-100">
+            {t('compaction.scopeLoadError', { error: visibleProjectScopeError })}
+          </p>
+        )}
+      </section>
+
       <SettingsSection title={t('compaction.policy')}>
         <p className="text-[length:var(--fs-sm)] text-text-400">{t('compaction.policyDesc')}</p>
         {visibleStatus ? (
           <>
-            <label className="flex flex-col gap-2 text-[length:var(--fs-md)] font-medium text-text-100">
-              {t('compaction.configuredPolicy')}
-              <select
-                aria-label={t('compaction.configuredPolicy')}
-                value={visibleStatus.configured.mode}
-                disabled={policySaving}
-                onChange={event =>
-                  void savePolicy({ remote: event.target.value as RemoteCompactionPolicyPatch['remote'] })
-                }
-                className="rounded-lg border border-border-200 bg-bg-100 px-3 py-2 text-text-100 disabled:opacity-50"
+            <div className="grid gap-4 border-y border-border-200/50 py-4 sm:grid-cols-2">
+              <div>
+                <p className="text-[length:var(--fs-xs)] font-medium text-text-400">
+                  {t('compaction.savedPolicyIntent')}
+                </p>
+                <p className="mt-1 text-[length:var(--fs-md)] font-semibold text-text-100">
+                  {t(`compaction.policyIntents.${visibleStatus.configured.mode}`)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[length:var(--fs-xs)] font-medium text-text-400">
+                  {t('compaction.effectiveResult')}
+                </p>
+                <p
+                  className={`mt-1 flex items-center gap-2 text-[length:var(--fs-md)] font-semibold ${
+                    visibleStatus.mode === 'remote' ? 'text-success-100' : 'text-warning-100'
+                  }`}
+                >
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-current" />
+                  {visibleStatus.mode === 'remote' ? t('compaction.effectiveRemote') : t('compaction.effectiveLocal')}
+                </p>
+                <p className="mt-1 break-words text-[length:var(--fs-xs)] text-text-400">
+                  {t('compaction.effectiveFor', {
+                    identity: `${visibleStatus.requested.providerID}/${visibleStatus.requested.modelID}`,
+                  })}
+                </p>
+                <p className="mt-1 break-words text-[length:var(--fs-xs)] text-text-400">
+                  {t(`compaction.reasons.${visibleStatus.reason}`)}
+                  {visibleStatus.protocols.length > 0 ? ` · ${visibleStatus.protocols.join(' → ')}` : ''}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <fieldset disabled={policySaving || !directory} className={policySaving ? 'opacity-60' : ''}>
+                <legend className="mb-2 text-[length:var(--fs-md)] font-medium text-text-100">
+                  {t('compaction.configuredPolicy')}
+                </legend>
+                <SegmentedControl
+                  value={policyMode}
+                  options={[
+                    { value: 'auto', label: t('compaction.policyAuto') },
+                    { value: 'on', label: t('compaction.policyOn') },
+                    { value: 'off', label: t('compaction.policyOff') },
+                  ]}
+                  onChange={remote => updatePolicyDraft({ remote })}
+                />
+              </fieldset>
+              <fieldset disabled={policySaving || !directory} className={policySaving ? 'opacity-60' : ''}>
+                <legend className="mb-2 text-[length:var(--fs-md)] font-medium text-text-100">
+                  {t('compaction.configuredProtocol')}
+                </legend>
+                <SegmentedControl
+                  value={policyProtocol}
+                  options={[
+                    { value: 'auto', label: t('compaction.protocolAuto') },
+                    { value: 'v2', label: t('compaction.protocolV2') },
+                    { value: 'legacy', label: t('compaction.protocolLegacy') },
+                  ]}
+                  onChange={remote_protocol => updatePolicyDraft({ remote_protocol })}
+                />
+              </fieldset>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p
+                aria-live="polite"
+                className={`min-h-5 text-[length:var(--fs-xs)] ${policyDirty ? 'text-warning-100' : 'text-text-400'}`}
               >
-                <option value="auto">{t('compaction.policyAuto')}</option>
-                <option value="on">{t('compaction.policyOn')}</option>
-                <option value="off">{t('compaction.policyOff')}</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-2 text-[length:var(--fs-md)] font-medium text-text-100">
-              {t('compaction.configuredProtocol')}
-              <select
-                aria-label={t('compaction.configuredProtocol')}
-                value={visibleStatus.configured.protocol}
-                disabled={policySaving}
-                onChange={event =>
-                  void savePolicy({
-                    remote_protocol: event.target.value as RemoteCompactionPolicyPatch['remote_protocol'],
-                  })
-                }
-                className="rounded-lg border border-border-200 bg-bg-100 px-3 py-2 text-text-100 disabled:opacity-50"
+                {policyDirty ? t('compaction.unsavedPolicy') : t('compaction.policyUpToDate')}
+              </p>
+              <button
+                type="button"
+                disabled={!policyDirty || policySaving || !directory}
+                aria-busy={policySaving}
+                onClick={() => void savePolicy()}
+                className="inline-flex min-h-9 items-center justify-center gap-2 rounded-md bg-accent-main-100 px-3 py-2 text-[length:var(--fs-sm)] font-medium text-white transition-colors hover:bg-accent-main-200 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <option value="auto">{t('compaction.protocolAuto')}</option>
-                <option value="v2">{t('compaction.protocolV2')}</option>
-                <option value="legacy">{t('compaction.protocolLegacy')}</option>
-              </select>
-            </label>
+                {policySaving ? <SpinnerIcon size={14} className="animate-spin" /> : <CheckIcon size={14} />}
+                {visiblePolicySaveResult?.status === 'saving'
+                  ? t('compaction.savingToProject', { project: visiblePolicySaveResult.projectName })
+                  : t('compaction.applyPolicy', { project: projectName })}
+              </button>
+            </div>
+            {visiblePolicySaveResult?.status === 'success' && (
+              <p role="status" className="text-[length:var(--fs-xs)] text-success-100">
+                {t('compaction.savedToScope', {
+                  project: visiblePolicySaveResult.projectName,
+                  directory: visiblePolicySaveResult.directory,
+                })}
+              </p>
+            )}
+            {visiblePolicySaveResult?.status === 'error' && (
+              <p role="alert" className="text-[length:var(--fs-xs)] text-danger-100">
+                {t('compaction.saveToScopeError', {
+                  project: visiblePolicySaveResult.projectName,
+                  directory: visiblePolicySaveResult.directory,
+                  error: visiblePolicySaveResult.error,
+                })}
+              </p>
+            )}
           </>
         ) : (
           <p className="text-[length:var(--fs-sm)] text-text-400">
             {isStatusLoading ? t('compaction.loading') : t('compaction.noStatus')}
-          </p>
-        )}
-        {policySaving && (
-          <p role="status" className="text-[length:var(--fs-xs)] text-text-400">
-            {t('compaction.saving')}
           </p>
         )}
       </SettingsSection>
@@ -421,8 +640,8 @@ export function CompactionSettings() {
                   <dt className="text-[length:var(--fs-sm)] font-medium text-text-300">
                     {t('compaction.modelEligibility')}
                   </dt>
-                  <dd className="font-mono text-[length:var(--fs-sm)] text-text-100">
-                    {selected.modelRemoteCompaction}
+                  <dd className={`font-mono text-[length:var(--fs-sm)] ${eligibilityStateClass}`}>
+                    {eligibilityState}
                   </dd>
                 </dl>
                 {!selected.configurable && (
@@ -522,9 +741,9 @@ export function CompactionSettings() {
           <p className="text-[length:var(--fs-sm)] text-text-400">{t('compaction.noStatus')}</p>
         )}
       </SettingsSection>
-      {saveError && (
+      {eligibilitySaveError && (
         <p role="alert" className="px-1 text-[length:var(--fs-sm)] text-danger-100">
-          {t('compaction.saveError', { error: saveError })}
+          {t('compaction.saveError', { error: eligibilitySaveError })}
         </p>
       )}
     </div>
