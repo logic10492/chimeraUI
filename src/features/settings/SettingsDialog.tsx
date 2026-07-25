@@ -14,6 +14,7 @@ import {
   LayersIcon,
   QuestionIcon,
   CogIcon,
+  ArchiveIcon,
 } from '../../components/Icons'
 import { useIsMobile } from '../../hooks'
 import { isTauriDesktop } from '../../utils/tauri'
@@ -29,6 +30,7 @@ import { ServersSettings } from './components/ServersSettings'
 import { WorkspaceSettings } from './components/WorkspaceSettings'
 import { ConfigSettings } from './components/ConfigSettings'
 import { ProviderSettings } from './components/ProviderSettings'
+import { CompactionSettings } from './components/CompactionSettings'
 
 // ============================================
 // Types
@@ -41,6 +43,7 @@ export type SettingsTab =
   | 'models'
   | 'providers'
   | 'notifications'
+  | 'compaction'
   | 'service'
   | 'config'
   | 'servers'
@@ -67,6 +70,7 @@ const TAB_ICONS: Record<SettingsTab, React.ReactNode> = {
   appearance: <SunIcon size={15} />,
   workspace: <LayersIcon size={15} />,
   notifications: <BellIcon size={15} />,
+  compaction: <ArchiveIcon size={15} />,
   service: <PlugIcon size={15} />,
   config: <CogIcon size={15} />,
   keybindings: <KeyboardIcon size={15} />,
@@ -79,6 +83,7 @@ const TAB_IDS: SettingsTab[] = [
   'providers',
   'agent',
   'chat',
+  'compaction',
   'workspace',
   'appearance',
   'notifications',
@@ -97,6 +102,7 @@ const TAB_LABEL_KEYS: Record<SettingsTab, string> = {
   appearance: 'tabs.appearance',
   workspace: 'tabs.workspace',
   notifications: 'tabs.notifications',
+  compaction: 'tabs.compaction',
   service: 'tabs.service',
   config: 'tabs.config',
   keybindings: 'tabs.shortcuts',
@@ -112,6 +118,7 @@ const TAB_DESC_KEYS: Record<SettingsTab, string> = {
   appearance: 'tabs.appearanceDesc',
   workspace: 'tabs.workspaceDesc',
   notifications: 'tabs.notificationsDesc',
+  compaction: 'tabs.compactionDesc',
   service: 'tabs.serviceDesc',
   config: 'tabs.configDesc',
   keybindings: 'tabs.shortcutsDesc',
@@ -121,7 +128,7 @@ const TAB_DESC_KEYS: Record<SettingsTab, string> = {
 const GROUP_DEFS: { labelKey: string; tabs: SettingsTab[] }[] = [
   {
     labelKey: 'groups.core',
-    tabs: ['servers', 'providers', 'models', 'agent', 'chat', 'workspace', 'appearance', 'notifications'],
+    tabs: ['servers', 'providers', 'models', 'agent', 'chat', 'compaction', 'workspace', 'appearance', 'notifications'],
   },
   { labelKey: 'groups.advanced', tabs: ['service', 'config', 'keybindings', 'about'] },
 ]
@@ -144,6 +151,8 @@ function TabContent({ tab }: { tab: SettingsTab }) {
       return <ProviderSettings />
     case 'notifications':
       return <NotificationSettings />
+    case 'compaction':
+      return <CompactionSettings />
     case 'service':
       return <ServiceSettings />
     case 'config':

@@ -98,6 +98,8 @@ export function validateConfig(config: Config, lang: string, original?: Config):
   for (const key of ['tail_turns', 'preserve_recent_tokens', 'reserved']) {
     if (compaction[key] !== undefined && !isNonNegativeInteger(compaction[key])) add(`compaction.${key}`, 'must be a non-negative integer', '必须是非负整数')
   }
+  if (compaction.remote !== undefined && !['auto', 'on', 'off'].includes(String(compaction.remote))) add('compaction.remote', 'must be auto, on, or off', '必须是 auto、on 或 off')
+  if (compaction.remote_protocol !== undefined && !['auto', 'v2', 'legacy'].includes(String(compaction.remote_protocol))) add('compaction.remote_protocol', 'must be auto, v2, or legacy', '必须是 auto、v2 或 legacy')
 
   const commands = getObject(config, 'command')
   for (const [commandID, commandValue] of Object.entries(commands)) {
@@ -119,6 +121,15 @@ export function validateConfig(config: Config, lang: string, original?: Config):
   for (const [providerID, providerValue] of Object.entries(providers)) {
     const provider = isRecord(providerValue) ? providerValue : {}
     for (const key of ['env', 'whitelist', 'blacklist']) if (provider[key] !== undefined) requireStringArray(`provider.${providerID}.${key}`, provider[key])
+    if (provider.wire_api !== undefined && !['chat', 'responses'].includes(String(provider.wire_api))) add(`provider.${providerID}.wire_api`, 'must be chat or responses', '必须是 chat 或 responses')
+    if (provider.remote_compaction !== undefined) {
+      const capability = isRecord(provider.remote_compaction) ? provider.remote_compaction : {}
+      if (!isRecord(provider.remote_compaction)) add(`provider.${providerID}.remote_compaction`, 'must be an object', '必须是对象')
+      if (capability.profile !== 'codex-responses') add(`provider.${providerID}.remote_compaction.profile`, 'must be codex-responses', '必须是 codex-responses')
+      const protocols = capability.protocols
+      if (!Array.isArray(protocols) || protocols.length < 1 || protocols.length > 2 || protocols.some(protocol => !['v2', 'legacy'].includes(String(protocol))) || new Set(protocols).size !== protocols.length) add(`provider.${providerID}.remote_compaction.protocols`, 'must be an ordered list of one or both of v2 and legacy', '必须是包含 v2 和/或 legacy 的有序列表')
+      if (capability.auth !== 'provider-bearer') add(`provider.${providerID}.remote_compaction.auth`, 'must be provider-bearer', '必须是 provider-bearer')
+    }
     const options = getObject(provider, 'options')
     if (options.headers !== undefined) requireStringMap(`provider.${providerID}.options.headers`, options.headers)
     for (const key of ['timeout', 'headerTimeout']) {
@@ -129,6 +140,8 @@ export function validateConfig(config: Config, lang: string, original?: Config):
     const models = getObject(provider, 'models')
     for (const [modelID, modelValue] of Object.entries(models)) {
       const model = isRecord(modelValue) ? modelValue : {}
+      if (model.wire_api !== undefined && !['chat', 'responses'].includes(String(model.wire_api))) add(`provider.${providerID}.models.${modelID}.wire_api`, 'must be chat or responses', '必须是 chat 或 responses')
+      if (model.remote_compaction !== undefined && typeof model.remote_compaction !== 'boolean') add(`provider.${providerID}.models.${modelID}.remote_compaction`, 'must be a boolean', '必须是布尔值')
       if (model.status !== undefined && !MODEL_STATUS.includes(String(model.status))) add(`provider.${providerID}.models.${modelID}.status`, 'must be active, alpha, beta, or deprecated', '必须是 active、alpha、beta 或 deprecated')
       const cost = getObject(model, 'cost')
       if ('cost' in model) {

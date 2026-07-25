@@ -158,6 +158,8 @@ function ProviderDetail({
     { key: 'npm', label: 'npm', desc: tx('npm package implementing the AI SDK provider.', '实现该 AI SDK provider 的 npm 包。', lang), control: <TextField value={providerValue.npm} onChange={v => setProvider({ ...providerValue, npm: v })} mono /> },
     { key: 'api', label: 'api', desc: tx('API base identifier for this provider.', '该渠道的 API 标识。', lang), control: <TextField value={providerValue.api} onChange={v => setProvider({ ...providerValue, api: v })} mono /> },
     { key: 'id', label: 'id', desc: tx('Provider id override.', '渠道 id 覆盖。', lang), control: <TextField value={providerValue.id} onChange={v => setProvider({ ...providerValue, id: v })} mono /> },
+    { key: 'wire_api', label: 'wire_api', desc: tx('Wire protocol used for model requests.', '模型请求使用的线路协议。', lang), control: <Select value={providerValue.wire_api} options={enumChoices(['chat', 'responses'])} onChange={v => setProvider({ ...providerValue, wire_api: v })} /> },
+    { key: 'remote_compaction', label: 'remote_compaction', desc: tx('Explicit provider capability metadata for remote compaction.', '远程压缩的显式渠道能力元数据。', lang), drill: { title: 'remote_compaction', preview: previewValue(providerValue.remote_compaction, lang), render: () => <RemoteCompactionCapabilityEditor value={providerValue.remote_compaction} onChange={v => setProvider({ ...providerValue, remote_compaction: v })} lang={lang} /> } },
     { key: 'env', label: 'env', desc: tx('Environment variables that hold the API key.', '存放 API key 的环境变量名。', lang), control: <StringListField value={providerValue.env} onChange={v => setProvider({ ...providerValue, env: v })} mono /> },
     { key: 'whitelist', label: 'whitelist', desc: tx('Only expose these models from this provider.', '只暴露该渠道的这些模型。', lang), control: <StringListField value={providerValue.whitelist} onChange={v => setProvider({ ...providerValue, whitelist: v })} mono /> },
     { key: 'blacklist', label: 'blacklist', desc: tx('Hide these models from this provider.', '隐藏该渠道的这些模型。', lang), control: <StringListField value={providerValue.blacklist} onChange={v => setProvider({ ...providerValue, blacklist: v })} mono /> },
@@ -322,6 +324,28 @@ function ProviderModels({
   )
 }
 
+function RemoteCompactionCapabilityEditor({ value, onChange, lang }: { value: unknown; onChange: (value: JsonRecord) => void; lang: Lang }) {
+  const rec = isRecord(value) ? value : {}
+  const protocolValue = asStringArray(rec.protocols).join(',')
+  const fields: FieldDef[] = [
+    { key: 'profile', label: 'profile', desc: tx('Remote compaction capability profile.', '远程压缩能力配置档。', lang), control: <Select value={rec.profile} options={enumChoices(['codex-responses'])} onChange={v => onChange({ ...rec, profile: v })} /> },
+    {
+      key: 'protocols',
+      label: 'protocols',
+      desc: tx('Ordered supported protocol list.', '按优先级排列的支持协议列表。', lang),
+      control: (
+        <Select
+          value={protocolValue}
+          options={enumChoices(['v2', 'legacy', 'v2,legacy', 'legacy,v2'])}
+          onChange={v => onChange({ ...rec, protocols: v.split(',') })}
+        />
+      ),
+    },
+    { key: 'auth', label: 'auth', desc: tx('Authentication source for remote compaction.', '远程压缩的认证来源。', lang), control: <Select value={rec.auth} options={enumChoices(['provider-bearer'])} onChange={v => onChange({ ...rec, auth: v })} /> },
+  ]
+  return <DrillFields fields={fields} isConfigured={key => key in rec} lang={lang} />
+}
+
 function ProviderOptionsEditor({ value, onChange, lang }: { value: unknown; onChange: (value: JsonRecord) => void; lang: Lang }) {
   const rec = isRecord(value) ? value : {}
   const known = ['apiKey', 'baseURL', 'enterpriseUrl', 'setCacheKey', 'timeout', 'headerTimeout', 'chunkTimeout', 'headers']
@@ -361,6 +385,8 @@ function ModelEditor({ value, onChange, lang }: { value: JsonRecord; onChange: (
   const limitMissing = ['context', 'output'].filter(key => limit[key] === undefined)
   const set = (key: string, v: unknown) => onChange({ ...value, [key]: v })
   const fields: FieldDef[] = [
+    { key: 'wire_api', label: 'wire_api', desc: tx('Wire protocol override for this model.', '该模型的线路协议覆盖。', lang), control: <Select value={value.wire_api} options={enumChoices(['chat', 'responses'])} onChange={v => set('wire_api', v)} /> },
+    { key: 'remote_compaction', label: 'remote_compaction', desc: tx('Explicitly enable or disable remote compaction for this model.', '为该模型显式启用或禁用远程压缩。', lang), control: <BoolField value={value.remote_compaction} onChange={v => set('remote_compaction', v)} /> },
     { key: 'id', label: 'id', desc: tx('Provider-native model id override.', '渠道原生模型 id 覆盖。', lang), control: <TextField value={value.id} onChange={v => set('id', v)} mono /> },
     { key: 'name', label: 'name', desc: tx('Display name for the model.', '模型显示名。', lang), control: <TextField value={value.name} onChange={v => set('name', v)} /> },
     { key: 'family', label: 'family', desc: tx('Model family/series.', '模型系列。', lang), control: <TextField value={value.family} onChange={v => set('family', v)} /> },

@@ -647,6 +647,7 @@ export const ChatPane = memo(function ChatPane({
 
   const contextLimit = currentModel?.contextLimit
   const currentProviderId = currentModel?.providerId
+  const currentModelId = currentModel?.id
 
   const controllerActionsRef = useRef({
     newSession: handleNewSession,
@@ -712,6 +713,7 @@ export const ChatPane = memo(function ChatPane({
       effectiveDirectory: effectiveDirectory || '',
       contextLimit,
       currentProviderId,
+      currentModelId,
       newSession: stableControllerActions.newSession,
       archiveSession: stableControllerActions.archiveSession,
       previousSession: stableControllerActions.previousSession,
@@ -729,6 +731,7 @@ export const ChatPane = memo(function ChatPane({
     effectiveDirectory,
     contextLimit,
     currentProviderId,
+    currentModelId,
     stableControllerActions,
     isStreaming,
   ])
