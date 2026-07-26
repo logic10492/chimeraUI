@@ -77,6 +77,7 @@ export function WorkspaceSettings() {
           <p className="text-[length:var(--fs-sm)] text-text-400 mb-3">{t('appearance.diffStyleDesc')}</p>
           <SegmentedControl
             value={diffStyle}
+            ariaLabel={t('appearance.diffStyle')}
             options={[
               { value: 'markers', label: t('appearance.diffStyleMarkers') },
               { value: 'changeBars', label: t('appearance.diffStyleChangeBars') },

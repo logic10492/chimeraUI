@@ -4,6 +4,7 @@ import {
   getConfig,
   getProviderConfigs,
   getRemoteCompactionEligibility,
+  getRemoteCompactionPolicy,
   getRemoteCompactionStatus,
   providerCatalog,
   providerModelChoices,
@@ -12,23 +13,20 @@ import {
   updateRemoteCompactionPolicy,
 } from './config'
 
-const { client, getSDKClientMock } = vi.hoisted(() => {
+const { client, getSDKClientMock, transport } = vi.hoisted(() => {
+  const transport = {
+    get: vi.fn(),
+    patch: vi.fn(),
+  }
   const client = {
+    client: transport,
     config: {
       get: vi.fn(),
       update: vi.fn(),
       providers: vi.fn(),
-      remoteCompaction: {
-        status: vi.fn(),
-        update: vi.fn(),
-        eligibility: {
-          list: vi.fn(),
-          update: vi.fn(),
-        },
-      },
     },
   }
-  return { client, getSDKClientMock: vi.fn(() => client) }
+  return { client, getSDKClientMock: vi.fn(() => client), transport }
 })
 
 vi.mock('./sdk', () => ({
@@ -85,41 +83,59 @@ describe('config provider response parsing', () => {
   it('routes remote compaction status through focused session directory scope with exact identity query', async () => {
     const scope = { serverID: 'remote', directory: '/workspace/project' }
     const status = { mode: 'local' }
-    client.config.remoteCompaction.status.mockResolvedValue({ data: status })
+    transport.get.mockResolvedValue({ data: status })
 
     await expect(
       getRemoteCompactionStatus({ providerID: 'provider-a', modelID: 'model-a', sessionID: 'session-a' }, scope),
     ).resolves.toBe(status)
 
     expect(getSDKClientMock).toHaveBeenCalledWith(scope)
-    expect(client.config.remoteCompaction.status).toHaveBeenCalledWith({
-      directory: '/workspace/project',
-      providerID: 'provider-a',
-      modelID: 'model-a',
-      sessionID: 'session-a',
+    expect(transport.get).toHaveBeenCalledWith({
+      url: '/config/remote-compaction/status',
+      query: {
+        directory: '/workspace/project',
+        providerID: 'provider-a',
+        modelID: 'model-a',
+        sessionID: 'session-a',
+      },
     })
   })
 
-  it('routes remote compaction policy updates through workspace scope with only the narrow patch', async () => {
+  it('reads policy provenance and routes narrow policy updates through the typed transport', async () => {
     const scope = { serverID: 'remote', workspace: 'workspace-1' }
-    const policy = { remote: 'auto', remote_protocol: 'v2' }
-    client.config.remoteCompaction.update.mockResolvedValue({ data: policy })
+    const policy = {
+      remote: 'auto',
+      remote_protocol: 'v2',
+      metadata: {
+        remote: { source: 'global', explicitAtWriteTarget: false },
+        remote_protocol: { source: 'project', explicitAtWriteTarget: true },
+        writeTarget: { source: 'project', format: 'json', exists: true },
+      },
+    }
+    transport.get.mockResolvedValue({ data: policy })
+    transport.patch.mockResolvedValue({ data: policy })
 
-    await expect(updateRemoteCompactionPolicy({ remote_protocol: 'v2' }, 'session-a', scope)).resolves.toBe(policy)
+    await expect(getRemoteCompactionPolicy(scope)).resolves.toBe(policy)
+    await expect(updateRemoteCompactionPolicy({ remote_protocol: null }, 'session-a', scope)).resolves.toBe(policy)
 
     expect(getSDKClientMock).toHaveBeenCalledWith(scope)
-    expect(client.config.remoteCompaction.update).toHaveBeenCalledWith({
-      workspace: 'workspace-1',
-      remoteCompactionPolicyPatch: { remote_protocol: 'v2' },
+    expect(transport.get).toHaveBeenCalledWith({
+      url: '/config/remote-compaction',
+      query: { workspace: 'workspace-1' },
+    })
+    expect(transport.patch).toHaveBeenCalledWith({
+      url: '/config/remote-compaction',
+      query: { workspace: 'workspace-1' },
+      body: { remote_protocol: null },
     })
   })
 
-  it('routes eligibility list and updates through project scope with the exact SDK payload', async () => {
+  it('routes eligibility list and updates through project scope with the exact transport payload', async () => {
     const scope = { serverID: 'remote', directory: '/workspace/project' }
     const list = { items: [] }
     const updated = { providerID: 'provider-a', modelID: 'model-a', configurable: true }
-    client.config.remoteCompaction.eligibility.list.mockResolvedValue({ data: list })
-    client.config.remoteCompaction.eligibility.update.mockResolvedValue({ data: updated })
+    transport.get.mockResolvedValue({ data: list })
+    transport.patch.mockResolvedValue({ data: updated })
 
     await expect(getRemoteCompactionEligibility(scope)).resolves.toBe(list)
     await expect(
@@ -127,22 +143,38 @@ describe('config provider response parsing', () => {
         {
           providerID: 'provider-a',
           modelID: 'model-a',
-          enabled: true,
-          protocols: ['v2', 'legacy'],
+          enabled: null,
         },
         scope,
       ),
     ).resolves.toBe(updated)
 
-    expect(client.config.remoteCompaction.eligibility.list).toHaveBeenCalledWith({ directory: '/workspace/project' })
-    expect(client.config.remoteCompaction.eligibility.update).toHaveBeenCalledWith({
-      directory: '/workspace/project',
-      remoteCompactionEligibilityPatch: {
+    expect(transport.get).toHaveBeenCalledWith({
+      url: '/config/remote-compaction/eligibility',
+      query: { directory: '/workspace/project' },
+    })
+    expect(transport.patch).toHaveBeenCalledWith({
+      url: '/config/remote-compaction/eligibility',
+      query: { directory: '/workspace/project' },
+      body: {
         providerID: 'provider-a',
         modelID: 'model-a',
-        enabled: true,
-        protocols: ['v2', 'legacy'],
+        enabled: null,
       },
+    })
+  })
+
+  it('preserves patch, undefined session, and directory in the component policy call shape', async () => {
+    const policy = { remote: 'on', remote_protocol: 'v2' }
+    transport.patch.mockResolvedValue({ data: policy })
+
+    await expect(updateRemoteCompactionPolicy({ remote: 'on' }, undefined, '/workspace/project')).resolves.toBe(policy)
+
+    expect(getSDKClientMock).toHaveBeenCalledWith(expect.objectContaining({ directory: '/workspace/project' }))
+    expect(transport.patch).toHaveBeenCalledWith({
+      url: '/config/remote-compaction',
+      query: { directory: '/workspace/project' },
+      body: { remote: 'on' },
     })
   })
 })

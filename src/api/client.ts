@@ -4,6 +4,7 @@
 // ============================================
 
 import { getSDKClient, unwrap } from './sdk'
+import type { ApiScopeInput } from './scope'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type { ModelInfo, ApiProject, ApiPath, ProviderBalanceResult } from './types'
 
@@ -125,8 +126,9 @@ export async function getProviderBalance(providerId: string, directory?: string)
 /**
  * 获取当前项目
  */
-export async function getCurrentProject(directory?: string): Promise<ApiProject> {
-  const sdk = getSDKClient()
+export async function getCurrentProject(input?: ApiScopeInput): Promise<ApiProject> {
+  const sdk = getSDKClient(input)
+  const directory = typeof input === 'object' ? input.directory : input
   return unwrap(await sdk.project.current({ directory: formatPathForApi(directory) }))
 }
 

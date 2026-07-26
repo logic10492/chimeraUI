@@ -604,10 +604,10 @@ export function AppearanceSettings() {
             </div>
 
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
-                <input
-                  value={snippetName}
-                  onChange={e => setSnippetDraft({ snippetId: activeSnippetId, name: e.target.value })}
-                  placeholder={t('appearance.overrideNamePlaceholder')}
+              <input
+                value={snippetName}
+                onChange={e => setSnippetDraft({ snippetId: activeSnippetId, name: e.target.value })}
+                placeholder={t('appearance.overrideNamePlaceholder')}
                 className="flex-1 min-w-0 px-3 py-2 text-[length:var(--fs-sm)] bg-bg-200/50 border border-border-200 rounded-lg text-text-100 placeholder:text-text-500 focus:outline-none focus:border-accent-main-100/50"
               />
 
@@ -669,6 +669,7 @@ export function AppearanceSettings() {
           </p>
           <SegmentedControl
             value={colorModeScope}
+            ariaLabel="Color mode scope"
             options={[
               { value: 'shared', label: 'All devices' },
               { value: 'device', label: 'This device' },
@@ -681,6 +682,7 @@ export function AppearanceSettings() {
           <p className="text-[length:var(--fs-md)] text-text-100 mb-1.5">{t('appearance.colorMode')}</p>
           <SegmentedControl
             value={themeMode}
+            ariaLabel={t('appearance.colorMode')}
             options={[
               { value: 'system', label: t('appearance.modeAuto'), icon: <SystemIcon size={14} /> },
               { value: 'light', label: t('appearance.modeLight'), icon: <SunIcon size={14} /> },

@@ -54,6 +54,7 @@ export function ChatSettings() {
         <p className="text-[length:var(--fs-sm)] text-text-400">{t('chat.pathsFormattingDesc')}</p>
         <SegmentedControl
           value={pathMode}
+          ariaLabel={t('chat.pathsFormatting')}
           options={[
             { value: 'auto', label: t('chat.auto'), icon: <PathAutoIcon size={14} /> },
             { value: 'unix', label: t('chat.unixSlash'), icon: <PathUnixIcon size={14} /> },
@@ -112,6 +113,7 @@ export function ChatSettings() {
           <p className="text-[length:var(--fs-sm)] text-text-400 mb-3">{t('chat.thinkingDisplayDesc')}</p>
           <SegmentedControl
             value={reasoningDisplayMode}
+            ariaLabel={t('chat.thinkingDisplay')}
             options={[
               { value: 'capsule', label: t('chat.capsule') },
               { value: 'italic', label: t('chat.italic') },
@@ -163,6 +165,7 @@ export function ChatSettings() {
             <p className="text-[length:var(--fs-sm)] text-text-400 mb-3">{t('chat.completedAtFormatDesc')}</p>
             <SegmentedControl
               value={completedAtFormat}
+              ariaLabel={t('chat.completedAtFormat')}
               options={[
                 { value: 'time', label: t('chat.completedAtTimeOnly') },
                 { value: 'dateTime', label: t('chat.completedAtDateTime') },

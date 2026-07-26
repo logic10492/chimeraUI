@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import type React from 'react'
 
 // ============================================
@@ -52,43 +53,70 @@ export function Toggle({
 /**
  * Segmented control — 多选一切换器，保留滑块动画。
  */
-export interface SegmentedControlProps<T extends string> {
+type SegmentedControlAccessibleName =
+  | { ariaLabel: string; ariaLabelledBy?: never }
+  | { ariaLabel?: never; ariaLabelledBy: string }
+
+export type SegmentedControlProps<T extends string> = {
   value: T
   options: { value: T; label: string; icon?: React.ReactNode }[]
   onChange: (value: T, event?: React.MouseEvent) => void
-}
+} & SegmentedControlAccessibleName
 
-export function SegmentedControl<T extends string>({ value, options, onChange }: SegmentedControlProps<T>) {
+export function SegmentedControl<T extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  ariaLabelledBy,
+}: SegmentedControlProps<T>) {
   const activeIndex = options.findIndex(o => o.value === value)
+  const buttonsRef = useRef<Array<HTMLButtonElement | null>>([])
 
   return (
     <div
-      className="bg-bg-100/50 p-0.5 rounded-lg flex border border-border-200/50 relative isolate"
-      role="tablist"
+      className="bg-bg-100/50 min-w-0 overflow-hidden p-0.5 rounded-lg flex border border-border-200/50 relative isolate"
+      role="radiogroup"
+      aria-label={ariaLabel}
+      aria-labelledby={ariaLabelledBy}
       onKeyDown={e => {
-        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-          e.preventDefault()
-          const dir = e.key === 'ArrowRight' ? 1 : -1
-          const next = (activeIndex + dir + options.length) % options.length
-          onChange(options[next].value)
-        }
+        const focusedIndex = buttonsRef.current.findIndex(button => button === document.activeElement)
+        const currentIndex = focusedIndex >= 0 ? focusedIndex : activeIndex
+        const next =
+          e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? options.length - 1
+              : e.key === 'ArrowRight' || e.key === 'ArrowDown'
+                ? (currentIndex + 1) % options.length
+                : e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+                  ? (currentIndex - 1 + options.length) % options.length
+                  : -1
+        if (next < 0 || !options[next]) return
+        e.preventDefault()
+        onChange(options[next].value)
+        buttonsRef.current[next]?.focus()
       }}
     >
       <div
         className="absolute top-0.5 bottom-0.5 left-0.5 bg-bg-000 rounded-md shadow-sm ring-1 ring-border-200/50 transition-transform duration-300 ease-out -z-10"
         style={{
           width: `calc((100% - 4px) / ${options.length})`,
-          transform: `translateX(${activeIndex * 100}%)`,
+          transform: `translateX(${Math.max(activeIndex, 0) * 100}%)`,
         }}
       />
-      {options.map(opt => (
+      {options.map((opt, index) => (
         <button
           key={opt.value}
-          role="tab"
-          aria-selected={opt.value === value}
+          ref={button => {
+            buttonsRef.current[index] = button
+          }}
+          type="button"
+          role="radio"
+          aria-checked={opt.value === value}
           tabIndex={opt.value === value ? 0 : -1}
           onClick={e => onChange(opt.value, e)}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-[length:var(--fs-md)] font-medium transition-colors duration-200
+          className={`flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-[length:var(--fs-md)] font-medium transition-colors duration-200
             ${opt.value === value ? 'text-text-100' : 'text-text-400 hover:text-text-200'}`}
         >
           {opt.icon}

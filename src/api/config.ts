@@ -2,17 +2,18 @@
 // Config API - 配置管理
 // ============================================
 
+import type { Client as SDKTransportClient } from '@opencode-ai/sdk/v2/gen/client'
+import { getSDKClient, unwrap } from './sdk'
+import { apiScopeQuery, resolveApiScope, resolveSessionApiScope, type ApiScopeInput } from './scope'
 import type {
+  Config,
   RemoteCompactionEligibility,
   RemoteCompactionEligibilityList,
   RemoteCompactionEligibilityPatch,
   RemoteCompactionPolicy,
   RemoteCompactionPolicyPatch,
   RemoteCompactionResolution,
-} from '@opencode-ai/sdk/v2'
-import { getSDKClient, unwrap } from './sdk'
-import { apiScopeQuery, resolveApiScope, resolveSessionApiScope, type ApiScopeInput } from './scope'
-import type { Config } from '../types/api/config'
+} from '../types/api/config'
 import type { Provider, ProvidersResponse } from '../types/api/model'
 
 /**
@@ -79,17 +80,34 @@ function resolveRemoteCompactionScope(sessionID: string | undefined, input?: Api
   return sessionID ? resolveSessionApiScope(sessionID, input) : resolveApiScope(input)
 }
 
+function remoteCompactionTransport(scope: ReturnType<typeof resolveApiScope>) {
+  return (getSDKClient(scope) as unknown as { client: SDKTransportClient }).client
+}
+
 export async function getRemoteCompactionStatus(
   params: RemoteCompactionStatusInput,
   input?: ApiScopeInput,
 ): Promise<RemoteCompactionResolution> {
   const scope = resolveRemoteCompactionScope(params.sessionID, input)
   return unwrap(
-    await getSDKClient(scope).config.remoteCompaction.status({
-      ...apiScopeQuery(scope),
-      providerID: params.providerID,
-      modelID: params.modelID,
-      ...(params.sessionID ? { sessionID: params.sessionID } : {}),
+    await remoteCompactionTransport(scope).get<{ 200: RemoteCompactionResolution }>({
+      url: '/config/remote-compaction/status',
+      query: {
+        ...apiScopeQuery(scope),
+        providerID: params.providerID,
+        modelID: params.modelID,
+        ...(params.sessionID ? { sessionID: params.sessionID } : {}),
+      },
+    }),
+  )
+}
+
+export async function getRemoteCompactionPolicy(input?: ApiScopeInput): Promise<RemoteCompactionPolicy> {
+  const scope = resolveApiScope(input)
+  return unwrap(
+    await remoteCompactionTransport(scope).get<{ 200: RemoteCompactionPolicy }>({
+      url: '/config/remote-compaction',
+      query: apiScopeQuery(scope),
     }),
   )
 }
@@ -101,16 +119,22 @@ export async function updateRemoteCompactionPolicy(
 ): Promise<RemoteCompactionPolicy> {
   const scope = resolveRemoteCompactionScope(sessionID, input)
   return unwrap(
-    await getSDKClient(scope).config.remoteCompaction.update({
-      ...apiScopeQuery(scope),
-      remoteCompactionPolicyPatch,
+    await remoteCompactionTransport(scope).patch<{ 200: RemoteCompactionPolicy }>({
+      url: '/config/remote-compaction',
+      query: apiScopeQuery(scope),
+      body: remoteCompactionPolicyPatch,
     }),
   )
 }
 
 export async function getRemoteCompactionEligibility(input?: ApiScopeInput): Promise<RemoteCompactionEligibilityList> {
   const scope = resolveApiScope(input)
-  return unwrap(await getSDKClient(scope).config.remoteCompaction.eligibility.list(apiScopeQuery(scope)))
+  return unwrap(
+    await remoteCompactionTransport(scope).get<{ 200: RemoteCompactionEligibilityList }>({
+      url: '/config/remote-compaction/eligibility',
+      query: apiScopeQuery(scope),
+    }),
+  )
 }
 
 export async function updateRemoteCompactionEligibility(
@@ -119,9 +143,10 @@ export async function updateRemoteCompactionEligibility(
 ): Promise<RemoteCompactionEligibility> {
   const scope = resolveApiScope(input)
   return unwrap(
-    await getSDKClient(scope).config.remoteCompaction.eligibility.update({
-      ...apiScopeQuery(scope),
-      remoteCompactionEligibilityPatch,
+    await remoteCompactionTransport(scope).patch<{ 200: RemoteCompactionEligibility }>({
+      url: '/config/remote-compaction/eligibility',
+      query: apiScopeQuery(scope),
+      body: remoteCompactionEligibilityPatch,
     }),
   )
 }

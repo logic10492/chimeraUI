@@ -77,6 +77,7 @@ export function AgentSettings() {
           <p className="text-[length:var(--fs-sm)] text-text-400 mb-3">{t('chat.alwaysAllowModeDesc')}</p>
           <SegmentedControl
             value={alwaysAllowMode}
+            ariaLabel={t('chat.alwaysAllowMode')}
             options={[
               { value: 'backend', label: t('chat.alwaysAllowBackend') },
               { value: 'frontend', label: t('chat.alwaysAllowFrontend') },
@@ -142,6 +143,7 @@ export function AgentSettings() {
           <p className="text-[length:var(--fs-sm)] text-text-400 mb-3">{t('chat.toolCardStyleDesc')}</p>
           <SegmentedControl
             value={toolCardStyle}
+            ariaLabel={t('chat.toolCardStyle')}
             options={[
               { value: 'classic', label: t('chat.toolCardClassic') },
               { value: 'compact', label: t('chat.toolCardCompact') },
