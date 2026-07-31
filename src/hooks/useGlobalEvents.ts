@@ -11,6 +11,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { messageStore, childSessionStore, paneLayoutStore, serverStore } from '../store'
 import { activeSessionStore } from '../store/activeSessionStore'
+import { commandProgressStore } from '../store/commandProgressStore'
 import { notificationEventSettingsStore } from '../store/notificationEventSettingsStore'
 import { notificationStore } from '../store/notificationStore'
 import { runtimeInvalidationStore } from '../store/runtimeInvalidationStore'
@@ -592,6 +593,23 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
         if (dispatched) {
           sendSystemNotification('completed', data.sessionID, 'Session completed', 'Session completed', scope)
         }
+      },
+
+      // ============================================
+      // Command Events → commandProgressStore
+      // ============================================
+
+      onCommandStarted: (data, scope) => {
+        if (!isActiveScope(scope)) return
+        commandProgressStore.started(data.sessionID, data)
+      },
+      onCommandProgress: (data, scope) => {
+        if (!isActiveScope(scope)) return
+        commandProgressStore.update(data.sessionID, data)
+      },
+      onCommandExecuted: (data, scope) => {
+        if (!isActiveScope(scope)) return
+        commandProgressStore.clear(data.sessionID)
       },
 
       onSessionError: (error, scope) => {

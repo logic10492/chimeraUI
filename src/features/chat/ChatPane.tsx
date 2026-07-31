@@ -35,6 +35,7 @@ import type { Attachment } from '../../api'
 import type { MessageError } from '../../types/message'
 import { getInternalDragSnapshot, subscribeInternalDrag, subscribeInternalDrop } from '../../lib/internalDragCore'
 import { ErrorBoundary } from '../../components/ErrorBoundary'
+import { CommandProgressIndicator } from './CommandProgressIndicator'
 
 interface ChatPaneProps {
   paneId: string
@@ -855,6 +856,9 @@ export const ChatPane = memo(function ChatPane({
       />
 
       <div ref={inputBoxWrapperRef} className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
+        <div className="absolute bottom-full inset-x-0 flex justify-center pb-2 pointer-events-none z-20">
+          <CommandProgressIndicator sessionId={routeSessionId} />
+        </div>
         {(showCancelHint || (fullAutoHint && !showCancelHint)) && (
           <div className="absolute bottom-full inset-x-0 flex justify-center pb-2 pointer-events-none z-20">
             <div className="px-3 py-1.5 glass border border-border-200/60 rounded-lg shadow-lg text-[length:var(--fs-sm)] text-text-300 animate-in fade-in slide-in-from-bottom-2 duration-150">

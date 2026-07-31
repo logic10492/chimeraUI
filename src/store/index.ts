@@ -66,6 +66,9 @@ export type { NotificationEntry, NotificationPreferencesBackup, NotificationType
 export { activeSessionStore, useActiveSessionStore, useBusySessions, useBusyCount } from './activeSessionStore'
 export type { ActiveSessionEntry } from './activeSessionStore'
 
+export { commandProgressStore, useCommandProgress } from './commandProgressStore'
+export type { CommandProgressEntry } from './commandProgressStore'
+
 export { serviceStore, useServiceStore, exportServiceSettingsBackup, importServiceSettingsBackup } from './serviceStore'
 export type { ServiceSettingsBackup } from './serviceStore'
 

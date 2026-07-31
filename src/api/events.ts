@@ -791,6 +791,15 @@ function handleEventForSubscriber(payload: GlobalEvent['payload'], callbacks: Ev
     case EventTypes.SERVER_CONNECTED:
       callbacks.onServerConnected?.(normalizeServerConnected(payload.properties), scope)
       break
+    case EventTypes.COMMAND_STARTED:
+      callbacks.onCommandStarted?.(payload.properties, scope)
+      break
+    case EventTypes.COMMAND_PROGRESS:
+      callbacks.onCommandProgress?.(payload.properties, scope)
+      break
+    case EventTypes.COMMAND_EXECUTED:
+      callbacks.onCommandExecuted?.(payload.properties, scope)
+      break
     default:
       break
   }

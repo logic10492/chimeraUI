@@ -4,6 +4,9 @@
 // ============================================
 
 import type {
+  EventCommandExecuted as SDKEventCommandExecuted,
+  EventCommandProgress as SDKEventCommandProgress,
+  EventCommandStarted as SDKEventCommandStarted,
   EventFileEdited as SDKEventFileEdited,
   EventFileWatcherUpdated as SDKEventFileWatcherUpdated,
   EventGlobalDisposed as SDKEventGlobalDisposed,
@@ -75,6 +78,10 @@ export type WorktreeReadyPayload = SDKEventWorktreeReady['properties']
 export type WorktreeFailedPayload = SDKEventWorktreeFailed['properties']
 
 export type VcsBranchUpdatedPayload = SDKEventVcsBranchUpdated['properties']
+
+export type CommandStartedPayload = SDKEventCommandStarted['properties']
+export type CommandProgressPayload = SDKEventCommandProgress['properties']
+export type CommandExecutedPayload = SDKEventCommandExecuted['properties']
 
 export interface ServerConnectedPayload {
   timestamp?: unknown
@@ -176,6 +183,8 @@ export const EventTypes = {
   MCP_TOOLS_CHANGED: 'mcp.tools.changed',
   MCP_BROWSER_OPEN_FAILED: 'mcp.browser.open.failed',
   VCS_BRANCH_UPDATED: 'vcs.branch.updated',
+  COMMAND_STARTED: 'command.started',
+  COMMAND_PROGRESS: 'command.progress',
   COMMAND_EXECUTED: 'command.executed',
   PTY_CREATED: 'pty.created',
   PTY_UPDATED: 'pty.updated',
@@ -220,6 +229,9 @@ export interface EventCallbacks {
   onGlobalDisposed?: (data: GlobalDisposedPayload, scope: EventScope) => void
   onEventGap?: (data: EventGapPayload, scope: EventScope) => void
   onWebUIPreferencesUpdated?: (data: WebUIPreferencesUpdatedPayload, scope: EventScope) => void
+  onCommandStarted?: (data: CommandStartedPayload, scope: EventScope) => void
+  onCommandProgress?: (data: CommandProgressPayload, scope: EventScope) => void
+  onCommandExecuted?: (data: CommandExecutedPayload, scope: EventScope) => void
   onError?: (error: Error) => void
   onReconnected?: (reason: 'network' | 'server-switch', serverID: string) => void
 }

@@ -398,4 +398,97 @@ describe('subscribeToEvents', () => {
     expect(received).toEqual({ snapshot, serverID: 'server-a' })
   })
 
+  it('dispatches command.started / command.progress / command.executed events', async () => {
+    const scope = { directory: '/repo', workspace: 'workspace-1' }
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse([
+        ...createEventChunk(
+          {
+            type: EventTypes.COMMAND_STARTED,
+            properties: { name: 'init-graph', sessionID: 'session-1', arguments: '' },
+          },
+          scope,
+        ),
+        ...createEventChunk(
+          {
+            type: EventTypes.COMMAND_PROGRESS,
+            properties: {
+              name: 'init-graph',
+              sessionID: 'session-1',
+              arguments: '',
+              phase: 'parsing',
+              current: 12,
+              total: 50,
+              currentFile: 'src/a.ts',
+              elapsedMs: 3000,
+            },
+          },
+          scope,
+        ),
+        ...createEventChunk(
+          {
+            type: EventTypes.COMMAND_EXECUTED,
+            properties: {
+              name: 'init-graph',
+              sessionID: 'session-1',
+              arguments: '',
+              messageID: 'message-1',
+            },
+          },
+          scope,
+        ),
+      ]),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { subscribeToEvents } = await import('./events')
+    const received = await new Promise<Array<{ type: string; value: unknown }>>((resolve, reject) => {
+      const events: Array<{ type: string; value: unknown }> = []
+      const complete = () => {
+        if (events.length !== 3) return
+        unsubscribe()
+        resolve(events)
+      }
+      const unsubscribe = subscribeToEvents({
+        onCommandStarted(value) {
+          events.push({ type: 'command.started', value })
+          complete()
+        },
+        onCommandProgress(value) {
+          events.push({ type: 'command.progress', value })
+          complete()
+        },
+        onCommandExecuted(value) {
+          events.push({ type: 'command.executed', value })
+          complete()
+        },
+        onError(error) {
+          unsubscribe()
+          reject(error)
+        },
+      })
+    })
+
+    expect(received).toEqual([
+      { type: 'command.started', value: { name: 'init-graph', sessionID: 'session-1', arguments: '' } },
+      {
+        type: 'command.progress',
+        value: {
+          name: 'init-graph',
+          sessionID: 'session-1',
+          arguments: '',
+          phase: 'parsing',
+          current: 12,
+          total: 50,
+          currentFile: 'src/a.ts',
+          elapsedMs: 3000,
+        },
+      },
+      {
+        type: 'command.executed',
+        value: { name: 'init-graph', sessionID: 'session-1', arguments: '', messageID: 'message-1' },
+      },
+    ])
+  })
+
 })
