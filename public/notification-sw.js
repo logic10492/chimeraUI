@@ -58,7 +58,11 @@ self.addEventListener('fetch', event => {
       fetch(event.request)
         .then(response => {
           if (isShellNavigation && response.ok && response.type === 'basic') {
-            void caches.open(CACHE_NAME).then(cache => cache.put(SHELL_URL, response.clone()))
+            const cloned = response.clone()
+            void caches
+              .open(CACHE_NAME)
+              .then(cache => cache.put(SHELL_URL, cloned))
+              .catch(() => {})
           }
           return response
         })
@@ -72,7 +76,11 @@ self.addEventListener('fetch', event => {
       if (cached) return cached
       return fetch(event.request).then(response => {
         if (response.ok && response.type === 'basic') {
-          void caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()))
+          const cloned = response.clone()
+          void caches
+            .open(CACHE_NAME)
+            .then(cache => cache.put(event.request, cloned))
+            .catch(() => {})
         }
         return response
       })
