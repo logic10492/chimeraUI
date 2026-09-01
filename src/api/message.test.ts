@@ -4,18 +4,22 @@ import { getPartOutput, getSessionMessageCount, getSessionMessagesPage } from '.
 const messagesMock = vi.fn()
 const messageMock = vi.fn()
 
-vi.mock('./sdk', () => ({
-  getSDKClient: () => ({
+vi.mock('./sdk', () => {
+  const client = () => ({
     session: {
       messages: (...args: unknown[]) => messagesMock(...args),
       message: (...args: unknown[]) => messageMock(...args),
     },
-  }),
-  unwrap: (result: { data?: unknown; error?: unknown }) => {
-    if (result.error != null) throw result.error
-    return result.data
-  },
-}))
+  })
+  return {
+    getSDKClient: client,
+    getInteractiveSDKClient: client,
+    unwrap: (result: { data?: unknown; error?: unknown }) => {
+      if (result.error != null) throw result.error
+      return result.data
+    },
+  }
+})
 
 describe('message API contract', () => {
   beforeEach(() => {

@@ -3,7 +3,7 @@
 // 基于 @opencode-ai/sdk: /permission, /question 相关接口
 // ============================================
 
-import { getSDKClient, unwrap } from './sdk'
+import { getInteractiveSDKClient, getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type { ApiPermissionRequest, PermissionReply, ApiQuestionRequest, QuestionAnswer } from './types'
 
@@ -30,7 +30,7 @@ export async function replyPermission(
   directory?: string,
   sessionId?: string,
 ): Promise<boolean> {
-  const sdk = getSDKClient()
+  const sdk = getInteractiveSDKClient()
 
   if (sessionId) {
     unwrap(
@@ -76,7 +76,7 @@ export async function replyQuestion(
   answers: QuestionAnswer[],
   directory?: string,
 ): Promise<boolean> {
-  const sdk = getSDKClient()
+  const sdk = getInteractiveSDKClient()
   unwrap(
     await sdk.question.reply({
       requestID: requestId,
@@ -91,7 +91,7 @@ export async function replyQuestion(
  * 拒绝问题请求
  */
 export async function rejectQuestion(requestId: string, directory?: string): Promise<boolean> {
-  const sdk = getSDKClient()
+  const sdk = getInteractiveSDKClient()
   unwrap(
     await sdk.question.reject({
       requestID: requestId,

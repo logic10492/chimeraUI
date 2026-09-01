@@ -3,7 +3,7 @@
 // 基于 @opencode-ai/sdk: /session/{sessionID}/message 相关接口
 // ============================================
 
-import { getSDKClient, unwrap } from './sdk'
+import { getInteractiveSDKClient, getSDKClient, unwrap } from './sdk'
 import { apiScopeQuery, resolveSessionApiScope, type ApiScope, type ApiScopeInput } from './scope'
 import type {
   ApiMessageWithParts,
@@ -62,7 +62,7 @@ export async function getSessionMessagesPage(
   options?: { before?: string },
 ): Promise<MessagePage> {
   const scope = resolveSessionApiScope(sessionId, input)
-  const result = await getSDKClient(scope).session.messages({
+  const result = await getInteractiveSDKClient(scope).session.messages({
     sessionID: sessionId,
     ...apiScopeQuery(scope),
     limit,
@@ -253,7 +253,7 @@ function buildPromptParams(params: SendMessageParams, scope: ApiScope): PromptPa
  */
 export async function sendMessage(params: SendMessageParams): Promise<SendMessageResponse> {
   const scope = resolveSessionApiScope(params.sessionId, params.apiScope ?? params.directory)
-  return unwrap<SendMessageResponse>(await getSDKClient(scope).session.prompt(buildPromptParams(params, scope)))
+  return unwrap<SendMessageResponse>(await getInteractiveSDKClient(scope).session.prompt(buildPromptParams(params, scope)))
 }
 
 /**
@@ -261,7 +261,7 @@ export async function sendMessage(params: SendMessageParams): Promise<SendMessag
  */
 export async function sendMessageAsync(params: SendMessageParams): Promise<void> {
   const scope = resolveSessionApiScope(params.sessionId, params.apiScope ?? params.directory)
-  unwrap(await getSDKClient(scope).session.promptAsync(buildPromptParams(params, scope)))
+  unwrap(await getInteractiveSDKClient(scope).session.promptAsync(buildPromptParams(params, scope)))
 }
 
 /**

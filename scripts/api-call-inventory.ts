@@ -126,7 +126,7 @@ function isGetSdkClientCall(value: ts.Expression | undefined): boolean {
     !!value &&
     ts.isCallExpression(value) &&
     ts.isIdentifier(value.expression) &&
-    value.expression.text === 'getSDKClient'
+    (value.expression.text === 'getSDKClient' || value.expression.text === 'getInteractiveSDKClient')
   )
 }
 

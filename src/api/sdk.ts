@@ -11,6 +11,7 @@ import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2/c
 import { serverStore, makeBasicAuthHeader } from '../store/serverStore'
 import { isTauri } from '../utils/tauri'
 import { resolveApiScope, type ApiScopeInput } from './scope'
+import { scheduleRequest, type RequestPriority } from './requestQueue'
 
 // Tauri fetch 缓存
 let _tauriFetch: typeof globalThis.fetch | null = null
@@ -40,6 +41,7 @@ async function trackedFetch(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
   generation: number,
+  priority: RequestPriority = 'background',
 ): Promise<Response> {
   const controller = new AbortController()
   const externalSignal = init?.signal
@@ -58,10 +60,17 @@ async function trackedFetch(
       throw createAbortError('Stale API request')
     }
 
-    return await getFetchImpl()(input, {
-      ...init,
-      signal: controller.signal,
-    })
+    const execute = () =>
+      getFetchImpl()(input, {
+        ...init,
+        signal: controller.signal,
+      })
+
+    // Tauri fetch 走 Rust 网络栈，不占浏览器连接池，无需排队
+    if (getFetchImpl() !== globalThis.fetch) {
+      return await execute()
+    }
+    return await scheduleRequest(execute, { priority, signal: controller.signal })
   } finally {
     externalSignal?.removeEventListener('abort', abortFromExternal)
     _apiRequestControllers.delete(controller)
@@ -98,10 +107,11 @@ function buildHeaders(serverID: string): Record<string, string> {
  * 同步获取 SDK client（浏览器环境 or tauri fetch 已加载）
  * 如果 tauri fetch 还没加载完，先用原生 fetch
  */
-export function getSDKClient(input?: ApiScopeInput): OpencodeClient {
+export function getSDKClient(input?: ApiScopeInput, options?: { priority?: RequestPriority }): OpencodeClient {
   const scope = resolveApiScope(input)
   const baseUrl = serverStore.getServerBaseUrl(scope.serverID)
-  const key = buildCacheKey(scope.serverID, baseUrl)
+  const priority = options?.priority ?? 'background'
+  const key = `${buildCacheKey(scope.serverID, baseUrl)}|${priority}`
   const cached = _cachedClients.get(key)
   if (cached) return cached
 
@@ -109,10 +119,18 @@ export function getSDKClient(input?: ApiScopeInput): OpencodeClient {
   const client = createOpencodeClient({
     baseUrl,
     headers: buildHeaders(scope.serverID),
-    fetch: (request, init) => trackedFetch(request, init, generation),
+    fetch: (request, init) => trackedFetch(request, init, generation, priority),
   })
   _cachedClients.set(key, client)
   return client
+}
+
+/**
+ * 用户手势触发的请求（发消息、回复权限/问题、打开 session 等）
+ * 使用 interactive 优先级，插队于后台 resync 流量
+ */
+export function getInteractiveSDKClient(input?: ApiScopeInput): OpencodeClient {
+  return getSDKClient(input, { priority: 'interactive' })
 }
 
 /**

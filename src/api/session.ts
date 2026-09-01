@@ -3,7 +3,7 @@
 // 基于 @opencode-ai/sdk: /session 相关接口
 // ============================================
 
-import { getSDKClient, unwrap } from './sdk'
+import { getInteractiveSDKClient, getSDKClient, unwrap } from './sdk'
 import {
   activeApiScope,
   apiScopeQuery,
@@ -129,7 +129,7 @@ export async function getSessions(params: SessionListParams & { apiScope?: ApiSc
 export async function getSession(sessionId: string, input?: ApiScopeInput): Promise<ApiSession> {
   const scope = resolveSessionApiScope(sessionId, input)
   return scopedSession(
-    unwrap(await getSDKClient(scope).session.get({ sessionID: sessionId, ...apiScopeQuery(scope) })),
+    unwrap(await getInteractiveSDKClient(scope).session.get({ sessionID: sessionId, ...apiScopeQuery(scope) })),
     scope,
   )
 }
