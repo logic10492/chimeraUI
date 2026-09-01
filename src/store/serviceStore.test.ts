@@ -54,8 +54,8 @@ describe('ServiceStore', () => {
   it('keeps validated legacy service settings when migration writes fail', () => {
     const legacy = JSON.stringify([{ key: 'HTTPS_PROXY', value: 'proxy' }])
     localStorage.setItem('opencode-service-env-vars', legacy)
-    const originalSetItem = Storage.prototype.setItem
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+    const originalSetItem = localStorage.setItem
+    vi.spyOn(localStorage, 'setItem').mockImplementation(function (key, value) {
       if (key === 'chimera-service-env-vars') throw new Error('blocked')
       return originalSetItem.call(this, key, value)
     })

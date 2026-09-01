@@ -453,42 +453,42 @@
           "method": "GET",
           "path": "/provider",
           "transport": "sdk",
-          "currentlyUsed": false
+          "currentlyUsed": true
         },
         {
           "operationId": "provider.auth",
           "method": "GET",
           "path": "/provider/auth",
           "transport": "sdk",
-          "currentlyUsed": false
+          "currentlyUsed": true
         },
         {
           "operationId": "provider.oauth.authorize",
           "method": "POST",
           "path": "/provider/{providerID}/oauth/authorize",
           "transport": "sdk",
-          "currentlyUsed": false
+          "currentlyUsed": true
         },
         {
           "operationId": "provider.oauth.callback",
           "method": "POST",
           "path": "/provider/{providerID}/oauth/callback",
           "transport": "sdk",
-          "currentlyUsed": false
+          "currentlyUsed": true
         },
         {
           "operationId": "auth.set",
           "method": "PUT",
           "path": "/auth/{providerID}",
           "transport": "sdk",
-          "currentlyUsed": false
+          "currentlyUsed": true
         },
         {
           "operationId": "auth.remove",
           "method": "DELETE",
           "path": "/auth/{providerID}",
           "transport": "sdk",
-          "currentlyUsed": false
+          "currentlyUsed": true
         }
       ],
       "closure": { "files": [], "tests": [] },
@@ -598,14 +598,14 @@
           "method": "GET",
           "path": "/graph/status",
           "transport": "sdk",
-          "currentlyUsed": false
+          "currentlyUsed": true
         },
         {
           "operationId": "graph.search",
           "method": "GET",
           "path": "/graph/search",
           "transport": "sdk",
-          "currentlyUsed": false
+          "currentlyUsed": true
         },
         {
           "operationId": "graph.node",
@@ -619,7 +619,7 @@
           "method": "GET",
           "path": "/graph/file/symbols",
           "transport": "sdk",
-          "currentlyUsed": false
+          "currentlyUsed": true
         },
         {
           "operationId": "graph.files",
@@ -633,7 +633,7 @@
           "method": "GET",
           "path": "/graph/impact",
           "transport": "sdk",
-          "currentlyUsed": false
+          "currentlyUsed": true
         }
       ],
       "closure": { "files": [], "tests": [] },

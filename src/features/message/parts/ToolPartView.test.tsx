@@ -32,6 +32,8 @@ vi.mock('../../../hooks/useTheme', () => ({
 vi.mock('../../../store/serverStore', () => ({
   serverStore: {
     getActiveCalibratedNow: getActiveCalibratedNowMock,
+    getActiveServerId: () => 'local',
+    onServerChange: () => () => {},
   },
 }))
 

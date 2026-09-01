@@ -68,7 +68,7 @@ describe('FollowupQueueStore persistence', () => {
     const pushTransient = vi.spyOn(notificationStore, 'pushTransient').mockImplementation(() => {})
     const store = new FollowupQueueStore()
     store.activateServer('server-a')
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
       throw new DOMException('quota exceeded', 'QuotaExceededError')
     })
 

@@ -1,12 +1,22 @@
 import '@testing-library/jest-dom/vitest'
 import '../i18n'
 
-if (typeof globalThis.localStorage === 'undefined' || typeof globalThis.localStorage.getItem !== 'function') {
+// Node 26 exposes a stub localStorage without key()/length; require a complete
+// implementation before trusting the global.
+if (
+  typeof globalThis.localStorage === 'undefined' ||
+  typeof globalThis.localStorage.getItem !== 'function' ||
+  typeof globalThis.localStorage.key !== 'function'
+) {
   let storage = new Map<string, string>()
 
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: {
+      get length() {
+        return storage.size
+      },
+      key: (index: number) => [...storage.keys()][index] ?? null,
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => {
         storage.set(key, value)

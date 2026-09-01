@@ -127,8 +127,8 @@ describe('UpdateStore', () => {
       'opencode:update-check',
       JSON.stringify({ latestRelease: null, lastCheckedAt: 123, dismissedVersion: '0.4.0' }),
     )
-    const originalSetItem = Storage.prototype.setItem
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+    const originalSetItem = localStorage.setItem
+    vi.spyOn(localStorage, 'setItem').mockImplementation(function (key, value) {
       if (key === 'chimera:update-check') throw new Error('blocked')
       return originalSetItem.call(this, key, value)
     })

@@ -96,7 +96,7 @@ describe('paneLayoutStore', () => {
     const pushTransient = vi.spyOn(notificationStore, 'pushTransient').mockImplementation(() => {})
     paneLayoutStore.activateServer('server-a')
     paneLayoutStore.setFocusedSession('session-a')
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
       throw new DOMException('quota exceeded', 'QuotaExceededError')
     })
 

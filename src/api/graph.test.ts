@@ -63,7 +63,7 @@ describe('graph API', () => {
     })
   })
 
-  it('converts generated file-symbol line parameters to strings', async () => {
+  it('passes numeric file-symbol line parameters through', async () => {
     client.graph.file.symbols.mockResolvedValue({ data: { results: [] } })
 
     await getGraphFileSymbols(
@@ -74,18 +74,18 @@ describe('graph API', () => {
     expect(client.graph.file.symbols).toHaveBeenCalledWith({
       directory: '/repo',
       path: 'src/index.ts',
-      startLine: '3',
-      endLine: '9',
+      startLine: 3,
+      endLine: 9,
       limit: 4,
     })
   })
 
-  it('converts generated impact depth parameters to strings', async () => {
+  it('passes numeric impact depth parameters through', async () => {
     client.graph.impact.mockResolvedValue({ data: { results: [] } })
 
     await getGraphImpact({ nodeID: 'node:1', depth: 2 }, { serverID: 'remote', workspace: 'workspace-1' })
 
-    expect(client.graph.impact).toHaveBeenCalledWith({ workspace: 'workspace-1', nodeID: 'node:1', depth: '2' })
+    expect(client.graph.impact).toHaveBeenCalledWith({ workspace: 'workspace-1', nodeID: 'node:1', depth: 2 })
   })
 
   it('propagates SDK errors', async () => {
