@@ -86,5 +86,8 @@
     "typescript-eslint": "8.57.2",
     "vite": "8.0.16",
     "vitest": "4.1.2"
+  },
+  "overrides": {
+    "fast-uri": "^3.1.3"
   }
 }
