@@ -99,13 +99,22 @@ function useEntryGrowAnimation(created: number) {
   useLayoutEffect(() => {
     const el = ref.current
     if (!el || Date.now() - created > 3000) return
+    // 始终把 DOM 还原干净：StrictMode 开发期会双调用 effect（mount→cleanup→mount），
+    // 第一次的 WAAPI 动画若不被真正 cancel，会在后台跑完并把固定 height 写回 DOM
+    const clear = () => {
+      el.style.height = ''
+      el.style.clipPath = ''
+    }
     const targetHeight = el.scrollHeight
     el.style.height = '0px'
     el.style.clipPath = 'inset(0 -100% 0 -100%)'
-    animate(el, { height: `${targetHeight}px` }, { duration: 0.2, ease: 'easeOut' }).then(() => {
-      el.style.height = ''
-      el.style.clipPath = ''
-    })
+    const controls = animate(el, { height: `${targetHeight}px` }, { duration: 0.2, ease: 'easeOut' })
+    controls.then(clear)
+    return () => {
+      // 真停掉动画，避免后台残留写入；再兜底清一次 DOM
+      controls.stop()
+      clear()
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   return ref
 }
