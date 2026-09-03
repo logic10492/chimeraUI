@@ -26,7 +26,7 @@ vi.mock('../api', () => ({
 }))
 
 vi.mock('../store/serverStore', () => ({
-  serverStore: { getActiveServerId },
+  serverStore: { getActiveServerId, onServerChange: () => () => {} },
 }))
 
 describe('useFileExplorer change scope', () => {
