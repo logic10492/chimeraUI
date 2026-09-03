@@ -55,7 +55,7 @@ interface MessageRendererProps {
 
 export const MessageRenderer = memo(function MessageRenderer({
   message,
-  allowStreamingLayoutAnimation = true,
+  allowStreamingLayoutAnimation = false,
   turnDuration,
   onUndo,
   onFork,
@@ -399,7 +399,7 @@ const UserMessageView = memo(function UserMessageView({
 
 const AssistantMessageView = memo(function AssistantMessageView({
   message,
-  allowStreamingLayoutAnimation = true,
+  allowStreamingLayoutAnimation = false,
   turnDuration,
   onFork,
   forkMessageId,
@@ -486,7 +486,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
 
   return (
     <div ref={wrapperRef} className="flex flex-col gap-2 w-full group">
-      {/* 只在贴底跟随时保留高度补间；用户看历史时关闭，避免消息生长把视口顶走 */}
+      {/* 流式增高走自然撑开 + 贴底 scroll，默认不做 height 补间，避免每帧 layout/remeasure */}
       <SmoothHeight isActive={!!isStreaming && allowStreamingLayoutAnimation}>
         <div className="flex flex-col gap-2">
           {renderItems.map((item: RenderItem, idx: number) => {

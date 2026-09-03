@@ -806,6 +806,12 @@ body {
   animation: border-pulse 2s ease-in-out infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .animate-border-pulse {
+    animation: none !important;
+  }
+}
+
 /* ============================================
  * CSS Containment - 优化布局性能，减少 CLS
  * ============================================ */
@@ -818,6 +824,11 @@ body {
 /* 内容隔离（用于动态内容区域） */
 .contain-content {
   contain: content;
+}
+
+/* 布局+样式隔离（不含 paint），用于需要隔离布局回流但不影响绘制裁剪的场景 */
+.contain-layout-style {
+  contain: layout style;
 }
 
 /* ============================================
