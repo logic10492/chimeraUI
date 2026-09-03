@@ -165,6 +165,113 @@ describe('messageStore', () => {
     expect(messageStore.getSessionState('session-1')).toBeUndefined()
   })
 
+  it('does not regress longer live part text when a shorter snapshot arrives while streaming', () => {
+    messageStore.setMessages('session-1', [
+      {
+        info: {
+          ...createAssistantMessage('message-1'),
+          time: { created: 1 },
+        },
+        parts: [createTextPart('part-message-1', 'message-1', 'hello world')],
+      },
+    ])
+    messageStore.setStreaming('session-1', true)
+    const live = messageStore.getSessionState('session-1')?.messages[0]
+    if (live) live.isStreaming = true
+
+    messageStore.handlePartUpdated({
+      ...createTextPart('part-message-1', 'message-1', 'hello'),
+    })
+
+    expect(messageStore.getSessionState('session-1')?.messages[0].parts[0]).toMatchObject({
+      text: 'hello world',
+    })
+  })
+
+  it('adopts a longer server snapshot when reloading messages', () => {
+    messageStore.setMessages('session-1', [createMessageWithParts('message-1', 'hello')])
+    messageStore.setStreaming('session-1', true)
+    const live = messageStore.getSessionState('session-1')?.messages[0]
+    if (live) live.isStreaming = true
+
+    messageStore.setMessages('session-1', [createMessageWithParts('message-1', 'hello world')])
+
+    expect(messageStore.getSessionState('session-1')?.messages[0].parts[0]).toMatchObject({
+      text: 'hello world',
+    })
+  })
+
+  it('keeps longer live text when setMessages receives a shorter server snapshot while streaming', () => {
+    messageStore.setMessages('session-1', [
+      {
+        info: {
+          ...createAssistantMessage('message-1'),
+          time: { created: 1 },
+        },
+        parts: [createTextPart('part-message-1', 'message-1', 'hello world')],
+      },
+    ])
+    messageStore.setStreaming('session-1', true)
+    const live = messageStore.getSessionState('session-1')?.messages[0]
+    if (live) live.isStreaming = true
+
+    messageStore.setMessages('session-1', [
+      {
+        info: {
+          ...createAssistantMessage('message-1'),
+          time: { created: 1 },
+        },
+        parts: [createTextPart('part-message-1', 'message-1', 'hello')],
+      },
+    ])
+
+    expect(messageStore.getSessionState('session-1')?.messages[0].parts[0]).toMatchObject({
+      text: 'hello world',
+    })
+  })
+
+  it('adopts completed server text even when local live text was longer', () => {
+    messageStore.setMessages('session-1', [
+      {
+        info: {
+          ...createAssistantMessage('message-1'),
+          time: { created: 1 },
+        },
+        parts: [createTextPart('part-message-1', 'message-1', 'hello world extra')],
+      },
+    ])
+    messageStore.setStreaming('session-1', true)
+    const live = messageStore.getSessionState('session-1')?.messages[0]
+    if (live) live.isStreaming = true
+
+    // 定稿：completed 快照强制采用服务端，不再 preserve
+    const completed = createMessageWithParts('message-1', 'hello world')
+    if (completed.info.role === 'assistant') {
+      completed.info.time = { created: 1, completed: 99 }
+    }
+    messageStore.setMessages('session-1', [completed])
+
+    expect(messageStore.getSessionState('session-1')?.messages[0].parts[0]).toMatchObject({
+      text: 'hello world',
+    })
+  })
+
+  it('forces completed message part updates from the server', () => {
+    const completed = createMessageWithParts('message-1', 'hello world extra')
+    if (completed.info.role === 'assistant') {
+      completed.info.time = { created: 1, completed: 10 }
+    }
+    messageStore.setMessages('session-1', [completed])
+
+    messageStore.handlePartUpdated({
+      ...createTextPart('part-message-1', 'message-1', 'hello world'),
+    })
+
+    expect(messageStore.getSessionState('session-1')?.messages[0].parts[0]).toMatchObject({
+      text: 'hello world',
+    })
+  })
+
   it('flushes mutable part deltas for multiple sessions in the same frame', () => {
     const rafCallbacks: Array<(time: number) => void> = []
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => {
@@ -207,6 +314,37 @@ describe('messageStore', () => {
     expect(afterMessage2?.parts[0]).toMatchObject({ text: 'world?' })
     expect(afterMessage1).not.toBe(beforeMessage1)
     expect(afterMessage2).not.toBe(beforeMessage2)
+  })
+
+  it('preserves settled part references when another part receives a delta', () => {
+    const rafCallbacks: Array<(time: number) => void> = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => {
+      rafCallbacks.push(cb as (time: number) => void)
+      return 1
+    })
+
+    const message = createMessageWithParts('message-1', 'settled')
+    message.parts.push(createTextPart('part-live', 'message-1', 'live'))
+    messageStore.setMessages('session-1', [message])
+
+    const beforeMessage = messageStore.getSessionState('session-1')?.messages[0]
+    const beforeSettledPart = beforeMessage?.parts[0]
+    const beforeLivePart = beforeMessage?.parts[1]
+
+    messageStore.handlePartDelta({
+      sessionID: 'session-1',
+      messageID: 'message-1',
+      partID: 'part-live',
+      field: 'text',
+      delta: ' text',
+    })
+    rafCallbacks[0]?.(0)
+
+    const afterMessage = messageStore.getSessionState('session-1')?.messages[0]
+    expect(afterMessage).not.toBe(beforeMessage)
+    expect(afterMessage?.parts[0]).toBe(beforeSettledPart)
+    expect(afterMessage?.parts[1]).not.toBe(beforeLivePart)
+    expect(afterMessage?.parts[1]).toMatchObject({ text: 'live text' })
   })
 
   it('notifies only subscribers for changed sessions', () => {

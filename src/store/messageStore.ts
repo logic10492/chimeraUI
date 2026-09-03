@@ -21,6 +21,52 @@ type Subscriber = () => void
 
 const MAX_CACHED_SESSIONS = 10
 
+/**
+ * 同步合并文本：live 更长且与服务端兼容（服务端是前缀）时不回退；
+ * 服务端更长则跟上；分叉时以服务端为准。
+ */
+function preferCompatibleText(local: string, incoming: string): string {
+  if (local === incoming) return incoming
+  if (local.startsWith(incoming)) return local
+  if (incoming.startsWith(local)) return incoming
+  return incoming
+}
+
+function partHasText(part: Part): part is Part & { text: string } {
+  return 'text' in part && typeof (part as { text?: unknown }).text === 'string'
+}
+
+function mergePartPreferLiveText(local: Part | undefined, incoming: Part): Part {
+  if (!local || local.id !== incoming.id) return incoming
+  if (!partHasText(local) || !partHasText(incoming)) return incoming
+  const text = preferCompatibleText(local.text, incoming.text)
+  if (text === incoming.text) return incoming
+  return { ...incoming, text } as Part
+}
+
+function mergePartsPreferLiveText(localParts: Part[], incomingParts: Part[]): Part[] {
+  if (localParts.length === 0) return incomingParts
+  const localById = new Map(localParts.map(part => [part.id, part]))
+  return incomingParts.map(part => mergePartPreferLiveText(localById.get(part.id), part))
+}
+
+function messageIsIncomplete(message: { isStreaming?: boolean; info: { time?: { completed?: number } } }) {
+  if (message.isStreaming) return true
+  const completed = message.info.time && 'completed' in message.info.time ? message.info.time.completed : undefined
+  return completed == null
+}
+
+/**
+ * 仅未定稿时保护更长 live；incoming/本地已 completed 则强制服务端，不再 preserve。
+ */
+function shouldPreserveLiveParts(
+  previous: { isStreaming?: boolean; info: { time?: { completed?: number } } },
+  incoming?: { isStreaming?: boolean; info: { time?: { completed?: number } } },
+) {
+  if (incoming && !messageIsIncomplete(incoming)) return false
+  return messageIsIncomplete(previous)
+}
+
 class MessageStore {
   private sessions = new Map<string, SessionState>()
   private subscribers = new Set<Subscriber>()
@@ -35,8 +81,8 @@ class MessageStore {
   private pendingNotifyAllSessions = false
   private pendingSessionNotifyIds = new Set<string>()
   private rafId: number | null = null
-  // delta 批量化：按 session 追踪被 mutable 修改过的消息，在 notify 前统一做不可变快照
-  private dirtyMessagesBySession = new Map<string, Set<string>>()
+  // delta 批量化：只追踪真正变化的 part，避免同消息内稳定 part 的 memo 引用失效
+  private dirtyPartsBySession = new Map<string, Map<string, Set<string>>>()
 
   // ============================================
   // Subscription & Notification
@@ -131,23 +177,30 @@ class MessageStore {
 
   /**
    * 将 delta 期间 mutable 修改过的消息做一次不可变快照。
-   * 这样一帧内多个 delta 只产生一次数组拷贝，而不是每个 delta 都拷贝。
+   * 这样一帧内多个 delta 只产生一次数组拷贝，未变化的 part 继续复用引用。
    */
   private flushDirtyMessages() {
-    if (this.dirtyMessagesBySession.size === 0) return
+    if (this.dirtyPartsBySession.size === 0) return
 
-    for (const [sessionId, dirtyMessages] of this.dirtyMessagesBySession) {
+    for (const [sessionId, dirtyPartsByMessage] of this.dirtyPartsBySession) {
       const state = this.sessions.get(sessionId)
       if (!state) continue
 
-      // 只对被标记 dirty 的消息生成新引用（包括 parts 内的对象）
       let changed = false
       const newMessages = state.messages.map(m => {
-        if (dirtyMessages.has(m.info.id)) {
-          changed = true
-          return { ...m, parts: m.parts.map(p => ({ ...p })) }
-        }
-        return m
+        const dirtyPartIds = dirtyPartsByMessage.get(m.info.id)
+        if (!dirtyPartIds) return m
+
+        let partsChanged = false
+        const parts = m.parts.map(part => {
+          if (!dirtyPartIds.has(part.id)) return part
+          partsChanged = true
+          return { ...part }
+        })
+        if (!partsChanged) return m
+
+        changed = true
+        return { ...m, parts }
       })
 
       if (changed) {
@@ -155,7 +208,7 @@ class MessageStore {
       }
     }
 
-    this.dirtyMessagesBySession.clear()
+    this.dirtyPartsBySession.clear()
   }
 
   private notifyImmediate(sessionIds?: Iterable<string> | 'all') {
@@ -383,8 +436,20 @@ class MessageStore {
     },
   ) {
     const state = this.ensureSession(sessionId)
+    const previousMessages = state.messages
+    const previousById = new Map(previousMessages.map(message => [message.info.id, message]))
 
-    state.messages = apiMessages.map(toUIMessage)
+    state.messages = apiMessages.map(apiMessage => {
+      const next = toUIMessage(apiMessage)
+      const previous = previousById.get(next.info.id)
+      // 定稿（completed）强制采用服务端；仅流式/未完成时不回退更长 live
+      if (!previous || !shouldPreserveLiveParts(previous, next)) return next
+      return {
+        ...next,
+        parts: mergePartsPreferLiveText(previous.parts, next.parts),
+        isStreaming: previous.isStreaming || next.isStreaming,
+      }
+    })
     state.loadState = 'loaded'
     state.loadError = undefined
     state.hasMoreHistory = options?.hasMoreHistory ?? false
@@ -453,7 +518,7 @@ class MessageStore {
   clearAll() {
     this.sessions.clear()
     this.sessionAccessTime.clear()
-    this.dirtyMessagesBySession.clear()
+    this.dirtyPartsBySession.clear()
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId)
       this.rafId = null
@@ -465,7 +530,7 @@ class MessageStore {
   clearSession(sessionId: string) {
     this.sessions.delete(sessionId)
     this.sessionAccessTime.delete(sessionId)
-    this.dirtyMessagesBySession.delete(sessionId)
+    this.dirtyPartsBySession.delete(sessionId)
     this.notify([sessionId])
   }
 
@@ -517,11 +582,16 @@ class MessageStore {
     const oldMessage = state.messages[msgIndex]
     const newParts = [...oldMessage.parts]
     const existingPartIndex = newParts.findIndex(p => p.id === apiPart.id)
+    const incoming = toUIPart(apiPart)
 
     if (existingPartIndex >= 0) {
-      newParts[existingPartIndex] = toUIPart(apiPart)
+      const existing = newParts[existingPartIndex]
+      // 未定稿：兼容前缀时不回退；已 completed：强制服务端定稿
+      newParts[existingPartIndex] = shouldPreserveLiveParts(oldMessage)
+        ? mergePartPreferLiveText(existing, incoming)
+        : incoming
     } else {
-      newParts.push(toUIPart(apiPart))
+      newParts.push(incoming)
     }
 
     const newMessage = { ...oldMessage, parts: newParts }
@@ -545,12 +615,17 @@ class MessageStore {
       // flushDirtyMessages() 会在 notify 的 rAF 回调中统一生成新引用。
     ;(part as { text: string }).text += data.delta
 
-    let dirtyMessages = this.dirtyMessagesBySession.get(data.sessionID)
-    if (!dirtyMessages) {
-      dirtyMessages = new Set<string>()
-      this.dirtyMessagesBySession.set(data.sessionID, dirtyMessages)
+    let dirtyPartsByMessage = this.dirtyPartsBySession.get(data.sessionID)
+    if (!dirtyPartsByMessage) {
+      dirtyPartsByMessage = new Map<string, Set<string>>()
+      this.dirtyPartsBySession.set(data.sessionID, dirtyPartsByMessage)
     }
-    dirtyMessages.add(data.messageID)
+    let dirtyPartIds = dirtyPartsByMessage.get(data.messageID)
+    if (!dirtyPartIds) {
+      dirtyPartIds = new Set<string>()
+      dirtyPartsByMessage.set(data.messageID, dirtyPartIds)
+    }
+    dirtyPartIds.add(data.partID)
     this.notify([data.sessionID])
   }
 
