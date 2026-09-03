@@ -4,7 +4,7 @@
 // ============================================
 
 import { getSDKClient, unwrap } from './sdk'
-import type { FileNode, FileContent, FileStatusItem, SymbolInfo } from './types'
+import type { FileNode, FileContent, FileStatusItem, SymbolInfo, TextSearchMatch } from './types'
 import { apiScopeKey, apiScopeQuery, resolveApiScope, type ApiScope, type ApiScopeInput } from './scope'
 
 const ROOT_DIRECTORY_CACHE_TTL_MS = 10_000
@@ -141,6 +141,14 @@ export async function getFileStatus(input?: ApiScopeInput): Promise<FileStatusIt
 export async function searchSymbols(query: string, input?: ApiScopeInput): Promise<SymbolInfo[]> {
   const scope = resolveApiScope(input)
   return unwrap(await getSDKClient(scope).find.symbols({ query, ...apiScopeQuery(scope) }))
+}
+
+/**
+ * 搜索文件正文内容
+ */
+export async function searchText(pattern: string, input?: ApiScopeInput): Promise<TextSearchMatch[]> {
+  const scope = resolveApiScope(input)
+  return unwrap(await getSDKClient(scope).find.text({ pattern, ...apiScopeQuery(scope) }))
 }
 
 /**

@@ -556,7 +556,7 @@
       "phase": 0,
       "status": { "server": "existing", "ui": "implemented" },
       "operations": [
-        { "operationId": "find.text", "method": "GET", "path": "/find", "transport": "sdk", "currentlyUsed": false },
+        { "operationId": "find.text", "method": "GET", "path": "/find", "transport": "sdk", "currentlyUsed": true },
         {
           "operationId": "find.files",
           "method": "GET",
@@ -566,7 +566,7 @@
         }
       ],
       "closure": { "files": [], "tests": [] },
-      "notes": "Existing server text/file search operations; text search is available but not currently called by NewWeb."
+      "notes": "Existing server text/file search operations; both are called by NewWeb (file explorer text search uses find.text)."
     },
     {
       "id": "workspace-symbol-search",

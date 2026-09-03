@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { EditorState, type Extension } from '@codemirror/state'
 import { openSearchPanel } from '@codemirror/search'
 import { EditorView } from '@codemirror/view'
 import type { HighlightTokens } from '../hooks/useSyntaxHighlight'
-import { createReadonlyCodeMirrorExtensions, dispatchShikiTokens } from './codeMirrorReadonlyExtensions'
+import {
+  clearTargetLine,
+  createReadonlyCodeMirrorExtensions,
+  dispatchShikiTokens,
+  dispatchTargetLine,
+  type TargetLineRange,
+} from './codeMirrorReadonlyExtensions'
 import { getLineCount, getLineNumberColumnWidth } from '../utils/lineNumberUtils'
 
 interface CodeMirrorReadonlyProps {
@@ -18,6 +24,9 @@ interface CodeMirrorReadonlyProps {
   showLineNumbers?: boolean
   className?: string
   extraExtensions?: Extension[]
+  targetLine?: number | null
+  targetKey?: string
+  targetRanges?: readonly TargetLineRange[]
 }
 
 export function CodeMirrorReadonly({
@@ -32,6 +41,9 @@ export function CodeMirrorReadonly({
   showLineNumbers = true,
   className = '',
   extraExtensions = [],
+  targetLine,
+  targetKey,
+  targetRanges = [],
 }: CodeMirrorReadonlyProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -52,7 +64,7 @@ export function CodeMirrorReadonly({
     [wordWrap, lineHeight, showLineNumbers, maxHeight, constrainedHeight, lineNumberWidth, extraExtensions],
   )
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const host = hostRef.current
     if (!host) return
 
@@ -69,6 +81,31 @@ export function CodeMirrorReadonly({
       if (viewRef.current === view) viewRef.current = null
     }
   }, [code, extensions, tokensRef])
+
+  useLayoutEffect(() => {
+    const view = viewRef.current
+    if (!view || !isVisible || !targetLine) return
+
+    let disposed = false
+    let frameId: number | null = null
+    let clearTimerId: number | null = null
+
+    frameId = requestAnimationFrame(() => {
+      if (disposed || !view.dom.isConnected) return
+
+      dispatchTargetLine(view, targetLine, targetRanges)
+      clearTimerId = window.setTimeout(() => {
+        if (!disposed) clearTargetLine(view)
+      }, 1600)
+    })
+
+    return () => {
+      disposed = true
+      if (frameId !== null) cancelAnimationFrame(frameId)
+      if (clearTimerId !== null) clearTimeout(clearTimerId)
+      if (viewRef.current === view) clearTargetLine(view)
+    }
+  }, [code, isVisible, targetKey, targetLine, targetRanges])
 
   useEffect(() => {
     const view = viewRef.current
