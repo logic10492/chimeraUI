@@ -130,6 +130,7 @@ function EventEnableRow({
       label={t(labelKey as `notifications.${string}`)}
       description={t(descKey as `notifications.${string}`)}
       icon={<span className={color}>{icon}</span>}
+      searchContext={t('notifications.notificationTypes')}
       onClick={() => notificationEventSettingsStore.setSystemEnabled(type, !eventConfig.systemEnabled)}
     >
       <Toggle
@@ -211,7 +212,11 @@ function EventSoundCard({
   }, [type])
 
   return (
-    <div className="rounded-lg border border-border-200/50 bg-bg-000/40 p-3">
+    <div
+      data-setting-label={t(labelKey as `notifications.${string}`)}
+      data-setting-context={t('notifications.eventSounds')}
+      className="rounded-lg border border-border-200/50 bg-bg-000/40 p-3"
+    >
       {/* Header */}
       <div className="flex items-start justify-between gap-2 mb-2.5">
         <div className="flex items-center gap-2.5">

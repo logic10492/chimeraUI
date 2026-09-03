@@ -3,6 +3,11 @@
   "subtitle": "Customize UI, behavior, and server setup",
   "closeSettings": "Close settings",
   "version": "Chimera v{{version}}",
+  "search": {
+    "placeholder": "Search settings",
+    "clear": "Clear settings search",
+    "noResults": "No matching settings"
+  },
   "tabs": {
     "servers": "Servers",
     "serversDesc": "Backend connections and fast active endpoint switching",
@@ -34,6 +39,10 @@
   "groups": {
     "core": "Core",
     "advanced": "Advanced"
+  },
+  "providers": {
+    "connectedProviders": "Connected providers",
+    "availableProviders": "Available providers"
   },
   "servers": {
     "connections": "Connections",

@@ -31,6 +31,8 @@ import { WorkspaceSettings } from './components/WorkspaceSettings'
 import { ConfigSettings } from './components/ConfigSettings'
 import { ProviderSettings } from './components/ProviderSettings'
 import { CompactionSettings } from './components/CompactionSettings'
+import { SettingsSearch } from './SettingsSearch'
+import { SETTINGS_SEARCH_DEFINITIONS, type SettingsSearchItem } from './settingsSearchCatalog'
 
 // ============================================
 // Types
@@ -175,10 +177,12 @@ function TabContent({ tab }: { tab: SettingsTab }) {
 // ============================================
 
 export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: SettingsDialogProps) {
-  const { t } = useTranslation(['settings'])
+  const { t } = useTranslation(['settings', 'commands'])
   const isMobile = useIsMobile()
   const hasDesktopCapabilities = isTauriDesktop()
   const scrollRef = useRef<HTMLDivElement>(null)
+  const highlightFrameRef = useRef<number | null>(null)
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const normalizeTab = useCallback((next: SettingsDialogProps['initialTab']): SettingsTab => {
     if (!next || next === 'general') return 'chat'
     return next
@@ -211,6 +215,25 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
       })).filter(group => group.tabs.length > 0),
     [visibleTabs, t],
   )
+
+  const searchItems = useMemo<SettingsSearchItem[]>(() => {
+    const tabsById = new Map(visibleTabs.map(vt => [vt.id, vt]))
+    return SETTINGS_SEARCH_DEFINITIONS.flatMap(definition => {
+      const visibleTab = tabsById.get(definition.tab)
+      if (!visibleTab) return []
+      return [
+        {
+          id: `${definition.tab}:${definition.labelKey}:${definition.contextKey ?? ''}`,
+          tab: definition.tab,
+          label: t(definition.labelKey),
+          tabLabel: definition.contextKey ? `${visibleTab.label} · ${t(definition.contextKey)}` : visibleTab.label,
+          targetLabel: t(definition.targetKey ?? definition.labelKey),
+          fallbackLabel: definition.fallbackKey ? t(definition.fallbackKey) : undefined,
+          targetContext: definition.contextKey ? t(definition.contextKey) : undefined,
+        },
+      ]
+    })
+  }, [t, visibleTabs])
 
   useEffect(() => {
     if (!isOpen) return
@@ -250,6 +273,72 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
     })
   }, [])
 
+  const selectSearchItem = useCallback(
+    (item: SettingsSearchItem) => {
+      switchTab(item.tab)
+      if (highlightFrameRef.current !== null) cancelAnimationFrame(highlightFrameRef.current)
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+
+      highlightFrameRef.current = requestAnimationFrame(() => {
+        highlightFrameRef.current = requestAnimationFrame(() => {
+          highlightFrameRef.current = null
+          const candidates = Array.from(scrollRef.current?.querySelectorAll<HTMLElement>('[data-setting-label]') ?? [])
+          const matchingTargets = candidates.filter(
+            candidate =>
+              candidate.dataset.settingLabel === item.targetLabel &&
+              (!item.targetContext || candidate.dataset.settingContext === item.targetContext),
+          )
+          const target =
+            matchingTargets[0] ??
+            candidates.find(candidate => candidate.dataset.settingLabel === item.fallbackLabel)
+          if (!target) return
+
+          scrollRef.current?.querySelector('.settings-search-highlight')?.classList.remove('settings-search-highlight')
+          target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+          target.classList.add('settings-search-highlight')
+          const focusTarget = Array.from(
+            target.querySelectorAll<HTMLElement>(
+              'button:not(:disabled):not([tabindex="-1"]), input:not(:disabled):not([type="hidden"]):not([tabindex="-1"]), select:not(:disabled):not([tabindex="-1"]), textarea:not(:disabled):not([tabindex="-1"])',
+            ),
+          ).find(candidate => !candidate.closest('[hidden], .hidden, [aria-hidden="true"]'))
+          if (focusTarget) {
+            focusTarget.focus({ preventScroll: true })
+          } else {
+            target.tabIndex = -1
+            target.focus({ preventScroll: true })
+            target.addEventListener('blur', () => target.removeAttribute('tabindex'), { once: true })
+          }
+          highlightTimerRef.current = setTimeout(() => {
+            target.classList.remove('settings-search-highlight')
+            highlightTimerRef.current = null
+          }, 1800)
+        })
+      })
+    },
+    [switchTab],
+  )
+
+  useEffect(
+    () => () => {
+      if (highlightFrameRef.current !== null) cancelAnimationFrame(highlightFrameRef.current)
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (isOpen) return
+    if (highlightFrameRef.current !== null) {
+      cancelAnimationFrame(highlightFrameRef.current)
+      highlightFrameRef.current = null
+    }
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current)
+      highlightTimerRef.current = null
+    }
+    scrollRef.current?.querySelector('.settings-search-highlight')?.classList.remove('settings-search-highlight')
+  }, [isOpen])
+
   const handleTabKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -269,6 +358,16 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
 
   const activeTabMeta = visibleTabs.find(vt => vt.id === tab) || visibleTabs[0]
   const activePanelId = `settings-panel-${tab}`
+
+  const search = (
+    <SettingsSearch
+      items={searchItems}
+      placeholder={t('search.placeholder')}
+      clearLabel={t('search.clear')}
+      noResultsLabel={t('search.noResults')}
+      onSelect={selectSearchItem}
+    />
+  )
 
   // 移动端：全屏体验，顶部 sticky tab
   if (isMobile) {
@@ -290,6 +389,7 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
             <div className="flex items-center justify-center px-4 pt-3 pb-2">
               <div className="text-[length:var(--fs-heading-3)] font-semibold text-text-100">{t('title')}</div>
             </div>
+            <div className="px-3 pb-2">{search}</div>
 
             {/* Tab Bar - horizontal scroll with padding for visual safety */}
             <div className="relative">
@@ -366,6 +466,7 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
               {t('subtitle')}
             </div>
           </div>
+          <div className="mb-3 px-1">{search}</div>
           <div className="space-y-3">
             {groupedTabs.map(group => (
               <div key={group.label}>
