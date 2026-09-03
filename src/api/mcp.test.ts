@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getActiveServerIdMock, getSDKClientMock, mcpMock } = vi.hoisted(() => ({
+const { getActiveServerIdMock, getSDKClientMock, mcpMock, resourceMock } = vi.hoisted(() => ({
   getActiveServerIdMock: vi.fn(() => 'local'),
   getSDKClientMock: vi.fn(),
   mcpMock: {
@@ -9,6 +9,9 @@ const { getActiveServerIdMock, getSDKClientMock, mcpMock } = vi.hoisted(() => ({
     connect: vi.fn(),
     disconnect: vi.fn(),
     auth: { start: vi.fn(), remove: vi.fn(), callback: vi.fn(), authenticate: vi.fn() },
+  },
+  resourceMock: {
+    list: vi.fn(),
   },
 }))
 
@@ -24,16 +27,17 @@ vi.mock('../store/serverStore', () => ({
   serverStore: { getActiveServerId: getActiveServerIdMock },
 }))
 
-import { addMcpServer, completeMcpAuth, getMcpStatus, startMcpAuth } from './mcp'
+import { addMcpServer, completeMcpAuth, getMcpResources, getMcpStatus, startMcpAuth } from './mcp'
 
 describe('MCP API scope wrappers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    getSDKClientMock.mockReturnValue({ mcp: mcpMock })
+    getSDKClientMock.mockReturnValue({ mcp: mcpMock, experimental: { resource: resourceMock } })
     mcpMock.status.mockResolvedValue({ data: {} })
     mcpMock.add.mockResolvedValue({ data: undefined })
     mcpMock.auth.start.mockResolvedValue({ data: { authorizationUrl: 'https://auth.test' } })
     mcpMock.auth.callback.mockResolvedValue({ data: undefined })
+    resourceMock.list.mockResolvedValue({ data: {} })
   })
 
   it('uses workspace queries and the matching scoped SDK client', async () => {
@@ -57,5 +61,12 @@ describe('MCP API scope wrappers', () => {
 
     expect(getSDKClientMock).toHaveBeenCalledWith({ serverID: 'local', directory: '/legacy' })
     expect(mcpMock.status).toHaveBeenCalledWith({ directory: '/legacy' })
+  })
+
+  it('lists MCP resources with the scoped SDK client and query', async () => {
+    await getMcpResources('/project')
+
+    expect(getSDKClientMock).toHaveBeenCalledWith({ serverID: 'local', directory: '/project' })
+    expect(resourceMock.list).toHaveBeenCalledWith({ directory: '/project' })
   })
 })

@@ -4,7 +4,7 @@
 
 import { getSDKClient, unwrap } from './sdk'
 import { apiScopeQuery, resolveApiScope, type ApiScopeInput } from './scope'
-import type { MCPStatusResponse, McpServerConfig } from '../types/api/mcp'
+import type { MCPResourceMap, MCPStatusResponse, McpServerConfig } from '../types/api/mcp'
 
 /**
  * 获取所有 MCP 服务器状态
@@ -12,6 +12,14 @@ import type { MCPStatusResponse, McpServerConfig } from '../types/api/mcp'
 export async function getMcpStatus(input?: ApiScopeInput): Promise<MCPStatusResponse> {
   const scope = resolveApiScope(input)
   return unwrap(await getSDKClient(scope).mcp.status(apiScopeQuery(scope)))
+}
+
+/**
+ * 获取已连接 MCP 服务器暴露的 resources
+ */
+export async function getMcpResources(input?: ApiScopeInput): Promise<MCPResourceMap> {
+  const scope = resolveApiScope(input)
+  return unwrap(await getSDKClient(scope).experimental.resource.list(apiScopeQuery(scope)))
 }
 
 /**
