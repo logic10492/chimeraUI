@@ -5,7 +5,7 @@ import { animate } from 'motion/mini'
 import { ChevronDownIcon, ChevronRightIcon, SplitIcon, SpinnerIcon, UndoIcon } from '../../components/Icons'
 import { CopyButton, SmoothHeight } from '../../components/ui'
 import { MarkdownRenderer } from '../../components/MarkdownRenderer'
-import { useDelayedRender } from '../../hooks'
+import { useDelayedRender, useDisclosureScrollLock } from '../../hooks'
 import { useTheme } from '../../hooks/useTheme'
 import {
   useInlineToolRequests,
@@ -125,6 +125,7 @@ function useEntryGrowAnimation(created: number) {
 
 /** 默认预览 8 行 */
 const COLLAPSE_PREVIEW_LINES = 8
+const LEADING_RELAXED = 1.625
 
 // 折叠状态缓存：消息是否溢出
 const overflowStateCache = new Map<string, boolean>()
@@ -142,6 +143,7 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
 }) {
   const { t } = useTranslation('message')
   const contentRef = useRef<HTMLDivElement>(null)
+  const { rootRef, headerRef, withScrollLock } = useDisclosureScrollLock()
   const overflowCacheKey = `${messageId}:${renderMarkdown ? 'markdown' : 'plain'}`
   const [expanded, setExpanded] = useUiDisclosureState(`message:${messageId}:user-text`, false)
   const [isOverflow, setIsOverflow] = useState(() => overflowStateCache.get(overflowCacheKey) ?? false)
@@ -153,9 +155,9 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
     let disposed = false
     const measure = () => {
       if (disposed) return
-      const lineHeight = Number.parseFloat(window.getComputedStyle(el).lineHeight)
-      if (!Number.isFinite(lineHeight) || lineHeight <= 0) return
-      const collapsedHeight = lineHeight * COLLAPSE_PREVIEW_LINES
+      const fsBase = Number.parseFloat(window.getComputedStyle(el).getPropertyValue('--fs-base'))
+      if (!Number.isFinite(fsBase) || fsBase <= 0) return
+      const collapsedHeight = fsBase * LEADING_RELAXED * COLLAPSE_PREVIEW_LINES
       const next = el.scrollHeight > collapsedHeight + 1
       overflowStateCache.set(overflowCacheKey, next)
       setIsOverflow(prev => (prev === next ? prev : next))
@@ -176,16 +178,26 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
   const isCollapsed = collapseEnabled && !expanded
 
   return (
-    <div className="px-4 py-2.5 bg-bg-300 rounded-2xl max-w-full">
+    <div ref={rootRef} className="px-4 py-2.5 bg-bg-300 rounded-2xl max-w-full">
       <div className="relative">
         <div
-          ref={contentRef}
+          ref={node => {
+            contentRef.current = node
+            headerRef(node)
+          }}
           className={`m-0 break-words text-[length:var(--fs-base)] text-text-100 leading-relaxed${
             renderMarkdown ? '' : ' whitespace-pre-wrap'
           }${
             isCollapsed ? ' overflow-hidden' : ''
           }`}
-          style={isCollapsed ? { maxHeight: `${COLLAPSE_PREVIEW_LINES}lh` } : undefined}
+          style={
+            isCollapsed
+              ? {
+                  maxHeight: `calc(var(--fs-base) * ${LEADING_RELAXED} * ${COLLAPSE_PREVIEW_LINES})`,
+                  contain: 'layout paint',
+                }
+              : undefined
+          }
         >
           {renderMarkdown ? <MarkdownRenderer content={text} /> : text}
         </div>
@@ -196,7 +208,8 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
       </div>
       {showCollapse && (
         <button
-          onClick={() => setExpanded(prev => !prev)}
+          type="button"
+          onClick={() => withScrollLock(() => setExpanded(prev => !prev))}
           className="mt-1 text-[length:var(--fs-sm)] text-text-400 hover:text-text-200 transition-colors"
           aria-expanded={expanded}
         >
@@ -272,6 +285,11 @@ const UserMessageView = memo(function UserMessageView({
     false,
   )
   const shouldRenderSystemContext = useDelayedRender(showSystemContext)
+  const {
+    rootRef: systemContextRootRef,
+    headerRef: systemContextHeaderRef,
+    withScrollLock: withSystemContextScrollLock,
+  } = useDisclosureScrollLock()
   const { collapseUserMessages, renderUserMarkdown } = useTheme()
 
   const wrapperRef = useEntryGrowAnimation(info.time.created)
@@ -313,9 +331,11 @@ const UserMessageView = memo(function UserMessageView({
 
         {/* 系统上下文 */}
         {hasSystemContext && (
-          <div className="flex flex-col items-end mt-1 w-full">
+          <div ref={systemContextRootRef} className="flex flex-col items-end mt-1 w-full">
             <button
-              onClick={() => setShowSystemContext(!showSystemContext)}
+              type="button"
+              ref={systemContextHeaderRef}
+              onClick={() => withSystemContextScrollLock(() => setShowSystemContext(!showSystemContext))}
               className="flex items-center gap-1 text-[length:var(--fs-sm)] text-text-400 hover:text-text-300 transition-colors py-1 px-2 rounded hover:bg-bg-200"
             >
               <span>
@@ -631,6 +651,8 @@ const ToolGroup = memo(function ToolGroup({
   const groupStateKey = `message:${parts[0]?.messageID || 'unknown'}:tool-group:${parts[0]?.id || 'empty'}`
   const [expanded, setExpanded] = useUiDisclosureState(groupStateKey, shouldStartExpanded)
   const hasAutoExpandedReadableRef = useRef(shouldStartExpanded && immersiveMode && hasReadableTools)
+  const { rootRef: stepsRootRef, headerRef: stepsHeaderRef, withScrollLock: withStepsScrollLock } =
+    useDisclosureScrollLock()
 
   useEffect(() => {
     if (!descriptiveToolSteps) return
@@ -674,12 +696,13 @@ const ToolGroup = memo(function ToolGroup({
   // streaming→idle / 1→N 工具切换时不 remount，expanded 状态不丢失
   return (
     <SmoothHeight isActive={!!isStreaming}>
-      <div className="flex flex-col">
+      <div ref={stepsRootRef} className="flex flex-col">
         {showStepsHeader &&
           (descriptiveToolSteps ? (
             <button
               type="button"
-              onClick={() => setExpanded(!expanded)}
+              ref={stepsHeaderRef}
+              onClick={() => withStepsScrollLock(() => setExpanded(!expanded))}
               className="flex w-full items-baseline rounded-md py-1 text-left hover:bg-bg-200/30 transition-colors"
             >
               <span className="text-[length:var(--fs-sm)] leading-5">
@@ -709,7 +732,9 @@ const ToolGroup = memo(function ToolGroup({
             </button>
           ) : (
             <button
-              onClick={() => setExpanded(!expanded)}
+              type="button"
+              ref={stepsHeaderRef}
+              onClick={() => withStepsScrollLock(() => setExpanded(!expanded))}
               className="flex items-center gap-1.5 py-1.5 text-text-400 text-[length:var(--fs-base)] hover:text-text-200 hover:bg-bg-200/30 rounded-md transition-colors"
             >
               <span className="inline-flex w-[14px] items-center justify-center shrink-0">

@@ -5,6 +5,7 @@ import { MessageRenderer } from './MessageRenderer'
 import type { Message } from '../../types/message'
 
 let mockRenderUserMarkdown = false
+let mockCollapseUserMessages = false
 
 vi.mock('motion/mini', () => ({
   animate: () => Promise.resolve(),
@@ -12,11 +13,16 @@ vi.mock('motion/mini', () => ({
 
 vi.mock('../../hooks', () => ({
   useDelayedRender: (show: boolean) => show,
+  useDisclosureScrollLock: () => ({
+    rootRef: () => undefined,
+    headerRef: () => undefined,
+    withScrollLock: (action: () => void) => action(),
+  }),
 }))
 
 vi.mock('../../hooks/useTheme', () => ({
   useTheme: () => ({
-    collapseUserMessages: false,
+    collapseUserMessages: mockCollapseUserMessages,
     renderUserMarkdown: mockRenderUserMarkdown,
     stepFinishDisplay: { turnDuration: false },
     descriptiveToolSteps: false,
@@ -114,6 +120,7 @@ function createUserTextMessage(text: string): Message {
 describe('MessageRenderer assistant fork', () => {
   beforeEach(() => {
     mockRenderUserMarkdown = false
+    mockCollapseUserMessages = false
   })
 
   it('passes the explicit fork target id when forking an assistant message', async () => {
@@ -178,5 +185,15 @@ describe('MessageRenderer assistant fork', () => {
     render(<MessageRenderer message={createUserTextMessage('Use **bold** text')} />)
 
     expect(screen.getByTestId('user-markdown')).toHaveTextContent('Use **bold** text')
+  })
+
+  it('clamps a collapsible non-artifact user message with layout isolation', () => {
+    mockRenderUserMarkdown = true
+    mockCollapseUserMessages = true
+    render(<MessageRenderer message={createUserTextMessage('just some plain text')} />)
+
+    const container = screen.getByTestId('user-markdown').parentElement!
+    expect(container.style.maxHeight).not.toBe('')
+    expect(container.style.contain).toBe('layout paint')
   })
 })
