@@ -25,6 +25,24 @@ Several stores call `serverStore` during module evaluation (e.g. `notificationSt
 
 The Chimera OpenAPI declares graph line/depth params as `integer`; the SDK serializes numbers into query strings itself. Pass numbers through — do not stringify, and do not write tests expecting string conversion.
 
+## Environment and collaboration pitfalls
+
+### Do not run `npm install` here — use bun
+
+`node_modules` in this package consists of bun workspace symlinks into the repo-root `node_modules/.bun` store. With `overrides` present in `package.json`, npm 11's arborist crashes with `Cannot read properties of null (reading 'edgesOut')`. Install with `bun install` from the workspace root instead. When `package-lock.json` (consumed by Docker/CI builds) must change, patch the entry by hand, verify the integrity hash with `npm view <pkg>@<version> dist.integrity`, and update the bun side with `bun update <pkg>` from the workspace root.
+
+### Dependencies are exact-pinned
+
+This fork locks every dependency to an exact version (no `^` ranges) in `package.json`. Keep that style when adding or bumping packages; use `overrides` for transitive security fixes (see the `fast-uri` entry).
+
+### Nested repo boundary
+
+This is an independent git repo embedded in the `coding-chimera` checkout (tracked there like a submodule pointer). Commit here separately from the outer repo, and never stage or revert outer-repo changes unrelated to your task — the outer repo often carries other in-flight work (check root `memory.md`).
+
+### Subagent scheduling
+
+Follow the root `AGENTS.md` / runtime scheduling convention: implementation subagents never run on `kimi-k3` (reserved for the root session) — large models (L/XL) run at a low reasoning variant, small models at a high reasoning variant, always with explicit model+variant; scouting/exploration fans out via swarm with `workload=scout`.
+
 ## Verify
 
 - `bun run test:run` — vitest suite
