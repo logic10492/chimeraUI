@@ -98,6 +98,9 @@ export const SETTINGS_SEARCH_DEFINITIONS: SettingsSearchDefinition[] = [
     'appearance.glassEffect',
     'appearance.uiFontScale',
     'appearance.codeFontScale',
+    'appearance.codeBlockThemes',
+    'appearance.codeBlockThemeLight',
+    'appearance.codeBlockThemeDark',
     'appearance.language',
   ]),
   {

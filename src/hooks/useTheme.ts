@@ -226,6 +226,14 @@ export function useTheme() {
     themeStore.setOutlineCurrentHighlight(enabled)
   }, [])
 
+  const setCodeBlockThemeLight = useCallback((id: string) => {
+    themeStore.setCodeBlockThemeLight(id)
+  }, [])
+
+  const setCodeBlockThemeDark = useCallback((id: string) => {
+    themeStore.setCodeBlockThemeDark(id)
+  }, [])
+
   return {
     // 日夜模式（向后兼容）
     mode: state.colorMode,
@@ -328,5 +336,11 @@ export function useTheme() {
     // 对话历史导航当前位置高亮
     outlineCurrentHighlight: state.outlineCurrentHighlight,
     setOutlineCurrentHighlight,
+
+    // 代码块主题（Shiki）
+    codeBlockThemeLight: state.codeBlockThemeLight,
+    codeBlockThemeDark: state.codeBlockThemeDark,
+    setCodeBlockThemeLight,
+    setCodeBlockThemeDark,
   }
 }

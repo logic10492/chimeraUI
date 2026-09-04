@@ -127,6 +127,9 @@ const DEFAULT_GLASS_EFFECT = true
 const DEFAULT_QUEUE_FOLLOWUP_MESSAGES = false
 const DEFAULT_MANUAL_TERMINAL_TITLES = false
 const DEFAULT_EXTERNAL_FILE_DROP_MODE: ExternalFileDropMode = 'upload-first'
+/** Shiki 代码块主题：默认 GitHub，保留现有行为 */
+const DEFAULT_CODE_BLOCK_THEME_LIGHT = 'github-light-default'
+const DEFAULT_CODE_BLOCK_THEME_DARK = 'github-dark-default'
 const DEFAULT_OUTLINE_CURRENT_HIGHLIGHT = true
 
 export interface ThemeState {
@@ -180,6 +183,10 @@ export interface ThemeState {
   externalFileDropMode: ExternalFileDropMode
   /** 是否在对话历史导航中高亮当前对话位置 */
   outlineCurrentHighlight: boolean
+  /** 代码块语法高亮主题（亮色模式），Shiki theme id */
+  codeBlockThemeLight: string
+  /** 代码块语法高亮主题（暗色模式），Shiki theme id */
+  codeBlockThemeDark: string
 }
 
 export type ThemeBackup = ThemeState
@@ -213,6 +220,8 @@ const STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES = 'queue-followup-messages'
 const STORAGE_KEY_MANUAL_TERMINAL_TITLES = 'manual-terminal-titles'
 const STORAGE_KEY_EXTERNAL_FILE_DROP_MODE = 'external-file-drop-mode'
 const STORAGE_KEY_OUTLINE_CURRENT_HIGHLIGHT = 'outline-current-highlight'
+const STORAGE_KEY_CODE_BLOCK_THEME_LIGHT = 'code-block-theme-light'
+const STORAGE_KEY_CODE_BLOCK_THEME_DARK = 'code-block-theme-dark'
 
 // ============================================
 // DOM Style Element IDs
@@ -342,6 +351,11 @@ class ThemeStore {
         ? DEFAULT_OUTLINE_CURRENT_HIGHLIGHT
         : savedOutlineCurrentHighlight === 'true'
 
+    const savedCodeBlockThemeLight = localStorage.getItem(STORAGE_KEY_CODE_BLOCK_THEME_LIGHT)
+    const codeBlockThemeLight = savedCodeBlockThemeLight || DEFAULT_CODE_BLOCK_THEME_LIGHT
+    const savedCodeBlockThemeDark = localStorage.getItem(STORAGE_KEY_CODE_BLOCK_THEME_DARK)
+    const codeBlockThemeDark = savedCodeBlockThemeDark || DEFAULT_CODE_BLOCK_THEME_DARK
+
     this.state = {
       presetId: normalizedPreset,
       colorMode: savedMode,
@@ -368,6 +382,8 @@ class ThemeStore {
       manualTerminalTitles,
       externalFileDropMode,
       outlineCurrentHighlight,
+      codeBlockThemeLight,
+      codeBlockThemeDark,
     }
   }
 
@@ -451,6 +467,14 @@ class ThemeStore {
   }
   get outlineCurrentHighlight() {
     return this.state.outlineCurrentHighlight
+  }
+
+  get codeBlockThemeLight() {
+    return this.state.codeBlockThemeLight
+  }
+
+  get codeBlockThemeDark() {
+    return this.state.codeBlockThemeDark
   }
 
   getWebUIPreferences(): WebUIPreferences {
@@ -791,6 +815,20 @@ class ThemeStore {
     this.emit()
   }
 
+  setCodeBlockThemeLight(id: string) {
+    if (this.state.codeBlockThemeLight === id) return
+    this.state = { ...this.state, codeBlockThemeLight: id }
+    localStorage.setItem(STORAGE_KEY_CODE_BLOCK_THEME_LIGHT, id)
+    this.emit()
+  }
+
+  setCodeBlockThemeDark(id: string) {
+    if (this.state.codeBlockThemeDark === id) return
+    this.state = { ...this.state, codeBlockThemeDark: id }
+    localStorage.setItem(STORAGE_KEY_CODE_BLOCK_THEME_DARK, id)
+    this.emit()
+  }
+
   // ---- Theme Application ----
 
   /** 初始化：应用当前主题到 DOM */
@@ -1038,6 +1076,14 @@ function normalizeThemeBackup(raw: unknown): ThemeBackup {
       typeof parsed?.outlineCurrentHighlight === 'boolean'
         ? parsed.outlineCurrentHighlight
         : DEFAULT_OUTLINE_CURRENT_HIGHLIGHT,
+    codeBlockThemeLight:
+      typeof parsed?.codeBlockThemeLight === 'string' && parsed.codeBlockThemeLight
+        ? parsed.codeBlockThemeLight
+        : DEFAULT_CODE_BLOCK_THEME_LIGHT,
+    codeBlockThemeDark:
+      typeof parsed?.codeBlockThemeDark === 'string' && parsed.codeBlockThemeDark
+        ? parsed.codeBlockThemeDark
+        : DEFAULT_CODE_BLOCK_THEME_DARK,
   }
 }
 
@@ -1081,4 +1127,6 @@ export function importThemeBackup(raw: unknown): void {
   localStorage.setItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES, String(backup.manualTerminalTitles))
   localStorage.setItem(STORAGE_KEY_EXTERNAL_FILE_DROP_MODE, backup.externalFileDropMode)
   localStorage.setItem(STORAGE_KEY_OUTLINE_CURRENT_HIGHLIGHT, String(backup.outlineCurrentHighlight))
+  localStorage.setItem(STORAGE_KEY_CODE_BLOCK_THEME_LIGHT, backup.codeBlockThemeLight)
+  localStorage.setItem(STORAGE_KEY_CODE_BLOCK_THEME_DARK, backup.codeBlockThemeDark)
 }
