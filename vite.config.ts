@@ -2,10 +2,13 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { readFileSync } from 'node:fs'
+import { bundledLanguagesInfo } from 'shiki/langs'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8')) as { version: string }
 const appVersion = process.env.CHIMERA_VERSION?.trim() || pkg.version || '0.0.0'
 const appChannel = process.env.CHIMERA_CHANNEL?.trim() || 'latest'
+
+const shikiSupportedLangs = bundledLanguagesInfo.flatMap(info => [info.id, ...(info.aliases ?? [])])
 
 function katexWoff2Only() {
   return {
@@ -31,6 +34,7 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     __APP_CHANNEL__: JSON.stringify(appChannel),
+    __SHIKI_SUPPORTED_LANGS__: JSON.stringify(shikiSupportedLangs),
   },
   plugins: [katexWoff2Only(), react(), tailwindcss()],
   build: {
@@ -44,12 +48,16 @@ export default defineConfig({
           // 语言 grammar（@shikijs/langs/*）由 dynamic import 自动拆分
           if ((id.includes('shiki') || id.includes('@shikijs/')) && !id.includes('@shikijs/langs'))
             return 'vendor-shiki'
-          if (id.includes('streamdown') || id.includes('remend')) return 'vendor-markdown'
+          if (id.includes('marked') || id.includes('dompurify') || id.includes('morphdom') || id.includes('katex')) return 'vendor-markdown'
 
           if (id.includes('@tauri-apps/')) return 'vendor-tauri'
         },
       },
     },
+  },
+
+  worker: {
+    format: 'es',
   },
 
   // Tauri CLI 兼容：不清屏，让 Tauri 的日志能保留在终端

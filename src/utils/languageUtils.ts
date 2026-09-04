@@ -1,6 +1,6 @@
 // Language normalization helpers
 
-import { isSupportedLanguage } from '../lib/shiki'
+import { isSupportedLanguage } from '../lib/shikiLangs'
 
 export { isSupportedLanguage }
 
