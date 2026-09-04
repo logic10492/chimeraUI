@@ -187,6 +187,23 @@ describe('MessageRenderer assistant fork', () => {
     expect(screen.getByTestId('user-markdown')).toHaveTextContent('Use **bold** text')
   })
 
+  it('does not crop an interactive user HTML artifact to the collapsed preview height', () => {
+    mockRenderUserMarkdown = true
+    mockCollapseUserMessages = true
+    const message = createUserTextMessage(
+      '<section><style>section{height:380px}</style><canvas></canvas><script>requestAnimationFrame(()=>{})</script></section>',
+    )
+
+    render(<MessageRenderer message={message} />)
+
+    const container = screen.getByTestId('user-markdown').parentElement!
+    expect(container.style.maxHeight).toBe('')
+    expect(container.style.contain).toBe('')
+    expect(screen.getByTestId('user-markdown').closest('.bg-bg-300')).toHaveClass('w-full', 'max-w-2xl')
+    expect(screen.getByTestId('user-markdown').closest('.group')).toHaveClass('w-full')
+    expect(screen.getByTestId('user-markdown').closest('[data-user-html-artifact]')).toBeInTheDocument()
+  })
+
   it('clamps a collapsible non-artifact user message with layout isolation', () => {
     mockRenderUserMarkdown = true
     mockCollapseUserMessages = true

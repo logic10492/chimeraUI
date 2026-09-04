@@ -73,8 +73,255 @@ function appendReferenceDefinitions(src: string, referenceDefinitions: string) {
   return `${src.replace(/\s+$/, '')}\n\n${referenceDefinitions}`
 }
 
+export function stripLeadingHtmlComments(source: string): string {
+  let rest = source.trimStart()
+  while (rest.startsWith('<!--')) {
+    const commentEnd = rest.indexOf('-->', 4)
+    if (commentEnd === -1) return rest
+    rest = rest.slice(commentEnd + 3).trimStart()
+  }
+  return rest
+}
+
+type MarkdownSourceBlock = { start: number; raw: string; src: string; token?: Tokens.Generic }
+
+const BLOCK_HTML_CONTAINERS = new Set([
+  'address',
+  'article',
+  'aside',
+  'blockquote',
+  'center',
+  'details',
+  'dialog',
+  'div',
+  'dl',
+  'fieldset',
+  'figure',
+  'footer',
+  'form',
+  'header',
+  'html',
+  'main',
+  'nav',
+  'ol',
+  'section',
+  'svg',
+  'table',
+  'ul',
+])
+const HTML_RAW_TEXT_ELEMENTS = new Set([
+  'iframe',
+  'noembed',
+  'noframes',
+  'plaintext',
+  'script',
+  'style',
+  'textarea',
+  'title',
+  'xmp',
+])
+
+type HtmlContainerState = {
+  stack: string[]
+  rawTextTag: string | null
+  inComment: boolean
+  sawContainer: boolean
+}
+
+function updateHtmlContainerStack(raw: string, state: HtmlContainerState): number | null {
+  const lower = raw.toLowerCase()
+  let index = 0
+
+  while (index < raw.length) {
+    if (state.inComment) {
+      const commentEnd = raw.indexOf('-->', index)
+      if (commentEnd === -1) return null
+      state.inComment = false
+      index = commentEnd + 3
+      continue
+    }
+
+    if (state.rawTextTag) {
+      const closingPattern = new RegExp(`</${state.rawTextTag}(?=[\\s/>])`, 'g')
+      closingPattern.lastIndex = index
+      const closingMatch = closingPattern.exec(lower)
+      if (!closingMatch) return null
+      const closingIndex = closingMatch.index
+      index = closingIndex
+      state.rawTextTag = null
+    }
+
+    const openingIndex = raw.indexOf('<', index)
+    if (openingIndex === -1) return null
+    if (raw.startsWith('<!--', openingIndex)) {
+      const commentEnd = raw.indexOf('-->', openingIndex + 4)
+      if (commentEnd === -1) {
+        state.inComment = true
+        return null
+      }
+      index = commentEnd + 3
+      continue
+    }
+
+    const tagMatch = /^<\s*(\/?)\s*([a-z][a-z0-9-]*)\b/i.exec(raw.slice(openingIndex))
+    if (!tagMatch) {
+      index = openingIndex + 1
+      continue
+    }
+
+    let tagEnd = openingIndex + tagMatch[0].length
+    let quote = ''
+    while (tagEnd < raw.length) {
+      const character = raw[tagEnd]
+      if (quote) {
+        if (character === quote) quote = ''
+      } else if (character === '"' || character === "'") quote = character
+      else if (character === '>') break
+      tagEnd += 1
+    }
+    if (tagEnd >= raw.length) return null
+
+    const tag = tagMatch[2].toLowerCase()
+    const isClosing = !!tagMatch[1]
+    const isSelfClosing = /\/\s*>$/.test(raw.slice(openingIndex, tagEnd + 1))
+    if (BLOCK_HTML_CONTAINERS.has(tag) && !isSelfClosing) {
+      state.sawContainer = true
+      if (!isClosing) state.stack.push(tag)
+      else {
+        const stackIndex = state.stack.lastIndexOf(tag)
+        if (stackIndex !== -1) state.stack.splice(stackIndex)
+        if (state.sawContainer && !state.stack.length) return tagEnd + 1
+      }
+    }
+
+    index = tagEnd + 1
+    if (!isClosing && !isSelfClosing && HTML_RAW_TEXT_ELEMENTS.has(tag)) {
+      state.rawTextTag = tag
+    }
+  }
+
+  return null
+}
+
+const HTML_ARTIFACT_ROOT_PATTERN = /^\s*(?:<!--[\s\S]*?-->\s*)*<(?:address|article|aside|blockquote|center|details|dialog|div|dl|fieldset|figure|footer|form|header|html|main|nav|ol|section|svg|table|ul)\b/i
+
+function mergeHtmlArtifactBlocks(blocks: MarkdownSourceBlock[]): MarkdownSourceBlock[] {
+  const merged: MarkdownSourceBlock[] = []
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index]
+    if (block.token?.type !== 'html') {
+      merged.push(block)
+      continue
+    }
+
+    const run = [block]
+    const firstMarkup = stripLeadingHtmlComments(block.raw)
+    let hasMarkupPrefix = /^<(?:style|script)\b/i.test(firstMarkup)
+    let sawRoot = HTML_ARTIFACT_ROOT_PATTERN.test(block.raw)
+    let sawTrailingScript = sawRoot && /^<script\b/i.test(firstMarkup)
+    while (blocks[index + 1]) {
+      const next = blocks[index + 1]
+      const nextMarkup = stripLeadingHtmlComments(next.raw)
+      const startsRoot = HTML_ARTIFACT_ROOT_PATTERN.test(next.raw)
+      const startsActive = /^<(?:style|script)\b/i.test(nextMarkup)
+      const canJoin = next.token?.type === 'html' || (hasMarkupPrefix && startsRoot)
+      if (!canJoin || (sawTrailingScript && !startsActive)) break
+
+      run.push(next)
+      index += 1
+      if (!sawRoot && startsActive) hasMarkupPrefix = true
+      sawRoot ||= startsRoot
+      if (sawRoot && /^<script\b/i.test(nextMarkup)) sawTrailingScript = true
+    }
+    const raw = run.map(item => item.raw).join('')
+    if (run.length > 1 && /<(?:style|script)\b/i.test(raw)) {
+      merged.push({ ...block, raw, src: raw, token: undefined })
+    } else {
+      merged.push(...run)
+    }
+  }
+
+  return merged
+}
+
+function mergeMixedHtmlBlocks(blocks: MarkdownSourceBlock[]): MarkdownSourceBlock[] {
+  const merged: MarkdownSourceBlock[] = []
+  let state: HtmlContainerState = { stack: [], rawTextTag: null, inComment: false, sawContainer: false }
+  let pending: MarkdownSourceBlock | null = null
+
+  const resetState = () => {
+    state = { stack: [], rawTextTag: null, inComment: false, sawContainer: false }
+  }
+
+  const pushSuffix = (block: MarkdownSourceBlock, rootEnd: number) => {
+    const suffix = block.raw.slice(rootEnd)
+    if (!suffix) return
+    if (!suffix.trim()) {
+      const previous = merged[merged.length - 1]
+      if (previous) {
+        previous.raw += suffix
+        previous.src += suffix
+      }
+      return
+    }
+    merged.push({ start: block.start + rootEnd, raw: suffix, src: suffix })
+  }
+
+  for (const block of blocks) {
+    if (!pending) {
+      if (/^\s*<!doctype\s+html\b/i.test(block.raw)) {
+        pending = { ...block, src: block.raw, token: undefined }
+        const rootEnd = updateHtmlContainerStack(block.raw, state)
+        if (rootEnd != null) {
+          pending.raw = block.raw.slice(0, rootEnd)
+          pending.src = pending.raw
+          merged.push(pending)
+          pending = null
+          resetState()
+          pushSuffix(block, rootEnd)
+        }
+        continue
+      }
+      if (block.token?.type !== 'html' && !HTML_ARTIFACT_ROOT_PATTERN.test(block.raw)) {
+        merged.push(block)
+        continue
+      }
+      const rootEnd = updateHtmlContainerStack(block.raw, state)
+      if (rootEnd != null && rootEnd < block.raw.length) {
+        const artifact = block.raw.slice(0, rootEnd)
+        merged.push({ ...block, raw: artifact, src: artifact, token: undefined })
+        resetState()
+        pushSuffix(block, rootEnd)
+        continue
+      }
+      if (!state.stack.length) {
+        merged.push(block)
+        resetState()
+        continue
+      }
+      pending = { ...block, src: block.raw, token: undefined }
+      continue
+    }
+
+    const rootEnd = block.token?.type === 'code' ? null : updateHtmlContainerStack(block.raw, state)
+    const artifactPart = rootEnd == null ? block.raw : block.raw.slice(0, rootEnd)
+    pending.raw += artifactPart
+    pending.src += artifactPart
+    if (rootEnd != null) {
+      merged.push(pending)
+      pending = null
+      resetState()
+      pushSuffix(block, rootEnd)
+    }
+  }
+
+  if (pending) merged.push(pending)
+  return merged
+}
+
 function splitMarkdownBlocks(markdown: string) {
-  const blocks: Array<{ start: number; raw: string; src: string; token?: Tokens.Generic }> = []
+  const blocks: MarkdownSourceBlock[] = []
   const referenceDefinitions: string[] = []
   let offset = 0
 
@@ -111,23 +358,27 @@ function splitMarkdownBlocks(markdown: string) {
   }
 
   return {
-    blocks: blocks.length > 0 ? blocks : [{ start: 0, raw: markdown, src: markdown }],
+    blocks: mergeMixedHtmlBlocks(
+      mergeHtmlArtifactBlocks(blocks.length > 0 ? blocks : [{ start: 0, raw: markdown, src: markdown }]),
+    ),
     referenceDefinitions: referenceDefinitions.join('\n'),
   }
 }
 
 export function splitMarkdownStream(markdown: string, isStreaming: boolean): MarkdownStreamBlock[] {
   if (!isStreaming) {
-    if (!markdown) return [{ key: 'full:empty', src: '', mode: 'full' }]
+    if (!markdown) return [{ key: 'html:0', src: '', mode: 'full' }]
     const { blocks, referenceDefinitions } = splitMarkdownBlocks(markdown)
     if (blocks.length === 1 && blocks[0]?.token?.type !== 'code' && blocks[0]?.token?.type !== 'table') {
-      return [{ key: `full:${hashString(markdown)}`, src: appendReferenceDefinitions(blocks[0]?.raw ?? markdown, referenceDefinitions), mode: 'full' }]
+      return [{ key: 'html:0', src: appendReferenceDefinitions(blocks[0]?.raw ?? markdown, referenceDefinitions), mode: 'full' }]
     }
     return blocks.map(block => {
       if (block.token?.type === 'code') {
         const language = getLanguage((block.token as Tokens.Code).lang)
         return {
-          key: `code:${block.start}:${hashString(block.raw)}`,
+          key: language && ['html', 'htm'].includes(language.toLowerCase())
+            ? `html-code:${block.start}`
+            : `code:${block.start}:${hashString(block.raw)}`,
           raw: block.raw,
           src: block.src,
           mode: 'code' as const,
@@ -144,7 +395,7 @@ export function splitMarkdownStream(markdown: string, isStreaming: boolean): Mar
         }
       }
       return {
-        key: `full:${block.start}:${hashString(block.raw)}`,
+        key: `html:${block.start}`,
         raw: block.raw,
         src: appendReferenceDefinitions(block.raw, referenceDefinitions),
         mode: 'full' as const,
@@ -152,12 +403,12 @@ export function splitMarkdownStream(markdown: string, isStreaming: boolean): Mar
     })
   }
 
-  if (!markdown) return [{ key: 'live:empty', src: '', mode: 'live' }]
+  if (!markdown) return [{ key: 'html:0', src: '', mode: 'live' }]
 
   const fenceStart = getTrailingOpenFenceStart(markdown)
   const { blocks, referenceDefinitions } = splitMarkdownBlocks(markdown)
   if (blocks.length === 1 && blocks[0]?.token?.type !== 'code' && blocks[0]?.token?.type !== 'table') {
-    return [{ key: 'live:0:', src: appendReferenceDefinitions(blocks[0]?.raw ?? markdown, referenceDefinitions), mode: 'live' }]
+    return [{ key: 'html:0', src: appendReferenceDefinitions(blocks[0]?.raw ?? markdown, referenceDefinitions), mode: 'live' }]
   }
 
   return blocks.map(block => {
@@ -166,7 +417,9 @@ export function splitMarkdownStream(markdown: string, isStreaming: boolean): Mar
       const complete = fenceStart == null || block.start < fenceStart
       const language = getLanguage((block.token as Tokens.Code).lang)
       return {
-        key: `code:${block.start}:${complete ? hashString(block.raw) : ''}`,
+        key: language && ['html', 'htm'].includes(language.toLowerCase())
+          ? `html-code:${block.start}`
+          : `code:${block.start}:${complete ? hashString(block.raw) : ''}`,
         raw: block.raw,
         src: block.src,
         mode: 'code' as const,
@@ -183,7 +436,7 @@ export function splitMarkdownStream(markdown: string, isStreaming: boolean): Mar
       }
     }
     return {
-      key: `${isLiveTail ? 'live' : 'stable'}:${block.start}:${isLiveTail ? '' : hashString(block.src)}`,
+      key: `html:${block.start}`,
       src: appendReferenceDefinitions(block.src, referenceDefinitions),
       mode: isLiveTail ? ('live' as const) : ('full' as const),
     }

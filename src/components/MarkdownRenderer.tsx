@@ -12,7 +12,7 @@ import {
 } from 'react'
 import morphdom from 'morphdom'
 import { CodeBlock } from './CodeBlock'
-import { HandIcon, RetryIcon, ZoomInIcon, ZoomOutIcon } from './Icons'
+import { CodeIcon, EyeIcon, HandIcon, RetryIcon, ZoomInIcon, ZoomOutIcon } from './Icons'
 import { CopyButton } from './ui'
 import { useTheme } from '../hooks/useTheme'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
@@ -20,8 +20,16 @@ import { detectLanguage } from '../utils/languageUtils'
 import { isTauri } from '../utils/tauri'
 import { marked } from 'marked'
 import type { Tokens } from 'marked'
-import { projectMarkdownStream, type MarkdownStreamProjection } from './markdownStream'
+import { projectMarkdownStream, stripLeadingHtmlComments, type MarkdownStreamProjection } from './markdownStream'
 import { renderMarkdownToHtml } from './markdownHtmlRenderer'
+import {
+  buildHtmlSandboxThemeCss,
+  createHtmlSandboxMeasureScript,
+  createHtmlSandboxStorageScript,
+  createSandboxedHtmlDocument,
+  HTML_SANDBOX_SECURITY_HEAD,
+  HTML_SANDBOX_VIEWPORT_HEAD,
+} from './htmlSandbox'
 import { getCachedMermaidSvg, getOrRenderMermaidSvg } from './mermaidRenderCache'
 import { inferImageDimensions } from './imageDimensions'
 
@@ -55,6 +63,12 @@ const markdownProjectionCache = new Map<string, MarkdownStreamProjection>()
 const htmlCache = new Map<string, string>()
 const HTML_CACHE_MAX = 64
 const MARKDOWN_BLOCK_CONTENT_CLASS = 'space-y-4 whitespace-normal [&>*:first-child]:mt-0 [&>*:last-child]:mb-0'
+const MARKDOWN_USER_STATE_ATTRIBUTE = 'data-markdown-user-state'
+const HTML_SOURCE_BUTTON_CLASS = 'absolute right-2 top-2 z-10 inline-flex h-8 w-8 items-center justify-center rounded-md bg-bg-300/70 p-2 text-accent-main-100 opacity-0 shadow-sm backdrop-blur-md transition-all hover:bg-bg-300/90 hover:text-accent-main-100 group-hover/html-preview:opacity-100 group-focus-within/html-preview:opacity-100'
+const BLOCK_HTML_SOURCE_PATTERN = /^\s*<(?:address|article|aside|blockquote|center|details|dialog|div|dl|fieldset|figure|footer|form|header|html|main|nav|ol|section|svg|table|ul)\b/i
+const PREFIXED_BLOCK_HTML_SOURCE_PATTERN = /^\s*<(?:style|script)\b[\s\S]*<(?:address|article|aside|blockquote|center|details|dialog|div|dl|fieldset|figure|footer|form|header|html|main|nav|ol|section|svg|table|ul)\b/i
+const ARTIFACT_HTML_SOURCE_PATTERN = /(?:<!doctype\s+html\b|<html\b|<style\b|<script\b|<canvas\b|\son[a-z]+\s*=|(?:href|src)\s*=\s*["']?\s*javascript:)/i
+const STREAMING_HTML_CONTENT_PATTERN = /(?:```(?:html|htm|xhtml|xml|svg)\b|<(?:address|article|aside|blockquote|canvas|center|details|dialog|div|dl|fieldset|figure|footer|form|header|html|main|nav|ol|section|style|svg|table|ul)\b)/i
 
 function getCachedHtml(src: string, isReasoning: boolean): string {
   const key = `${isReasoning ? 'r' : 'd'}:${src}`
@@ -768,7 +782,401 @@ function decodeLocalFileHrefInline(href?: string): string | null {
   try { return decodeURIComponent(href.slice(LOCAL_FILE_LINK_PREFIX.length)) } catch { return null }
 }
 
-// ─── DOM decoration (pure style, no interaction) ────────────────
+function createStreamingHtmlDocument(resizeId: string, theme: 'light' | 'dark'): string {
+  const themeHead = `<style id="opencode-html-theme">${buildHtmlSandboxThemeCss(theme, 'hidden')}</style>`
+  const themeCss = JSON.stringify({
+    light: buildHtmlSandboxThemeCss('light', 'hidden'),
+    dark: buildHtmlSandboxThemeCss('dark', 'hidden'),
+  })
+  const storageScript = createHtmlSandboxStorageScript()
+  const measureScript = createHtmlSandboxMeasureScript(resizeId)
+  const bridge = `<script>
+  (() => {
+    const id = ${JSON.stringify(resizeId)};
+    const themeCss = ${themeCss};
+    const measure = () => dispatchEvent(new Event('opencode-html-measure'));
+    let scheduledScripts = 0;
+    let scriptQueue = Promise.resolve();
+    const applyTheme = theme => {
+      document.documentElement.style.colorScheme = theme;
+      document.documentElement.dataset.theme = theme;
+      const style = document.getElementById('opencode-html-theme');
+      if (style) style.textContent = themeCss[theme] || themeCss.light;
+      dispatchEvent(new CustomEvent('opencode-theme-change', { detail: { theme } }));
+      dispatchEvent(new Event('resize'));
+      measure();
+    };
+    const clean = (doc, scriptCount) => {
+      const descriptors = [];
+      Array.from(doc.querySelectorAll('script')).forEach((node, index) => {
+        if (index >= scriptCount) {
+          node.remove();
+          return;
+        }
+        descriptors.push({
+          attributes: Array.from(node.attributes).map(attr => [attr.name, attr.value]),
+          text: node.textContent || ''
+        });
+        node.setAttribute('data-opencode-script-index', String(index));
+        node.setAttribute('type', 'application/x-opencode-pending');
+      });
+      doc.querySelectorAll('*').forEach(node => Array.from(node.attributes).forEach(attr => {
+        if (/^(href|src|action|formaction)$/i.test(attr.name) && /^\\s*javascript:/i.test(attr.value)) node.removeAttribute(attr.name);
+      }));
+      return descriptors;
+    };
+    const clone = node => document.importNode(node, true);
+    const compatible = (current, next) => {
+      if (current.nodeType !== next.nodeType || current.nodeName !== next.nodeName) return false;
+      if (current.nodeType !== 1) return true;
+      const currentId = current.getAttribute('id');
+      const nextId = next.getAttribute('id');
+      if (currentId || nextId) return currentId === nextId;
+      if (current.nodeName === 'SCRIPT') {
+        return current.getAttribute('data-opencode-script-index') === next.getAttribute('data-opencode-script-index');
+      }
+      return true;
+    };
+    const patch = (current, next) => {
+      if (!compatible(current, next)) {
+        current.replaceWith(clone(next));
+        return;
+      }
+      if (current.nodeType === 3 || current.nodeType === 8) {
+        if (current.nodeValue !== next.nodeValue) current.nodeValue = next.nodeValue;
+        return;
+      }
+      const currentElement = current;
+      const nextElement = next;
+      if (currentElement.nodeName === 'SCRIPT' && currentElement.hasAttribute('data-opencode-script-executed')) return;
+      Array.from(currentElement.attributes).forEach(attr => {
+        if (!nextElement.hasAttribute(attr.name)) currentElement.removeAttribute(attr.name);
+      });
+      Array.from(nextElement.attributes).forEach(attr => {
+        if (currentElement.getAttribute(attr.name) !== attr.value) currentElement.setAttribute(attr.name, attr.value);
+      });
+      const nextChildren = Array.from(nextElement.childNodes);
+      for (let index = 0; index < nextChildren.length; index += 1) {
+        const nextChild = nextChildren[index];
+        const currentChild = currentElement.childNodes[index];
+        if (!currentChild) {
+          currentElement.append(clone(nextChild));
+          continue;
+        }
+        if (compatible(currentChild, nextChild)) {
+          patch(currentChild, nextChild);
+          continue;
+        }
+        const laterMatch = Array.from(currentElement.childNodes)
+          .slice(index + 1)
+          .find(candidate => compatible(candidate, nextChild));
+        if (laterMatch) {
+          currentElement.insertBefore(laterMatch, currentChild);
+          patch(laterMatch, nextChild);
+        } else {
+          currentElement.insertBefore(clone(nextChild), currentChild);
+        }
+      }
+      while (currentElement.childNodes.length > nextChildren.length) currentElement.lastChild?.remove();
+    };
+    const patchHead = next => {
+      const currentNodes = Array.from(document.head.querySelectorAll('[data-opencode-stream-head]'));
+      const nextNodes = Array.from(next.head.querySelectorAll('style,link[rel="stylesheet"],script'));
+      for (let index = 0; index < Math.max(currentNodes.length, nextNodes.length); index += 1) {
+        const current = currentNodes[index];
+        const candidate = nextNodes[index];
+        if (!candidate) current?.remove();
+        else if (!current) {
+          const added = clone(candidate);
+          added.setAttribute('data-opencode-stream-head', '');
+          document.head.append(added);
+        } else patch(current, candidate);
+      }
+    };
+    const runScripts = descriptors => {
+      for (let index = scheduledScripts; index < descriptors.length; index += 1) {
+        const descriptor = descriptors[index];
+        scheduledScripts = index + 1;
+        scriptQueue = scriptQueue.then(() => new Promise(resolve => {
+          const pending = document.querySelector('script[data-opencode-script-index="' + index + '"]');
+          if (!pending || pending.hasAttribute('data-opencode-script-executed')) {
+            resolve();
+            return;
+          }
+          const script = document.createElement('script');
+          descriptor.attributes.forEach(([name, value]) => script.setAttribute(name, value));
+          script.setAttribute('data-opencode-script-index', String(index));
+          script.setAttribute('data-opencode-script-executed', '');
+          if (pending.hasAttribute('data-opencode-stream-head')) script.setAttribute('data-opencode-stream-head', '');
+          script.textContent = descriptor.text;
+          const waitsForLoad = script.hasAttribute('src') || script.getAttribute('type') === 'module';
+          if (script.hasAttribute('src') && !script.hasAttribute('async') && !script.hasAttribute('defer')) script.async = false;
+          if (waitsForLoad) {
+            script.addEventListener('load', resolve, { once: true });
+            script.addEventListener('error', resolve, { once: true });
+          }
+          pending.replaceWith(script);
+          if (!waitsForLoad) resolve();
+        }));
+      }
+      scriptQueue.then(measure);
+    };
+    addEventListener('message', event => {
+      const data = event.data;
+      if (data?.type === 'opencode-html-theme') {
+        applyTheme(data.theme);
+        return;
+      }
+      if (data?.type !== 'opencode-html-stream' || data.id !== id || typeof data.html !== 'string') return;
+      const next = new DOMParser().parseFromString(data.html, 'text/html');
+      const scriptCount = data.complete === true ? Number.MAX_SAFE_INTEGER : Math.max(0, Number(data.scriptCount) || 0);
+      const descriptors = clean(next, scriptCount);
+      patchHead(next);
+      patch(document.body, next.body);
+      runScripts(descriptors);
+      measure();
+    });
+  })();
+  </script>`
+  return `<!doctype html><html><head>${HTML_SANDBOX_SECURITY_HEAD}${HTML_SANDBOX_VIEWPORT_HEAD}${themeHead}${storageScript}</head><body>${measureScript}${bridge}</body></html>`
+}
+
+
+function HtmlPreviewSurface({
+  children,
+  className = '',
+  forceTouchControlsVisible = false,
+  onViewSource,
+  surfaceRef,
+  style,
+}: {
+  children: React.ReactNode
+  className?: string
+  forceTouchControlsVisible?: boolean
+  onViewSource: () => void
+  surfaceRef?: React.RefObject<HTMLDivElement | null>
+  style?: React.CSSProperties
+}) {
+  const { preferTouchUi } = useInputCapabilities()
+
+  const handleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (
+      event.target instanceof Element &&
+      event.target.closest('button, a, input, textarea, select, summary, [contenteditable]')
+    ) {
+      return
+    }
+    event.currentTarget.focus({ preventScroll: true })
+  }, [])
+
+  return (
+    <div
+      ref={surfaceRef}
+      className={`group/html-preview relative max-w-full overflow-hidden contain-content ${preferTouchUi ? 'focus:outline-none' : ''} ${className}`}
+      style={style}
+      tabIndex={preferTouchUi ? 0 : undefined}
+      onClick={preferTouchUi ? handleClick : undefined}
+    >
+      <button
+        type="button"
+        onClick={onViewSource}
+        className={`${HTML_SOURCE_BUTTON_CLASS} ${preferTouchUi && !forceTouchControlsVisible ? '[@media(hover:none)]:opacity-0' : '[@media(hover:none)]:opacity-100'}`}
+        title="View HTML source"
+        aria-label="View HTML source"
+      >
+        <CodeIcon />
+      </button>
+      {children}
+    </div>
+  )
+}
+
+function MarkdownHtmlArtifact({
+  code,
+  isReasoning,
+  isIncomplete,
+}: {
+  code: string
+  isReasoning: boolean
+  isIncomplete?: boolean
+}) {
+  const [view, setView] = useState<'preview' | 'code'>('preview')
+  const [contentHeight, setContentHeight] = useState(120)
+  const [contentWidth, setContentWidth] = useState<number | null>(null)
+  const [touchControlsVisible, setTouchControlsVisible] = useState(false)
+  const previewSurfaceRef = useRef<HTMLDivElement>(null)
+  const scrollportRef = useRef<HTMLDivElement>(null)
+  const streamFrameRef = useRef<HTMLIFrameElement>(null)
+  const canonicalFrameRef = useRef<HTMLIFrameElement>(null)
+  const [canonicalReady, setCanonicalReady] = useState(false)
+  const resizeId = useId()
+  const canonicalResizeId = `${resizeId}-canonical`
+  const { resolvedTheme } = useTheme()
+  const theme = resolvedTheme === 'dark' ? 'dark' : 'light'
+  const [initialTheme] = useState<'light' | 'dark'>(theme)
+  const [usesStreamBridge] = useState(() => !!isIncomplete)
+  const streamSrcDoc = useMemo(() => createStreamingHtmlDocument(resizeId, initialTheme), [initialTheme, resizeId])
+  const canonicalSrcDoc = useMemo(
+    () => createSandboxedHtmlDocument(code, canonicalResizeId, initialTheme),
+    [canonicalResizeId, code, initialTheme],
+  )
+  const showCanonical = !usesStreamBridge || !isIncomplete
+
+  const sendStreamingHtml = useCallback(() => {
+    if (!usesStreamBridge) return
+    const scriptCount = isIncomplete
+      ? Array.from(code.matchAll(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi)).length
+      : Number.MAX_SAFE_INTEGER
+    streamFrameRef.current?.contentWindow?.postMessage(
+      { type: 'opencode-html-stream', id: resizeId, html: code, complete: !isIncomplete, scriptCount },
+      '*',
+    )
+  }, [code, isIncomplete, resizeId, usesStreamBridge])
+
+  useEffect(() => {
+    sendStreamingHtml()
+  }, [sendStreamingHtml])
+
+  const sendTheme = useCallback(() => {
+    const message = { type: 'opencode-html-theme', theme }
+    streamFrameRef.current?.contentWindow?.postMessage(message, '*')
+    canonicalFrameRef.current?.contentWindow?.postMessage(message, '*')
+  }, [theme])
+
+  useEffect(() => {
+    sendTheme()
+  }, [sendTheme])
+
+  useEffect(() => {
+    if (!touchControlsVisible) return
+    const hideControlsOutsidePreview = (event: PointerEvent) => {
+      if (event.target instanceof Node && !previewSurfaceRef.current?.contains(event.target)) {
+        setTouchControlsVisible(false)
+      }
+    }
+    window.addEventListener('pointerdown', hideControlsOutsidePreview, true)
+    return () => window.removeEventListener('pointerdown', hideControlsOutsidePreview, true)
+  }, [touchControlsVisible])
+
+  useEffect(() => {
+    const scrollport = scrollportRef.current
+    if (!scrollport || typeof ResizeObserver === 'undefined') return
+    let lastWidth = scrollport.clientWidth
+    const observer = new ResizeObserver(() => {
+      const nextWidth = scrollport.clientWidth
+      if (nextWidth === lastWidth) return
+      lastWidth = nextWidth
+      // Unlock width only. Height updates from the next content measure after reflow.
+      setContentWidth(current => (current == null ? current : null))
+    })
+    observer.observe(scrollport)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const handleFrameMessage = (event: MessageEvent) => {
+      const data = event.data
+      if (data?.type !== 'opencode-html-interaction' && data?.type !== 'opencode-html-resize') return
+      const fromStream = event.source === streamFrameRef.current?.contentWindow && data.id === resizeId
+      const fromCanonical = event.source === canonicalFrameRef.current?.contentWindow && data.id === canonicalResizeId
+      if (!fromStream && !fromCanonical) return
+      if (data.type === 'opencode-html-interaction') {
+        setTouchControlsVisible(true)
+        return
+      }
+      const height = Number(data.height)
+      const width = Number(data.width)
+      if (Number.isFinite(height)) setContentHeight(Math.min(4000, Math.max(120, Math.round(height))))
+      if (Number.isFinite(width)) {
+        const measured = Math.min(10000, Math.max(1, Math.round(width)))
+        const available = scrollportRef.current?.clientWidth ?? 0
+        setContentWidth(current => {
+          const next = available > 0 && measured <= available + 1 ? null : measured
+          return current === next ? current : next
+        })
+      }
+    }
+    window.addEventListener('message', handleFrameMessage)
+    return () => window.removeEventListener('message', handleFrameMessage)
+  }, [canonicalResizeId, resizeId])
+
+  if (view === 'code') {
+    return (
+      <CodeBlock
+        code={code}
+        language="html"
+        variant={isReasoning ? 'reasoning' : 'default'}
+        wordwrap={isReasoning}
+        className="my-4 first:mt-0 last:mb-0"
+        headerActions={
+          <button
+            type="button"
+            onClick={() => setView('preview')}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md p-2 text-text-400 transition-colors hover:bg-bg-300/60 hover:text-text-200"
+            title="Preview HTML"
+            aria-label="Preview HTML"
+          >
+            <EyeIcon />
+          </button>
+        }
+      />
+    )
+  }
+
+  return (
+    <HtmlPreviewSurface
+      className="my-4 first:mt-0 last:mb-0 w-full max-w-full transition-[height] duration-75 ease-out"
+      forceTouchControlsVisible={touchControlsVisible}
+      style={{ height: `${contentHeight}px` }}
+      onViewSource={() => setView('code')}
+      surfaceRef={previewSurfaceRef}
+    >
+      <div
+        ref={scrollportRef}
+        className="h-full w-full max-w-full overflow-x-auto overflow-y-hidden code-scrollbar"
+        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y', overscrollBehaviorX: 'contain' }}
+      >
+        <div
+          className="relative h-full w-full"
+          style={{ minWidth: contentWidth == null ? '100%' : `${contentWidth}px` }}
+        >
+          {usesStreamBridge && !canonicalReady && (
+            <iframe
+              ref={streamFrameRef}
+              title="HTML preview"
+              sandbox="allow-scripts"
+              referrerPolicy="no-referrer"
+              srcDoc={streamSrcDoc}
+              onLoad={() => {
+                sendStreamingHtml()
+                sendTheme()
+              }}
+              style={{ colorScheme: theme }}
+              className="absolute inset-0 block h-full w-full border-0 bg-transparent"
+            />
+          )}
+          {showCanonical && (
+            <iframe
+              ref={canonicalFrameRef}
+              title="HTML preview"
+              sandbox="allow-scripts"
+              referrerPolicy="no-referrer"
+              srcDoc={canonicalSrcDoc}
+              onLoad={() => {
+                setCanonicalReady(true)
+                sendTheme()
+              }}
+              style={{ colorScheme: theme }}
+              className={`absolute inset-0 block h-full w-full border-0 bg-transparent ${usesStreamBridge && !canonicalReady ? 'pointer-events-none opacity-0' : 'opacity-100'}`}
+            />
+          )}
+        </div>
+      </div>
+    </HtmlPreviewSurface>
+  )
+}
+
+// ─── DOM decoration and native control state ────────────────────
 
 function decorateMarkdownDom(root: HTMLElement) {
   root.querySelectorAll('img').forEach(image => {
@@ -788,11 +1196,43 @@ function decorateMarkdownDom(root: HTMLElement) {
     list.style.paddingInlineStart = getOrderedListPadding(start, itemCount)
   })
 
-  root.querySelectorAll('input[type="checkbox"]').forEach(input => {
+  root.querySelectorAll('input[type="checkbox"][disabled]').forEach(input => {
     if (!(input instanceof HTMLInputElement)) return
     input.readOnly = true
     input.className = 'mr-2 align-middle'
   })
+}
+
+function preserveMarkdownControlState(fromElement: HTMLElement, toElement: HTMLElement) {
+  if (!fromElement.hasAttribute(MARKDOWN_USER_STATE_ATTRIBUTE)) return
+  toElement.setAttribute(MARKDOWN_USER_STATE_ATTRIBUTE, '')
+
+  if (fromElement instanceof HTMLDetailsElement && toElement instanceof HTMLDetailsElement) {
+    toElement.open = fromElement.open
+    return
+  }
+  if (fromElement instanceof HTMLInputElement && toElement instanceof HTMLInputElement) {
+    toElement.value = fromElement.value
+    toElement.setAttribute('value', fromElement.value)
+    if (fromElement.type === 'checkbox' || fromElement.type === 'radio') {
+      toElement.checked = fromElement.checked
+      toElement.toggleAttribute('checked', fromElement.checked)
+    }
+    return
+  }
+  if (fromElement instanceof HTMLTextAreaElement && toElement instanceof HTMLTextAreaElement) {
+    toElement.value = fromElement.value
+    toElement.textContent = fromElement.value
+    return
+  }
+  if (fromElement instanceof HTMLSelectElement && toElement instanceof HTMLSelectElement) {
+    const selectedValues = new Set(Array.from(fromElement.selectedOptions, option => option.value))
+    Array.from(toElement.options).forEach(option => {
+      const selected = selectedValues.has(option.value)
+      option.selected = selected
+      option.toggleAttribute('selected', selected)
+    })
+  }
 }
 
 // ─── DOM Island Block ───────────────────────────────────────────
@@ -812,6 +1252,22 @@ const MarkdownDomBlock = memo(function MarkdownDomBlock({
   const renderSrc = isLive ? deferredSrc : src
   const html = useMemo(() => getCachedHtml(renderSrc, isReasoning), [isReasoning, renderSrc])
 
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const markUserState = (event: Event) => {
+      if (event.target instanceof HTMLElement) event.target.setAttribute(MARKDOWN_USER_STATE_ATTRIBUTE, '')
+    }
+    root.addEventListener('input', markUserState)
+    root.addEventListener('change', markUserState)
+    root.addEventListener('toggle', markUserState, true)
+    return () => {
+      root.removeEventListener('input', markUserState)
+      root.removeEventListener('change', markUserState)
+      root.removeEventListener('toggle', markUserState, true)
+    }
+  }, [])
+
   useLayoutEffect(() => {
     const root = rootRef.current
     if (!root) return
@@ -826,18 +1282,36 @@ const MarkdownDomBlock = memo(function MarkdownDomBlock({
     const next = document.createElement('div')
     next.innerHTML = html
     decorateMarkdownDom(next)
+    const dirtySelectValues = Array.from(
+      root.querySelectorAll<HTMLSelectElement>(`select[${MARKDOWN_USER_STATE_ATTRIBUTE}]`),
+      select => new Set(Array.from(select.selectedOptions, option => option.value)),
+    )
     morphdom(root, next, {
       childrenOnly: true,
       onBeforeElUpdated: (fromEl, toEl) => {
+        if (fromEl instanceof HTMLElement && toEl instanceof HTMLElement) {
+          preserveMarkdownControlState(fromEl, toEl)
+        }
         if (fromEl.isEqualNode(toEl)) return false
         return true
       },
+    })
+    root.querySelectorAll<HTMLSelectElement>(`select[${MARKDOWN_USER_STATE_ATTRIBUTE}]`).forEach((select, index) => {
+      const selectedValues = dirtySelectValues[index]
+      if (!selectedValues) return
+      Array.from(select.options).forEach(option => {
+        option.selected = selectedValues.has(option.value)
+      })
     })
   }, [html])
 
   const handleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if (event.defaultPrevented) return
     const target = event.target instanceof Element ? event.target : null
+
+    if (target?.closest('summary')) {
+      target.closest('details')?.setAttribute(MARKDOWN_USER_STATE_ATTRIBUTE, '')
+    }
 
     // Local file link
     const anchor = target?.closest<HTMLAnchorElement>(`a[href^="${LOCAL_FILE_LINK_PREFIX}"]`)
@@ -848,8 +1322,59 @@ const MarkdownDomBlock = memo(function MarkdownDomBlock({
     }
   }, [])
 
-  return <div ref={rootRef} className={MARKDOWN_BLOCK_CONTENT_CLASS} onClick={handleClick} />
+  const handleSubmit = useCallback((event: React.FormEvent<HTMLDivElement>) => {
+    event.preventDefault()
+  }, [])
+
+  return (
+    <div
+      ref={rootRef}
+      className={MARKDOWN_BLOCK_CONTENT_CLASS}
+      onClick={handleClick}
+      onSubmit={handleSubmit}
+    />
+  )
 })
+
+function MarkdownHtmlIsland({
+  src,
+  isReasoning,
+  isLive,
+}: {
+  src: string
+  isReasoning: boolean
+  isLive: boolean
+}) {
+  const [showSource, setShowSource] = useState(false)
+  if (showSource) {
+    return (
+      <CodeBlock
+        code={src}
+        language="html"
+        variant={isReasoning ? 'reasoning' : 'default'}
+        wordwrap={isReasoning}
+        className="my-4 first:mt-0 last:mb-0"
+        headerActions={
+          <button
+            type="button"
+            onClick={() => setShowSource(false)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md p-2 text-text-400 transition-colors hover:bg-bg-300/60 hover:text-text-200"
+            title="Render HTML"
+            aria-label="Render HTML"
+          >
+            <EyeIcon />
+          </button>
+        }
+      />
+    )
+  }
+
+  return (
+    <HtmlPreviewSurface onViewSource={() => setShowSource(true)}>
+      <MarkdownDomBlock src={src} isReasoning={isReasoning} isLive={isLive} />
+    </HtmlPreviewSurface>
+  )
+}
 
 // ─── Stream Block ───────────────────────────────────────────────
 
@@ -890,6 +1415,15 @@ const MarkdownStreamBlock = memo(function MarkdownStreamBlock({
         </div>
       )
     }
+    if (language && ['html', 'htm'].includes(language.toLowerCase()) && !isReasoning) {
+      return (
+        <div className={`markdown-stream-block ${isFirst ? 'markdown-stream-block-first' : 'markdown-stream-block-not-first'} ${isLast ? 'markdown-stream-block-last' : 'markdown-stream-block-not-last'}`}>
+          <div className={MARKDOWN_BLOCK_CONTENT_CLASS}>
+            <MarkdownHtmlArtifact code={src} isReasoning={isReasoning} isIncomplete={isStreaming && !complete} />
+          </div>
+        </div>
+      )
+    }
     return (
       <div className={`markdown-stream-block ${isFirst ? 'markdown-stream-block-first' : 'markdown-stream-block-not-first'} ${isLast ? 'markdown-stream-block-last' : 'markdown-stream-block-not-last'}`}>
         <div className={MARKDOWN_BLOCK_CONTENT_CLASS}>
@@ -904,6 +1438,30 @@ const MarkdownStreamBlock = memo(function MarkdownStreamBlock({
             />
           </div>
         </div>
+      </div>
+    )
+  }
+
+  const htmlSourceStart = stripLeadingHtmlComments(src)
+  const isHtmlDocument = /^(?:<!doctype\s+html\b|<html\b)/i.test(htmlSourceStart)
+  const isBareSvg = /^<svg\b/i.test(htmlSourceStart)
+  const isHtmlArtifact =
+    !isBareSvg && ARTIFACT_HTML_SOURCE_PATTERN.test(src) &&
+    (BLOCK_HTML_SOURCE_PATTERN.test(htmlSourceStart) || PREFIXED_BLOCK_HTML_SOURCE_PATTERN.test(htmlSourceStart))
+  if (!isReasoning && (isHtmlDocument || isHtmlArtifact)) {
+    return (
+      <div className={`markdown-stream-block ${isFirst ? 'markdown-stream-block-first' : 'markdown-stream-block-not-first'} ${isLast ? 'markdown-stream-block-last' : 'markdown-stream-block-not-last'}`}>
+        <div className={MARKDOWN_BLOCK_CONTENT_CLASS}>
+          <MarkdownHtmlArtifact code={src} isReasoning={false} isIncomplete={isStreaming && mode === 'live'} />
+        </div>
+      </div>
+    )
+  }
+
+  if (!isReasoning && BLOCK_HTML_SOURCE_PATTERN.test(htmlSourceStart)) {
+    return (
+      <div className={`markdown-stream-block ${isFirst ? 'markdown-stream-block-first' : 'markdown-stream-block-not-first'} ${isLast ? 'markdown-stream-block-last' : 'markdown-stream-block-not-last'}`}>
+        <MarkdownHtmlIsland src={src} isReasoning={false} isLive={mode === 'live'} />
       </div>
     )
   }
@@ -966,8 +1524,9 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
 }: MarkdownRendererProps) {
   const isReasoning = variant === 'reasoning'
   const projectionKey = useId()
-  const smoothedContent = useSmoothMarkdownStream(content, isStreaming)
-  const renderedContent = isStreaming ? smoothedContent : content
+  const renderHtmlImmediately = isStreaming && STREAMING_HTML_CONTENT_PATTERN.test(content)
+  const smoothedContent = useSmoothMarkdownStream(content, isStreaming && !renderHtmlImmediately)
+  const renderedContent = renderHtmlImmediately ? content : isStreaming ? smoothedContent : content
   const streamBlocks = useMemo(() => {
     const projection = projectMarkdownStream(markdownProjectionCache.get(projectionKey), renderedContent, isStreaming)
     markdownProjectionCache.set(projectionKey, projection)
