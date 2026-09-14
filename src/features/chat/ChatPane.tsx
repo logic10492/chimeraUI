@@ -910,6 +910,7 @@ export const ChatPane = memo(function ChatPane({
           sessionId={routeSessionId}
           revertedText={revertedMessage?.text}
           revertedAttachments={revertedMessage?.attachments}
+          revertedMessageId={revertedContent?.messageId}
           canRedo={canRedo}
           revertSteps={redoSteps}
           onRedo={handleRedoWithAnimation}

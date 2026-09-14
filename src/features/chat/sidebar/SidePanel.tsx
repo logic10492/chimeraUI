@@ -46,6 +46,9 @@ import { uiErrorHandler } from '../../../utils'
 // - 文字用 opacity 过渡，不改变布局
 // - 收起宽度 49px，展开宽度 288px
 
+// 缺失 session 补拉失败后的重试抑制窗口（毫秒）：窗口内跳过避免请求风暴，窗口过后自动重试
+const MISSING_SESSION_RETRY_WINDOW_MS = 4000
+
 interface SidePanelProps {
   onNewSession: () => void
   onSelectSession: (session: ApiSession) => void
@@ -284,7 +287,11 @@ export function SidePanel({
   const [unavailablePinnedSessionIds, setUnavailablePinnedSessionIds] = useState<Set<string>>(() => new Set())
   // 防止 busySessions 等数组引用抖动时 cancel+重拉，导致 /session 风暴
   const inflightSessionIdsRef = useRef(new Set<string>())
-  const failedSessionIdsRef = useRef(new Set<string>())
+  // 补拉失败的 session -> 失败时间戳：仅在时间窗内抑制，窗口过后自动重试
+  const failedSessionIdsRef = useRef(new Map<string, number>())
+  // 重试定时器到点后 bump，触发下方补拉 effect 重跑，让过期失败记录自动重试
+  const [missingRetryTick, setMissingRetryTick] = useState(0)
+  const missingRetryTimerRef = useRef<number | null>(null)
 
   // 为 active sessions 构建 sessionId -> ApiSession 的查找表
   const sessionLookup = useMemo(() => {
@@ -363,6 +370,7 @@ export function SidePanel({
 
   // 异步拉取不在 lookup 中的 active/notification/pinned/selected session
   useEffect(() => {
+    const now = Date.now()
     const neededIds = new Set<string>()
     const missing: Array<{ sessionId: string; directory?: string; pinned?: boolean }> = []
 
@@ -373,7 +381,12 @@ export function SidePanel({
         neededIds.add(sessionId)
         if (sessionLookup.has(sessionId)) continue
         if (inflightSessionIdsRef.current.has(sessionId)) continue
-        if (failedSessionIdsRef.current.has(sessionId)) continue
+        const failedAt = failedSessionIdsRef.current.get(sessionId)
+        if (failedAt !== undefined) {
+          // 失败抑制只保留一个时间窗，窗口过后清掉记录并重试，避免缺失 session 被永久抑制
+          if (now - failedAt < MISSING_SESSION_RETRY_WINDOW_MS) continue
+          failedSessionIdsRef.current.delete(sessionId)
+        }
         missing.push({
           sessionId,
           directory: directory || undefined,
@@ -393,49 +406,80 @@ export function SidePanel({
     })
 
     // 不再需要的失败记录清掉，session 再次出现时允许重试
-    for (const sessionId of [...failedSessionIdsRef.current]) {
+    for (const sessionId of [...failedSessionIdsRef.current.keys()]) {
       if (!neededIds.has(sessionId)) failedSessionIdsRef.current.delete(sessionId)
     }
 
-    if (missing.length === 0) return
+    if (missing.length > 0) {
+      for (const entry of missing) {
+        inflightSessionIdsRef.current.add(entry.sessionId)
+      }
 
-    for (const entry of missing) {
-      inflightSessionIdsRef.current.add(entry.sessionId)
+      void Promise.allSettled(
+        missing.map(async entry => {
+          try {
+            const session = await getSession(entry.sessionId, entry.directory)
+            inflightSessionIdsRef.current.delete(entry.sessionId)
+            setFetchedSessions(prev => (prev[session.id] ? prev : { ...prev, [session.id]: session }))
+            if (entry.pinned) {
+              pinnedSessionsStore.update(session.id, {
+                directory: session.directory || entry.directory,
+                title: session.title || session.id.slice(0, 12) + '...',
+              })
+              setUnavailablePinnedSessionIds(prev => {
+                if (!prev.has(session.id)) return prev
+                const next = new Set(prev)
+                next.delete(session.id)
+                return next
+              })
+            }
+          } catch {
+            inflightSessionIdsRef.current.delete(entry.sessionId)
+            // 失败记录带时间戳：窗口内跳过，窗口过后由下面的重试定时器自动再试
+            failedSessionIdsRef.current.set(entry.sessionId, Date.now())
+            if (missingRetryTimerRef.current === null) {
+              missingRetryTimerRef.current = window.setTimeout(() => {
+                missingRetryTimerRef.current = null
+                setMissingRetryTick(prev => prev + 1)
+              }, MISSING_SESSION_RETRY_WINDOW_MS)
+            }
+            if (entry.pinned) {
+              setUnavailablePinnedSessionIds(prev => {
+                if (prev.has(entry.sessionId)) return prev
+                return new Set(prev).add(entry.sessionId)
+              })
+            }
+          }
+        }),
+      )
     }
 
-    void Promise.allSettled(
-      missing.map(async entry => {
-        try {
-          const session = await getSession(entry.sessionId, entry.directory)
-          inflightSessionIdsRef.current.delete(entry.sessionId)
-          setFetchedSessions(prev => (prev[session.id] ? prev : { ...prev, [session.id]: session }))
-          if (entry.pinned) {
-            pinnedSessionsStore.update(session.id, {
-              directory: session.directory || entry.directory,
-              title: session.title || session.id.slice(0, 12) + '...',
-            })
-            setUnavailablePinnedSessionIds(prev => {
-              if (!prev.has(session.id)) return prev
-              const next = new Set(prev)
-              next.delete(session.id)
-              return next
-            })
-          }
-        } catch {
-          inflightSessionIdsRef.current.delete(entry.sessionId)
-          // 失败只记一次，避免 SSE/busy 抖动时无限重试 /session
-          failedSessionIdsRef.current.add(entry.sessionId)
-          if (entry.pinned) {
-            setUnavailablePinnedSessionIds(prev => {
-              if (prev.has(entry.sessionId)) return prev
-              return new Set(prev).add(entry.sessionId)
-            })
-          }
-        }
-      }),
-    )
+    // 按最早到期的失败记录调度重试 tick；没有待重试项就不保留定时器
+    if (missingRetryTimerRef.current !== null) {
+      clearTimeout(missingRetryTimerRef.current)
+      missingRetryTimerRef.current = null
+    }
+    let nextRetryDelay: number | null = null
+    for (const [sessionId, failedAt] of failedSessionIdsRef.current) {
+      if (!neededIds.has(sessionId)) continue
+      const remaining = MISSING_SESSION_RETRY_WINDOW_MS - (now - failedAt)
+      if (remaining < (nextRetryDelay ?? Number.POSITIVE_INFINITY)) nextRetryDelay = Math.max(remaining, 0)
+    }
+    if (nextRetryDelay !== null) {
+      missingRetryTimerRef.current = window.setTimeout(() => {
+        missingRetryTimerRef.current = null
+        setMissingRetryTick(prev => prev + 1)
+      }, nextRetryDelay)
+    }
+
+    return () => {
+      if (missingRetryTimerRef.current !== null) {
+        clearTimeout(missingRetryTimerRef.current)
+        missingRetryTimerRef.current = null
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- pinnedEntries 的不可用标记清理由 sessionLookup/missingSessionsKey 变化覆盖
-  }, [missingSessionsKey, sessionLookup])
+  }, [missingSessionsKey, sessionLookup, missingRetryTick])
 
   // ---- 子 session 展示数据 ----
   const rootSessionIds = useMemo(() => new Set(sessions.map(s => s.id)), [sessions])

@@ -155,7 +155,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
           if (queuedReconnectRefreshRef.current) {
             queuedReconnectRefreshRef.current = false
             nextCursorRef.current = undefined
-            setSessions([])
+            // 排队刷新不清空列表：旧数据保留到新响应替换，避免可见空窗
             void fetchSessionsRef.current({ search: searchRef.current || undefined })
           }
         }
@@ -260,8 +260,8 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
           queuedReconnectRefreshRef.current = true
           return
         }
+        // 重连刷新不清空列表：保留旧 session 直到新数据替换，避免切会话时的可见空窗
         nextCursorRef.current = undefined
-        setSessions([])
         void fetchSessionsRef.current({ search: searchRef.current || undefined })
       },
     })

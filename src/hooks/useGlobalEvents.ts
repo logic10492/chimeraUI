@@ -18,7 +18,13 @@ import { runtimeInvalidationStore } from '../store/runtimeInvalidationStore'
 import { soundStore } from '../store/soundStore'
 import { playNotificationSoundDeduped } from '../utils/notificationSoundBridge'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
-import { subscribeToEvents, getSessionStatus, getPendingPermissions, getPendingQuestions } from '../api'
+import {
+  subscribeToEvents,
+  getSessionStatus,
+  getPendingPermissions,
+  getPendingQuestions,
+  broadcastRuntimeResync,
+} from '../api'
 import { invalidateRootDirectoryCache } from '../api/file'
 import { replyPermission } from '../api/permission'
 import { autoApproveStore } from '../store/autoApproveStore'
@@ -330,7 +336,7 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
       })
     }
 
-// ============================================
+    // ============================================
     // 拉取 session 状态 + pending requests（初始化 & 重连共用）
     // ============================================
 
@@ -430,10 +436,24 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
       for (const consumer of sessionConsumers.values()) {
         consumer.callbacks.onReconnected?.(reason, scope.serverID)
       }
+      // pane 消费者只覆盖当前打开的 session；全局订阅者（如会话列表）住在 events.ts 的
+      // allSubscribers，event-gap / dispose 若不广播会长期漂移。
+      // 复用 broadcastReconnected 的 2s cooldown 作为风暴保护；network / server-switch
+      // 本身已由该广播触发，不重复发起。
+      if (reason === 'event-gap' || reason === 'dispose') broadcastRuntimeResync(scope.serverID)
     }
 
     const disposeRuntimeScope = (scope: EventScope) => {
       if (!isActiveScope(scope)) return
+      // 正在 pane 中打开的 session 保留显示与数据：LRU 驱逐后服务端会按需 boot，
+      // 随后的 resyncRuntime（markAllSessionsStale + 消费者 onReconnected → loadSession(force)）
+      // 会重新拉取，避免正在查看的会话在用户眼前消失。
+      const openSessionIds = new Set(
+        paneLayoutStore
+          .allLeaves()
+          .map(leaf => leaf.sessionId)
+          .filter((sessionId): sessionId is string => !!sessionId),
+      )
       const sessionIds = activeSessionStore.getSessionIdsForScope({
         serverID: scope.serverID,
         directory: scope.directory === 'global' ? undefined : scope.directory,
@@ -442,6 +462,7 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
       for (const sessionId of sessionIds) {
         pendingPermissions.delete(sessionId)
         pendingQuestions.delete(sessionId)
+        if (openSessionIds.has(sessionId)) continue
         clearSessionRuntimeState(sessionId, scope.serverID)
         paneLayoutStore.clearSession(sessionId)
       }

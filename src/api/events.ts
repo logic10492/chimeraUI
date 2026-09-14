@@ -119,6 +119,14 @@ function broadcastReconnected(reason: 'network' | 'server-switch', serverID: str
 }
 
 /**
+ * 供运行时 resync（event-gap / 实例 dispose）广播给全部全局订阅者（含会话列表消费者）。
+ * 复用 broadcastReconnected 的 cooldown 作为风暴保护；语义等同一次网络重连刷新。
+ */
+export function broadcastRuntimeResync(serverID: string) {
+  broadcastReconnected('network', serverID)
+}
+
+/**
  * 请求 Tauri 侧断开 SSE 连接
  * 返回 Promise，调用方可以 await 确保断开完成后再发起新连接
  * 多次并发调用会自动串行化

@@ -173,6 +173,8 @@ export interface InputBoxProps {
   // Undo/Redo
   revertedText?: string
   revertedAttachments?: Attachment[]
+  /** revert 目标消息 id：用于识别同一 revert 目标被重建（引用变化）的场景 */
+  revertedMessageId?: string
   canRedo?: boolean
   revertSteps?: number
   onRedo?: () => void
@@ -217,6 +219,7 @@ function InputBoxComponent({
   sessionId,
   revertedText,
   revertedAttachments,
+  revertedMessageId,
   canRedo = false,
   revertSteps = 0,
   onRedo,
@@ -280,6 +283,7 @@ function InputBoxComponent({
   const mentionMenuRef = useRef<MentionMenuHandle>(null)
   const slashMenuRef = useRef<SlashCommandMenuHandle>(null)
   const prevRevertedTextRef = useRef<string | undefined>(undefined)
+  const appliedRevertKeyRef = useRef<string | undefined>(undefined)
   const latestDraftRef = useRef<HistoryEntry>({ text: '', attachments: [] })
   const contentWrapRef = useRef<HTMLDivElement>(null)
   const footerRef = useRef<HTMLDivElement>(null)
@@ -330,20 +334,29 @@ function InputBoxComponent({
     let frameId: number | null = null
 
     if (revertedText !== undefined) {
-      frameId = requestAnimationFrame(() => {
-        setText(revertedText)
-        setAttachments(revertedAttachments || [])
-        // 聚焦并移动光标到末尾
-        if (textareaRef.current) {
-          textareaRef.current.focus()
-          textareaRef.current.setSelectionRange(revertedText.length, revertedText.length)
-        }
-      })
-    } else if (prevRevertedTextRef.current !== undefined && revertedText === undefined && !isSubmitting) {
-      frameId = requestAnimationFrame(() => {
-        setText('')
-        setAttachments([])
-      })
+      // 身份守卫：会话重载/SSE 重连/发送失败回滚会重建 revert history，引用变化但目标不变时
+      // revertKey 相同，跳过回填以保留用户已编辑内容；首次激活或切换 revert 目标才回填
+      const revertKey = `${revertedMessageId ?? ''}\u0000${revertedText}`
+      if (appliedRevertKeyRef.current !== revertKey) {
+        frameId = requestAnimationFrame(() => {
+          appliedRevertKeyRef.current = revertKey
+          setText(revertedText)
+          setAttachments(revertedAttachments || [])
+          // 聚焦并移动光标到末尾
+          if (textareaRef.current) {
+            textareaRef.current.focus()
+            textareaRef.current.setSelectionRange(revertedText.length, revertedText.length)
+          }
+        })
+      }
+    } else {
+      appliedRevertKeyRef.current = undefined
+      if (prevRevertedTextRef.current !== undefined && !isSubmitting) {
+        frameId = requestAnimationFrame(() => {
+          setText('')
+          setAttachments([])
+        })
+      }
     }
 
     prevRevertedTextRef.current = revertedText
@@ -353,7 +366,7 @@ function InputBoxComponent({
         cancelAnimationFrame(frameId)
       }
     }
-  }, [revertedText, revertedAttachments, isSubmitting])
+  }, [revertedText, revertedAttachments, revertedMessageId, isSubmitting])
 
   useEffect(
     () => () => {

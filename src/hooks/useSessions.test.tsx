@@ -260,6 +260,8 @@ describe('useSessions', () => {
     })
 
     expect(getSessionsMock).toHaveBeenCalledTimes(3)
+    // 排队刷新同样不应先清空列表：保留 second 响应直到 third 替换
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-2'])
 
     await act(async () => {
       thirdRequest.resolve([makeSession('session-3')])
@@ -268,6 +270,41 @@ describe('useSessions', () => {
     })
 
     expect(result.current.sessions.map(session => session.id)).toEqual(['session-3'])
+  })
+
+  it('keeps the previous session list while a reconnect refresh is in flight', async () => {
+    const reconnectRequest = createDeferred<ReturnType<typeof makeSession>[]>()
+    getSessionsMock
+      .mockResolvedValueOnce([makeSession('session-1'), makeSession('session-2')])
+      .mockImplementationOnce(() => reconnectRequest.promise)
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-1', 'session-2'])
+
+    await act(async () => {
+      latestEventCallbacks.onReconnected?.('network')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(getSessionsMock).toHaveBeenCalledTimes(2)
+    // 重连刷新不应先清空列表：旧数据保留到新响应替换，避免可见空窗
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-1', 'session-2'])
+
+    await act(async () => {
+      reconnectRequest.resolve([makeSession('session-2'), makeSession('session-1')])
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-2', 'session-1'])
   })
 
   it('retries the initial fetch after a startup failure', async () => {

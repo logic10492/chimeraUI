@@ -34,6 +34,8 @@ const {
   autoApproveStoreMock,
   clearSessionRuntimeStateMock,
   clearPaneSessionMock,
+  allLeavesMock,
+  broadcastRuntimeResyncMock,
   messageRemoveMock,
   markAllSessionsStaleMock,
   runtimeInvalidationEmitMock,
@@ -61,6 +63,8 @@ const {
   onServerChangeMock: vi.fn((_listener: (serverId: string) => void) => vi.fn()),
   clearSessionRuntimeStateMock: vi.fn(),
   clearPaneSessionMock: vi.fn(),
+  allLeavesMock: vi.fn(() => [] as Array<{ type: 'leaf'; id: string; sessionId: string | null }>),
+  broadcastRuntimeResyncMock: vi.fn(),
   messageRemoveMock: vi.fn(),
   markAllSessionsStaleMock: vi.fn(),
   runtimeInvalidationEmitMock: vi.fn(),
@@ -97,6 +101,7 @@ vi.mock('../api', () => ({
   getSessionStatus: getSessionStatusMock,
   getPendingPermissions: getPendingPermissionsMock,
   getPendingQuestions: getPendingQuestionsMock,
+  broadcastRuntimeResync: broadcastRuntimeResyncMock,
 }))
 
 vi.mock('../api/permission', () => ({
@@ -126,6 +131,7 @@ vi.mock('../store', () => ({
   paneLayoutStore: {
     getFocusedSessionId: getFocusedSessionIdMock,
     clearSession: clearPaneSessionMock,
+    allLeaves: allLeavesMock,
   },
   serverStore: {
     applyServerConnectedTimestamp: applyServerConnectedTimestampMock,
@@ -203,6 +209,8 @@ describe('useGlobalEvents', () => {
     onServerChangeMock.mockReset()
     clearSessionRuntimeStateMock.mockReset()
     clearPaneSessionMock.mockReset()
+    allLeavesMock.mockReset()
+    broadcastRuntimeResyncMock.mockReset()
     messageRemoveMock.mockReset()
     markAllSessionsStaleMock.mockReset()
     runtimeInvalidationEmitMock.mockReset()
@@ -232,6 +240,7 @@ describe('useGlobalEvents', () => {
     activeSessionStoreMock.getSnapshot.mockReturnValue({ statusMap: {} })
     sendNotificationMock.mockResolvedValue(undefined)
     activeSessionStoreMock.getSessionIdsForScope.mockReturnValue([])
+    allLeavesMock.mockReturnValue([])
   })
 
   it('stores server clock calibration when server.connected arrives', async () => {
@@ -806,6 +815,7 @@ describe('useGlobalEvents', () => {
     invalidateRootDirectoryCacheMock.mockClear()
     runtimeInvalidationEmitMock.mockClear()
     checkHealthMock.mockClear()
+    broadcastRuntimeResyncMock.mockClear()
 
     callbacks!.onEventGap?.({ dropped: 2 }, GLOBAL_SCOPE)
 
@@ -824,10 +834,15 @@ describe('useGlobalEvents', () => {
       event: 'resync',
     })
     expect(onReconnected).toHaveBeenCalledWith('event-gap', 'local')
+    // event-gap resync 还必须通知全局订阅者（会话列表等）刷新
+    expect(broadcastRuntimeResyncMock).toHaveBeenCalledTimes(1)
+    expect(broadcastRuntimeResyncMock).toHaveBeenCalledWith('local')
 
     onReconnected.mockClear()
     callbacks!.onReconnected?.('network', 'local')
     expect(onReconnected).toHaveBeenCalledWith('network', 'local')
+    // network 重连本身来自 events.ts 广播，不应再次转发造成回环
+    expect(broadcastRuntimeResyncMock).toHaveBeenCalledTimes(1)
 
     unregister()
   })
@@ -859,6 +874,8 @@ describe('useGlobalEvents', () => {
       scope: TEST_SCOPE,
       event: 'disposed',
     })
+    // dispose resync 同样通知全局订阅者刷新会话列表
+    expect(broadcastRuntimeResyncMock).toHaveBeenCalledWith('local')
 
     activeSessionStoreMock.getSessionIdsForScope.mockClear()
     callbacks!.onGlobalDisposed?.({}, GLOBAL_SCOPE)
@@ -867,6 +884,33 @@ describe('useGlobalEvents', () => {
       directory: undefined,
       workspace: undefined,
     })
+  })
+
+  it('keeps pane-open sessions and their data when an instance is disposed', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    activeSessionStoreMock.getSessionIdsForScope.mockReturnValue(['open-session', 'closed-session'])
+    allLeavesMock.mockReturnValue([
+      { type: 'leaf', id: 'pane-1', sessionId: 'open-session' },
+      { type: 'leaf', id: 'pane-2', sessionId: null },
+    ])
+
+    renderHook(() => useGlobalEvents(['/workspace']))
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    callbacks!.onServerInstanceDisposed?.({ directory: '/workspace' }, TEST_SCOPE)
+
+    // pane 中打开的 session 不被清空：保留显示与数据，resync 后由 loadSession(force) 重拉
+    expect(clearSessionRuntimeStateMock).not.toHaveBeenCalledWith('open-session', 'local')
+    expect(clearPaneSessionMock).not.toHaveBeenCalledWith('open-session')
+    // 未在 pane 中打开的 session 维持原清理行为
+    expect(clearSessionRuntimeStateMock).toHaveBeenCalledWith('closed-session', 'local')
+    expect(clearPaneSessionMock).toHaveBeenCalledWith('closed-session')
+    // dispose 仍向全局订阅者广播刷新
+    expect(broadcastRuntimeResyncMock).toHaveBeenCalledWith('local')
   })
 
   it('sends one system notification for multiple matching pane consumers', async () => {

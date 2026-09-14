@@ -181,9 +181,53 @@ describe('SessionProvider', () => {
     })
 
     expect(getSessionsMock).toHaveBeenCalledTimes(3)
+    // 排队刷新同样不应先清空列表：保留 second 响应直到 third 替换
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-2'])
 
     await act(async () => {
       thirdRequest.resolve([{ id: 'session-3', directory: '/workspace/demo' }])
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-3'])
+  })
+
+  it('keeps the previous session list while a reconnect refresh is in flight', async () => {
+    const reconnectRequest = createDeferred<Array<{ id: string; directory: string }>>()
+    getSessionsMock
+      .mockResolvedValueOnce([
+        { id: 'session-1', directory: '/workspace/demo' },
+        { id: 'session-2', directory: '/workspace/demo' },
+      ])
+      .mockImplementationOnce(() => reconnectRequest.promise)
+
+    render(
+      <SessionProvider>
+        <SessionContextProbe />
+      </SessionProvider>,
+    )
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-1', 'session-2'])
+
+    await act(async () => {
+      latestEventCallbacks.onReconnected?.('network')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(getSessionsMock).toHaveBeenCalledTimes(2)
+    // 重连刷新不应先清空列表：旧数据保留到新响应替换，避免可见空窗
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-1', 'session-2'])
+
+    await act(async () => {
+      reconnectRequest.resolve([{ id: 'session-3', directory: '/workspace/demo' }])
       await Promise.resolve()
       await Promise.resolve()
     })

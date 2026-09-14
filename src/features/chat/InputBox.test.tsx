@@ -360,3 +360,78 @@ describe('InputBox slash command selection', () => {
     })
   })
 })
+
+describe('InputBox revert restore identity guard', () => {
+  async function flushFrame() {
+    await act(async () => {
+      await new Promise(resolve => requestAnimationFrame(resolve))
+    })
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+  }
+
+  function renderRevert(props: { revertedText?: string; revertedAttachments?: unknown[]; revertedMessageId?: string }) {
+    return (
+      <InputBox
+        paneId="pane-test"
+        onSend={vi.fn()}
+        revertedText={props.revertedText}
+        revertedAttachments={props.revertedAttachments as never}
+        revertedMessageId={props.revertedMessageId}
+      />
+    )
+  }
+
+  it('keeps user edits when the same revert target is rebuilt with new attachment references', async () => {
+    const { rerender } = render(
+      renderRevert({ revertedText: 'restored draft', revertedAttachments: [], revertedMessageId: 'msg-1' }),
+    )
+    await flushFrame()
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(textarea.value).toBe('restored draft')
+
+    fireEvent.change(textarea, { target: { value: 'user edited draft' } })
+
+    // 会话重载/SSE 重连/发送失败回滚重建 history：同一 revert 目标，仅数组引用变化
+    rerender(renderRevert({ revertedText: 'restored draft', revertedAttachments: [], revertedMessageId: 'msg-1' }))
+    await flushFrame()
+    rerender(renderRevert({ revertedText: 'restored draft', revertedAttachments: [], revertedMessageId: 'msg-1' }))
+    await flushFrame()
+
+    expect(textarea.value).toBe('user edited draft')
+  })
+
+  it('replaces the draft when the revert target changes', async () => {
+    const { rerender } = render(
+      renderRevert({ revertedText: 'newer draft', revertedAttachments: [], revertedMessageId: 'msg-2' }),
+    )
+    await flushFrame()
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(textarea.value).toBe('newer draft')
+
+    fireEvent.change(textarea, { target: { value: 'user edited draft' } })
+
+    rerender(renderRevert({ revertedText: 'earlier draft', revertedAttachments: [], revertedMessageId: 'msg-1' }))
+    await flushFrame()
+
+    expect(textarea.value).toBe('earlier draft')
+  })
+
+  it('clears the composer when revert is deactivated', async () => {
+    const { rerender } = render(
+      renderRevert({ revertedText: 'restored draft', revertedAttachments: [], revertedMessageId: 'msg-1' }),
+    )
+    await flushFrame()
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(textarea.value).toBe('restored draft')
+
+    rerender(renderRevert({}))
+    await flushFrame()
+
+    expect(textarea.value).toBe('')
+  })
+})
