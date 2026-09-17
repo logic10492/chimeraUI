@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChatSession } from './useChatSession'
 
@@ -22,6 +23,10 @@ const {
   pendingPermissionRequestsMock,
   handlePermissionReplyMock,
   refreshPendingRequestsMock,
+  getSessionMetaMock,
+  childLoadChildrenMock,
+  getPendingPermissionsMock,
+  getPendingQuestionsMock,
 } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
   summarizeSessionMock: vi.fn(),
@@ -44,10 +49,18 @@ const {
     (_requestId: string, _reply: string, _directory?: string, _sessionId?: string) => Promise.resolve(true),
   ),
   refreshPendingRequestsMock: vi.fn((_sessionIds?: string | string[], _directory?: string) => Promise.resolve()),
+  getSessionMetaMock: vi.fn((_sessionId?: string, _serverID?: string) => undefined as { directory?: string } | undefined),
+  childLoadChildrenMock: vi.fn(() => Promise.resolve([] as never[])),
+  getPendingPermissionsMock: vi.fn(() => Promise.resolve([] as never[])),
+  getPendingQuestionsMock: vi.fn(() => Promise.resolve([] as never[])),
 }))
 
 const autoApproveState = vi.hoisted(() => ({
   approvePendingOnFullAuto: false,
+}))
+
+const directoryState = vi.hoisted(() => ({
+  currentDirectory: '/workspace/demo',
 }))
 
 vi.mock('../store', () => ({
@@ -80,9 +93,16 @@ vi.mock('../store', () => ({
     getChildSessionIds: vi.fn(() => []),
     registerChildSession: vi.fn(),
     getSessionAndDescendants: vi.fn(() => []),
-    loadChildren: vi.fn(() => Promise.resolve([])),
+    loadChildren: (...args: [string, string?]) => childLoadChildrenMock(...args),
   },
   useActiveSessionStore: () => ({ statusMap: {} }),
+}))
+
+vi.mock('../store/activeSessionStore', () => ({
+  activeSessionStore: {
+    getSessionMeta: (...args: [string?, string?]) => getSessionMetaMock(...args),
+    removeSession: vi.fn(),
+  },
 }))
 
 vi.mock('../hooks', () => ({
@@ -116,7 +136,7 @@ vi.mock('../hooks', () => ({
     animateUndo: vi.fn(),
     animateRedo: vi.fn(),
   }),
-  useDirectory: () => ({ currentDirectory: '/workspace/demo' }),
+  useDirectory: () => ({ currentDirectory: directoryState.currentDirectory }),
   useSessionContext: () => ({
     createSession: createSessionMock,
     sessions: [],
@@ -138,8 +158,8 @@ vi.mock('../api', () => ({
   getSessionMessages: vi.fn(),
   abortSession: vi.fn(),
   getSelectableAgents: (...args: unknown[]) => getSelectableAgentsMock(...args),
-  getPendingPermissions: vi.fn(() => Promise.resolve([])),
-  getPendingQuestions: vi.fn(() => Promise.resolve([])),
+  getPendingPermissions: (...args: [string?, string?]) => getPendingPermissionsMock(...args),
+  getPendingQuestions: (...args: [string?, string?]) => getPendingQuestionsMock(...args),
   prefetchCommands: vi.fn(() => Promise.resolve()),
   prefetchRootDirectory: vi.fn(() => Promise.resolve()),
   getSessionChildren: vi.fn(() => Promise.resolve([])),
@@ -380,4 +400,101 @@ describe('useChatSession handleCommand', () => {
       expect(sendNotificationMock).not.toHaveBeenCalled()
     },
   )
+})
+
+describe('useChatSession children/permissions loading (W3③)', () => {
+  beforeEach(() => {
+    getSessionMetaMock.mockReset()
+    getSessionMetaMock.mockReturnValue(undefined)
+    childLoadChildrenMock.mockReset()
+    childLoadChildrenMock.mockResolvedValue([])
+    getPendingPermissionsMock.mockReset()
+    getPendingPermissionsMock.mockResolvedValue([])
+    getPendingQuestionsMock.mockReset()
+    getPendingQuestionsMock.mockResolvedValue([])
+    getSelectableAgentsMock.mockReset()
+    getSelectableAgentsMock.mockResolvedValue([])
+    registerSessionConsumerMock.mockReset()
+    registerSessionConsumerMock.mockReturnValue(vi.fn())
+    useSessionFamilyMock.mockReset()
+    useSessionFamilyMock.mockReturnValue([])
+    getPaneFullAutoModeMock.mockReset()
+    getPaneFullAutoModeMock.mockReturnValue('off')
+    onFullAutoChangeMock.mockReset()
+    onFullAutoChangeMock.mockReturnValue(vi.fn())
+    autoApproveSubscribeMock.mockReset()
+    autoApproveSubscribeMock.mockReturnValue(vi.fn())
+    autoApproveState.approvePendingOnFullAuto = false
+    directoryState.currentDirectory = '/workspace/demo'
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function renderChatSession(sessionId: string | null, options?: { wrapper?: React.ComponentType<{ children: React.ReactNode }> }) {
+    return renderHook(
+      () =>
+        useChatSession({
+          paneId: 'pane-1',
+          chatAreaRef: { current: null },
+          currentModel: undefined,
+          refetchModels: vi.fn(async () => {}),
+          sessionId,
+          navigateToSession: vi.fn(),
+          navigateHome: vi.fn(),
+        }),
+      options,
+    )
+  }
+
+  it('waits for effectiveDirectory to catch up with the known session directory', async () => {
+    // 跨项目切换中：session 元数据已知目标目录，但 currentDirectory 还停在旧项目
+    getSessionMetaMock.mockReturnValue({ directory: '/workspace/target' })
+    directoryState.currentDirectory = '/workspace/stale'
+
+    const { rerender } = renderChatSession('session-1')
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    // 目录未就绪：不用旧目录白跑一遍（0 次权限/问题/children 拉取）
+    expect(getPendingPermissionsMock).not.toHaveBeenCalled()
+    expect(getPendingQuestionsMock).not.toHaveBeenCalled()
+    expect(childLoadChildrenMock).not.toHaveBeenCalled()
+
+    // 路由追上后 → 只拉取一次，且用正确目录
+    directoryState.currentDirectory = '/workspace/target'
+    rerender()
+
+    await waitFor(() => expect(getPendingPermissionsMock).toHaveBeenCalledTimes(1))
+    expect(getPendingPermissionsMock).toHaveBeenCalledWith(undefined, '/workspace/target')
+    expect(getPendingQuestionsMock).toHaveBeenCalledTimes(1)
+    expect(childLoadChildrenMock).toHaveBeenCalledTimes(1)
+    expect(childLoadChildrenMock).toHaveBeenCalledWith('session-1', '/workspace/target')
+
+    // 已完成组合的重复 effect（依赖拖动）不再重拉
+    rerender()
+    rerender()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(getPendingPermissionsMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('fetches permissions only once under StrictMode double effect invocation', async () => {
+    getSessionMetaMock.mockReturnValue(undefined)
+
+    renderChatSession('session-1', { wrapper: StrictMode })
+
+    await waitFor(() => expect(getPendingPermissionsMock).toHaveBeenCalledTimes(1))
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    // StrictMode 双跑：第一次被 cleanup 取消，仅第二次真正拉取
+    expect(getPendingPermissionsMock).toHaveBeenCalledTimes(1)
+    expect(getPendingQuestionsMock).toHaveBeenCalledTimes(1)
+  })
 })

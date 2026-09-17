@@ -42,6 +42,8 @@ import {
 } from '../api'
 import { getMessageText, isUserMessage, type AssistantMessageInfo, type Message as UIMessage } from '../types/message'
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
+import { isSameDirectory, normalizeToForwardSlash } from '../utils/directoryUtils'
+import { activeSessionStore } from '../store/activeSessionStore'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { serverStorage } from '../utils/perServerStorage'
 import { STORAGE_KEY_SELECTED_AGENT } from '../constants'
@@ -486,13 +488,28 @@ export function useChatSession({
   // Load child sessions and pending permissions on session change
   // 页面刷新时 childSessionStore 是空的，需要先从 API 恢复子 session 关系
   // 然后再加载权限请求（包括子 session 的权限）
+  // 已执行的 routeSessionId+effectiveDirectory 组合（W3③）：相同组合只拉取一次，
+  // 消除 StrictMode 双跑与依赖抖动引发的重复全量拉取
+  const childPermissionsComboRef = useRef<string | null>(null)
   useEffect(() => {
     if (!routeSessionId) {
+      childPermissionsComboRef.current = null
       resetPendingRequests()
       return
     }
 
+    // effectiveDirectory 未就绪时跳过（W3③）：跨项目切换时 currentDirectory 滞后于
+    // routeSessionId；当 session 元数据已知目标目录且与当前 effectiveDirectory 不一致时，
+    // 等路由/会话状态追上再拉，避免用错误目录白跑一遍再重跑（权限/问题双份全量拉取）
+    const metaDirectory = activeSessionStore.getSessionMeta(routeSessionId)?.directory
+    if (!sessionDirectory && metaDirectory && !isSameDirectory(metaDirectory, effectiveDirectory)) return
+
+    const combo = `${routeSessionId}\n${normalizeToForwardSlash(effectiveDirectory)}`
+    if (childPermissionsComboRef.current === combo) return
+    childPermissionsComboRef.current = combo
+
     let cancelled = false
+    let completed = false
 
     async function loadChildSessionsAndPermissions() {
       // Step 1: 恢复子 session 关系（如果 store 中还没有）
@@ -539,16 +556,23 @@ export function useChatSession({
         return Array.from(merged.values())
       })
       setPendingQuestionRequests(allQuestions.filter(q => family.has(q.sessionID)))
+      completed = true
     }
 
     loadChildSessionsAndPermissions()
 
     return () => {
       cancelled = true
+      // 未完成即被取消：释放组合占位，允许后续 effect 重新拉取；
+      // 已完成则保留占位，相同组合的重复 effect 直接跳过
+      if (!completed && childPermissionsComboRef.current === combo) {
+        childPermissionsComboRef.current = null
+      }
     }
   }, [
     routeSessionId,
     effectiveDirectory,
+    sessionDirectory,
     resetPendingRequests,
     setPendingPermissionRequests,
     setPendingQuestionRequests,
