@@ -11,6 +11,7 @@ import {
 import { serverStore } from '../store/serverStore'
 import { pinnedSessionsStore } from '../store/pinnedSessionsStore'
 import { autoDetectPathStyle, isSameDirectory } from '../utils'
+import { mergeSessionUpdate } from '../utils/sessionListMerge'
 
 interface UseSessionsOptions {
   /** 每页数量 */
@@ -236,20 +237,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
           return
         }
 
-        setSessions(prev => {
-          const index = prev.findIndex(item => item.id === session.id)
-
-          if (!matchesDirectory(session)) {
-            return index === -1 ? prev : prev.filter(item => item.id !== session.id)
-          }
-
-          if (index === -1) {
-            return [session, ...prev]
-          }
-
-          const updated = prev.filter(item => item.id !== session.id)
-          return [session, ...updated]
-        })
+        setSessions(prev => mergeSessionUpdate(prev, session, matchesDirectory))
       },
       onSessionDeleted: sessionId => {
         setSessions(prev => prev.filter(item => item.id !== sessionId))

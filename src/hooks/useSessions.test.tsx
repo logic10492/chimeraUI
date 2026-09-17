@@ -372,4 +372,53 @@ describe('useSessions', () => {
 
     expect(result.current.sessions.map(session => session.id)).toEqual(['fresh'])
   })
+
+  it('reorders only when ordering-relevant fields actually change', async () => {
+    getSessionsMock.mockResolvedValue([
+      { ...makeSession('session-1'), time: { created: 1, updated: 30 } },
+      { ...makeSession('session-2'), time: { created: 1, updated: 20 } },
+    ])
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-1', 'session-2'])
+
+    // 非排序相关字段变化（version）→ 原位替换，不重排
+    await act(async () => {
+      latestEventCallbacks.onSessionUpdated?.({
+        ...makeSession('session-2'),
+        version: '2',
+        time: { created: 1, updated: 20 },
+      } as unknown as Parameters<NonNullable<EventCallbacks['onSessionUpdated']>>[0])
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-1', 'session-2'])
+    expect(result.current.sessions[1].version).toBe('2')
+
+    // 内容完全一致 → 保留原数组引用（零重渲染）
+    const unchanged = result.current.sessions
+    await act(async () => {
+      latestEventCallbacks.onSessionUpdated?.({
+        ...makeSession('session-2'),
+        version: '2',
+        time: { created: 1, updated: 20 },
+      } as unknown as Parameters<NonNullable<EventCallbacks['onSessionUpdated']>>[0])
+    })
+    expect(result.current.sessions).toBe(unchanged)
+
+    // 排序相关字段（time.updated）真变化 → 重排到头部
+    await act(async () => {
+      latestEventCallbacks.onSessionUpdated?.({
+        ...makeSession('session-2'),
+        version: '2',
+        time: { created: 1, updated: 40 },
+      } as unknown as Parameters<NonNullable<EventCallbacks['onSessionUpdated']>>[0])
+    })
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-2', 'session-1'])
+  })
 })

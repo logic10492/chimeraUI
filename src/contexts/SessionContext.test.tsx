@@ -336,4 +336,50 @@ describe('SessionProvider', () => {
 
     expect(latestContext?.sessions.map(session => session.id)).toEqual(['fresh'])
   })
+
+  it('keeps list order when an update does not change ordering fields', async () => {
+    getSessionsMock.mockResolvedValue([
+      { id: 'session-1', directory: '/workspace/demo', title: 'A', time: { created: 1, updated: 30 } },
+      { id: 'session-2', directory: '/workspace/demo', title: 'B', time: { created: 1, updated: 20 } },
+    ])
+
+    render(
+      <SessionProvider>
+        <SessionContextProbe />
+      </SessionProvider>,
+    )
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    // 非排序相关字段变化 → 原位替换，不重排（W2③）
+    act(() => {
+      latestEventCallbacks.onSessionUpdated?.({
+        id: 'session-2',
+        directory: '/workspace/demo',
+        title: 'B',
+        version: 'v2',
+        time: { created: 1, updated: 20 },
+      } as never)
+    })
+
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-1', 'session-2'])
+    expect((latestContext?.sessions[1] as { version?: string }).version).toBe('v2')
+
+    // 排序相关字段真变化 → 重排到头部
+    act(() => {
+      latestEventCallbacks.onSessionUpdated?.({
+        id: 'session-2',
+        directory: '/workspace/demo',
+        title: 'B',
+        version: 'v2',
+        time: { created: 1, updated: 40 },
+      } as never)
+    })
+
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-2', 'session-1'])
+  })
 })

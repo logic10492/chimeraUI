@@ -12,6 +12,7 @@ import { serverStore } from '../store/serverStore'
 import { pinnedSessionsStore } from '../store/pinnedSessionsStore'
 import { useDirectory } from './useDirectory'
 import { sessionErrorHandler, normalizeToForwardSlash, isSameDirectory, autoDetectPathStyle } from '../utils'
+import { mergeSessionUpdate } from '../utils/sessionListMerge'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { SessionContext, type SessionContextValue } from './SessionContext.shared'
 
@@ -180,20 +181,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        setSessions(prev => {
-          const index = prev.findIndex(s => s.id === session.id)
-
-          if (!matchesCurrentDirectory(session)) {
-            return index === -1 ? prev : prev.filter(s => s.id !== session.id)
-          }
-
-          if (index === -1) {
-            return [session, ...prev]
-          }
-
-          const updated = prev.filter(s => s.id !== session.id)
-          return [session, ...updated]
-        })
+        setSessions(prev => mergeSessionUpdate(prev, session, matchesCurrentDirectory))
       },
       onTodoUpdated: data => {
         // 更新 todoStore
