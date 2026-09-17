@@ -236,9 +236,10 @@ async function fetchActiveScopeData(serverID: string, directories?: string[]) {
   }
 }
 
-// 与服务器端 InstanceStore.LRU_DISPOSE_REASONS 对应：只有 LRU 驱逐降级为 stale 标记
+// 与服务器端 InstanceStore.LRU_DISPOSE_REASONS 对应：只有 LRU/压力驱逐降级为 stale 标记
 // （0 自动重拉，惰性恢复）；reload / 显式 dispose 仍按原逻辑立即 resync。
-const LRU_DISPOSE_REASONS = new Set(['idle-sweep', 'post-load-lru', 'post-request-lru'])
+// memory-pressure = W1 内存预算压力驱逐（同为「被回收」语义，同样走 stale 标记）。
+const LRU_DISPOSE_REASONS = new Set(['idle-sweep', 'post-load-lru', 'post-request-lru', 'memory-pressure'])
 // 同一 scope 的连续非 LRU dispose resync 在该窗口内合并为一次拉取
 const DISPOSE_RESYNC_DEBOUNCE_MS = 250
 

@@ -13,6 +13,7 @@ import { useDirectory, useGlobalEvents, useGlobalKeybindings, useRouter } from '
 import { useViewportHeight } from './hooks/useViewportHeight'
 import { useCloseServiceDialog } from './hooks/useCloseServiceDialog'
 import { useWakeLock } from './hooks/useWakeLock'
+import { usePresenceHeartbeat } from './hooks/usePresenceHeartbeat'
 import type { KeybindingHandlers } from './hooks/useKeybindings'
 import { keybindingStore } from './store/keybindingStore'
 import {
@@ -164,6 +165,10 @@ function App() {
 
   // 全局唯一 SSE 连接。所有 pane 通过 consumer 机制接收自己的 session 事件。
   useGlobalEvents(activeDirectories, { pinnedDirectories })
+
+  // W1 在场心跳：每 30s 上报 activeDirectories，服务端刷新 presence pin（TTL 90s），
+  // 已加载实例在 UI 在场期间不会被空闲 TTL / 内存压力回收。
+  usePresenceHeartbeat(activeDirectories)
 
   // URL -> focused pane session
   useEffect(() => {
