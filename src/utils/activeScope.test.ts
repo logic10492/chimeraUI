@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collectActiveDirectories } from './activeScope'
+import { activeDirectoriesKey, collectActiveDirectories } from './activeScope'
 
 describe('collectActiveDirectories', () => {
   it('includes saved project directories in the active scope', () => {
@@ -22,5 +22,24 @@ describe('collectActiveDirectories', () => {
         projectDirectories: ['e:/DEV/repo', 'E:\\DEV\\OTHER', 'E:/dev/third'],
       }),
     ).toEqual(['E:/Dev/Repo', 'E:/dev/other', 'E:/dev/third'])
+  })
+})
+
+describe('activeDirectoriesKey', () => {
+  it('is stable across array identity and order changes with equal content', () => {
+    expect(activeDirectoriesKey(['/one', '/two'])).toBe(activeDirectoriesKey(['/two', '/one']))
+  })
+
+  it('normalizes path styles before comparing', () => {
+    expect(activeDirectoriesKey(['E:\\Dev\\Repo'])).toBe(activeDirectoriesKey(['e:/dev/repo/']))
+  })
+
+  it('changes when content changes', () => {
+    expect(activeDirectoriesKey(['/one'])).not.toBe(activeDirectoriesKey(['/one', '/two']))
+  })
+
+  it('returns an empty key for empty or undefined lists', () => {
+    expect(activeDirectoriesKey([])).toBe('')
+    expect(activeDirectoriesKey(undefined)).toBe('')
   })
 })

@@ -29,6 +29,7 @@ import { invalidateRootDirectoryCache } from '../api/file'
 import { replyPermission } from '../api/permission'
 import { autoApproveStore } from '../store/autoApproveStore'
 import { serverDisposedDirectoryStore } from '../store/serverDisposedDirectoryStore'
+import { activeDirectoriesKey } from '../utils/activeScope'
 import { isSameDirectory } from '../utils'
 import { useNotification } from './useNotification'
 import type { ApiMessage, ApiPart, ApiPermissionRequest, ApiQuestionRequest, EventScope } from '../api/types'
@@ -164,7 +165,8 @@ function drainPending<T>(map: Map<string, PendingRequest<T>[]>, sessionID: strin
 
 function getScopeKey(directories?: string[]) {
   if (!directories || directories.length === 0) return '__global__'
-  return directories.join('|')
+  // 排序后 join：内容相同、顺序不同的目录集合产生同一 key（W2② 稳定 key）
+  return [...directories].sort().join('|')
 }
 
 function removePendingByRequestId<T extends { id: string }>(
@@ -286,6 +288,8 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
   const pinnedDirectoriesRef = useRef<string[] | undefined>(options?.pinnedDirectories)
   const refreshRef = useRef<((strategy?: 'replace' | 'merge') => void) | null>(null)
   const initializedDirectoriesRef = useRef(false)
+  // 上一次触发刷新的目录内容 key（含 pinned）：内容不变时跳过刷新（W2②）
+  const lastScopeKeyRef = useRef<string | null>(null)
   const { sendNotification } = useNotification()
 
   useEffect(() => {
@@ -929,10 +933,16 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
     for (const directory of options?.pinnedDirectories ?? []) {
       serverDisposedDirectoryStore.clear(serverID, directory)
     }
+    // 内容比较：目录集合（含 pinned）没变就不触发刷新，
+    // 消除数组引用变化引发的 3×N background 请求突发（W2②）
+    const scopeKey = `${activeDirectoriesKey(directories)}#${activeDirectoriesKey(options?.pinnedDirectories)}`
     if (initializedDirectoriesRef.current) {
+      if (scopeKey === lastScopeKeyRef.current) return
+      lastScopeKeyRef.current = scopeKey
       refreshRef.current?.('merge')
       return
     }
+    lastScopeKeyRef.current = scopeKey
     initializedDirectoriesRef.current = true
   }, [directories, options?.pinnedDirectories])
 }

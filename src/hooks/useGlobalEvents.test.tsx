@@ -1048,4 +1048,25 @@ describe('useGlobalEvents', () => {
     const directories = getSessionStatusMock.mock.calls.map(call => call[0]?.directory)
     expect(directories).toContain('/reload-me')
   })
+
+  it('does not refetch when directories change identity but keep the same content', async () => {
+    const { rerender } = renderHook(({ directories }) => useGlobalEvents(directories), {
+      initialProps: { directories: ['/one', '/two'] as string[] | undefined },
+    })
+
+    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledTimes(2))
+    getSessionStatusMock.mockClear()
+
+    // 新数组引用 + 顺序变化，内容不变 → 不触发任何刷新（W2② 内容比较）
+    rerender({ directories: ['/two', '/one'] })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(getSessionStatusMock).not.toHaveBeenCalled()
+
+    // 内容真变化 → 正常刷新
+    rerender({ directories: ['/two', '/three'] })
+    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalled())
+    const refreshed = getSessionStatusMock.mock.calls.map(call => call[0]?.directory)
+    expect(refreshed).toContain('/three')
+  })
 })

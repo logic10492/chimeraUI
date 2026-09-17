@@ -30,7 +30,7 @@ import {
   canUseSplitPane,
   useChatViewportController,
 } from './features/chat/chatViewport'
-import { uiErrorHandler, isSameDirectory, collectActiveDirectories } from './utils'
+import { uiErrorHandler, isSameDirectory, collectActiveDirectories, activeDirectoriesKey } from './utils'
 import { focusPaneInput, paneFullscreenForViewport } from './utils/paneView'
 import { initNotificationSound } from './utils/notificationSoundBridge'
 import { createPtySession } from './api/pty'
@@ -54,6 +54,18 @@ const MOBILE_PAGER_SCROLL_END_MS = 120
 const MOBILE_RIGHT_PANEL_UNMOUNT_MS = 420
 
 type MobilePagerPage = 'left' | 'chat' | 'right'
+
+/**
+ * 内容不变时保持数组引用稳定：避免 activeDirectories/pinnedDirectories
+ * 仅因引用变化就触发下游 effect 的 3×N 背景请求突发（W2②）。
+ */
+function useStableDirectories(directories: string[]): string[] {
+  const stableRef = useRef(directories)
+  if (activeDirectoriesKey(stableRef.current) !== activeDirectoriesKey(directories)) {
+    stableRef.current = directories
+  }
+  return stableRef.current
+}
 
 function App() {
   const { t } = useTranslation(['commands', 'chat', 'common', 'components'])
@@ -113,31 +125,37 @@ function App() {
   useViewportHeight()
   useWakeLock(wakeLock)
 
-  const activeDirectories = useMemo(
-    () =>
-      collectActiveDirectories({
-        routeDirectory,
-        currentDirectory,
-        paneDirectories: paneControllers
-          .map(controller => controller.effectiveDirectory)
-          .filter((directory): directory is string => Boolean(directory)),
-        projectDirectories: (Array.isArray(savedDirectories) ? savedDirectories : []).map(directory => directory.path),
-      }),
-    [routeDirectory, currentDirectory, paneControllers, savedDirectories],
+  const activeDirectories = useStableDirectories(
+    useMemo(
+      () =>
+        collectActiveDirectories({
+          routeDirectory,
+          currentDirectory,
+          paneDirectories: paneControllers
+            .map(controller => controller.effectiveDirectory)
+            .filter((directory): directory is string => Boolean(directory)),
+          projectDirectories: (Array.isArray(savedDirectories) ? savedDirectories : []).map(
+            directory => directory.path,
+          ),
+        }),
+      [routeDirectory, currentDirectory, paneControllers, savedDirectories],
+    ),
   )
 
   // 用户“在场”的目录（路由/当前/打开的 pane，不含仅保存的项目）。
   // 被服务器 LRU 驱逐的目录只有不在 pinned 里时才停止自动重拉。
-  const pinnedDirectories = useMemo(
-    () =>
-      collectActiveDirectories({
-        routeDirectory,
-        currentDirectory,
-        paneDirectories: paneControllers
-          .map(controller => controller.effectiveDirectory)
-          .filter((directory): directory is string => Boolean(directory)),
-      }),
-    [routeDirectory, currentDirectory, paneControllers],
+  const pinnedDirectories = useStableDirectories(
+    useMemo(
+      () =>
+        collectActiveDirectories({
+          routeDirectory,
+          currentDirectory,
+          paneDirectories: paneControllers
+            .map(controller => controller.effectiveDirectory)
+            .filter((directory): directory is string => Boolean(directory)),
+        }),
+      [routeDirectory, currentDirectory, paneControllers],
+    ),
   )
 
   // 全局唯一 SSE 连接。所有 pane 通过 consumer 机制接收自己的 session 事件。

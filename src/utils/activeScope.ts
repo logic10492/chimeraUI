@@ -1,4 +1,4 @@
-import { isSameDirectory } from './directoryUtils'
+import { isSameDirectory, normalizeForComparison } from './directoryUtils'
 
 interface CollectActiveDirectoriesOptions {
   routeDirectory?: string
@@ -27,4 +27,18 @@ export function collectActiveDirectories({
   projectDirectories.forEach(pushDirectory)
 
   return directories
+}
+
+/**
+ * 目录集合的稳定内容 key：规范化 + 排序 + join。
+ * 数组引用变化但内容（含顺序）不变时 key 不变，
+ * 下游 effect 据此跳过无意义的刷新（W2②，消除 3×N 请求突发）。
+ */
+export function activeDirectoriesKey(directories: readonly (string | undefined)[] | undefined): string {
+  if (!directories || directories.length === 0) return ''
+  return directories
+    .map(directory => normalizeForComparison(directory))
+    .filter(Boolean)
+    .sort()
+    .join('\n')
 }
