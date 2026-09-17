@@ -80,6 +80,7 @@ vi.mock('../store', () => ({
     getChildSessionIds: vi.fn(() => []),
     registerChildSession: vi.fn(),
     getSessionAndDescendants: vi.fn(() => []),
+    loadChildren: vi.fn(() => Promise.resolve([])),
   },
   useActiveSessionStore: () => ({ statusMap: {} }),
 }))

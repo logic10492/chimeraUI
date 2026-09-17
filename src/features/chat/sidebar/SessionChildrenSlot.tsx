@@ -4,10 +4,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getSessionChildren, updateSession, deleteSession as apiDeleteSession, type ApiSession } from '../../../api'
+import { updateSession, deleteSession as apiDeleteSession, type ApiSession } from '../../../api'
 import { SpinnerIcon } from '../../../components/Icons'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { useInputCapabilities } from '../../../hooks/useInputCapabilities'
+import { childSessionStore } from '../../../store/childSessionStore'
 import { pinnedSessionsStore } from '../../../store/pinnedSessionsStore'
 import { uiErrorHandler } from '../../../utils'
 import { SessionListItem } from '../../sessions'
@@ -39,7 +40,10 @@ export function SessionChildrenSlot({
 }: SessionChildrenSlotProps) {
   const { t } = useTranslation(['chat', 'common'])
   const { preferTouchUi } = useInputCapabilities()
-  const [fetched, setFetched] = useState<ApiSession[]>([])
+  const [fetched, setFetched] = useState<ApiSession[]>(
+    // 热切秒开：挂载时直接用共享缓存播种，避免先渲染空列表再闪烁（W3①）
+    () => childSessionStore.getCachedChildSessions(parentSession.id, parentSession.directory) ?? [],
+  )
   const [loading, setLoading] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; sessionId: string | null }>({
     isOpen: false,
@@ -53,11 +57,17 @@ export function SessionChildrenSlot({
     }
 
     let cancelled = false
-    const loadingFrameId = requestAnimationFrame(() => {
-      if (!cancelled) setLoading(true)
-    })
+    // 缓存命中时 loadChildren 直接返回，不发网络请求（热切 0 次 /children，W3①），
+    // 也不展示 loading 占位；并发挂载（侧边栏 + 消息区）共享同一次拉取。
+    const hasCache = childSessionStore.hasCachedChildSessions(parentSession.id, parentSession.directory)
+    const loadingFrameId = hasCache
+      ? undefined
+      : requestAnimationFrame(() => {
+          if (!cancelled) setLoading(true)
+        })
 
-    getSessionChildren(parentSession.id, parentSession.directory)
+    childSessionStore
+      .loadChildren(parentSession.id, parentSession.directory)
       .then(data => {
         if (!cancelled) setFetched(data)
       })
@@ -67,19 +77,28 @@ export function SessionChildrenSlot({
       })
     return () => {
       cancelled = true
-      cancelAnimationFrame(loadingFrameId)
+      if (loadingFrameId !== undefined) cancelAnimationFrame(loadingFrameId)
     }
   }, [fetchAll, parentSession.id, parentSession.directory])
 
-  const handleRename = useCallback(async (childId: string, newTitle: string) => {
-    try {
-      await updateSession(childId, { title: newTitle })
-      pinnedSessionsStore.update(childId, { title: newTitle })
-      setFetched(prev => prev.map(s => (s.id === childId ? { ...s, title: newTitle } : s)))
-    } catch (e) {
-      uiErrorHandler('rename session', e)
-    }
-  }, [])
+  const handleRename = useCallback(
+    async (childId: string, newTitle: string) => {
+      try {
+        await updateSession(childId, { title: newTitle })
+        pinnedSessionsStore.update(childId, { title: newTitle })
+        // 同步修补共享缓存，避免折叠/展开后回退到旧 title
+        childSessionStore.patchCachedChildSession({
+          id: childId,
+          parentID: parentSession.id,
+          title: newTitle,
+        } as ApiSession)
+        setFetched(prev => prev.map(s => (s.id === childId ? { ...s, title: newTitle } : s)))
+      } catch (e) {
+        uiErrorHandler('rename session', e)
+      }
+    },
+    [parentSession.id],
+  )
 
   const handleDeleteConfirmed = useCallback(async () => {
     const id = deleteConfirm.sessionId
@@ -88,6 +107,8 @@ export function SessionChildrenSlot({
     try {
       await apiDeleteSession(id)
       pinnedSessionsStore.unpin(id)
+      // 同步清理共享缓存（SSE session.deleted 到达前也保持一致）
+      childSessionStore.removeCachedChildSession(id)
       setFetched(prev => prev.filter(s => s.id !== id))
       if (selectedSessionId === id) onDeleteSelected?.()
     } catch (e) {

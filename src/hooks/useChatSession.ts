@@ -29,7 +29,6 @@ import {
   getPendingQuestions,
   prefetchCommands,
   prefetchRootDirectory,
-  getSessionChildren,
   executeCommand,
   summarizeSession,
   updateSession,
@@ -500,7 +499,9 @@ export function useChatSession({
       const existingChildren = childSessionStore.getChildSessionIds(routeSessionId!)
       if (existingChildren.length === 0) {
         try {
-          const children = await getSessionChildren(routeSessionId!, effectiveDirectory)
+          // 共享缓存加载（W3①）：侧边栏与消息区用同一份 children 数据，
+          // 冷切 1 次 /children，热切（缓存命中）0 次
+          const children = await childSessionStore.loadChildren(routeSessionId!, effectiveDirectory)
           if (cancelled) return
           // 注册所有子 session 到 store
           for (const child of children) {

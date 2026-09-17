@@ -594,6 +594,8 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
         if (!isActiveScope(scope)) return
         if (session.parentID) {
           childSessionStore.registerChildSession(session)
+          // session.created 失效事件：追加进已拉取的 children 缓存，保持热数据新鲜（W3①）
+          childSessionStore.appendCachedChildSession(session)
 
           if (belongsToCurrentSession(session.id)) {
             for (const req of drainPending(pendingPermissions, session.id)) {
@@ -688,6 +690,8 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
         )
         if (session.parentID) {
           childSessionStore.registerChildSession(session)
+          // session.updated 涉及子 session：原位修补已拉取的 children 缓存（W3① 失效事件）
+          childSessionStore.patchCachedChildSession(session)
         }
 
         if (session.title && messageStore.getSessionState(session.id)) {

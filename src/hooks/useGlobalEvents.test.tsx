@@ -16,6 +16,8 @@ const GLOBAL_SCOPE = { serverID: 'local', directory: 'global' } as const
 
 const {
   subscribeToEventsMock,
+  appendCachedChildSessionMock,
+  patchCachedChildSessionMock,
   getSessionStatusMock,
   getPendingPermissionsMock,
   getPendingQuestionsMock,
@@ -44,6 +46,8 @@ const {
   sendNotificationMock,
 } = vi.hoisted(() => ({
   subscribeToEventsMock: vi.fn(),
+  appendCachedChildSessionMock: vi.fn(),
+  patchCachedChildSessionMock: vi.fn(),
   getSessionStatusMock: vi.fn<
     (scope?: { serverID: string; directory?: string; workspace?: string }) => Promise<Record<string, { type: string }>>
   >(() => Promise.resolve({})),
@@ -128,6 +132,8 @@ vi.mock('../store', () => ({
     markIdle: vi.fn(),
     markError: vi.fn(),
     registerChildSession: vi.fn(),
+    appendCachedChildSession: appendCachedChildSessionMock,
+    patchCachedChildSession: patchCachedChildSessionMock,
   },
   paneLayoutStore: {
     getFocusedSessionId: getFocusedSessionIdMock,
@@ -197,6 +203,8 @@ describe('useGlobalEvents', () => {
       serverDisposedDirectoryStore.clear('local', directory)
     }
     subscribeToEventsMock.mockReset()
+    appendCachedChildSessionMock.mockReset()
+    patchCachedChildSessionMock.mockReset()
     getSessionStatusMock.mockClear()
     getPendingPermissionsMock.mockClear()
     getPendingQuestionsMock.mockClear()
@@ -586,6 +594,10 @@ describe('useGlobalEvents', () => {
     expect(consumerAskedMock).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'question-2', sessionID: 'child-session' }),
     )
+    // session.created → 共享 children 缓存追加失效事件（W3①）
+    expect(appendCachedChildSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'child-session', parentID: 'parent-session' }),
+    )
 
     unregister()
   })
@@ -956,6 +968,26 @@ describe('useGlobalEvents', () => {
     // LRU 驱逐降级为 stale 标记后：不再广播刷新（0 自动重拉，W2④）
     expect(broadcastRuntimeResyncMock).not.toHaveBeenCalled()
     expect(markAllSessionsStaleMock).not.toHaveBeenCalled()
+  })
+
+  it('feeds child session cache invalidation events from SSE', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+
+    renderHook(() => useGlobalEvents(['/workspace']))
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    // session.updated 涉及子 session → 原位修补共享 children 缓存（W3①）
+    callbacks!.onSessionUpdated?.(
+      { id: 'child-1', parentID: 'parent-1', title: 'Renamed', directory: '/workspace' } as never,
+      TEST_SCOPE,
+    )
+    expect(patchCachedChildSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'child-1', parentID: 'parent-1', title: 'Renamed' }),
+    )
   })
 
   it('sends one system notification for multiple matching pane consumers', async () => {

@@ -8,6 +8,9 @@
 // 3. 存储子 session 的基本信息（用于显示来源）
 
 import type { ApiSession } from '../api/types'
+import { getSessionChildren } from '../api/session'
+import { singleFlight, singleFlightKey } from '../api/singleFlight'
+import { normalizeForComparison } from '../utils/directoryUtils'
 import i18n from '../i18n'
 
 // ============================================
@@ -178,14 +181,16 @@ class ChildSessionStore {
   // Cleanup
   // ============================================
 
-  /**
-   * 清空所有数据（服务器切换时调用）
-   */
-  clearAll() {
-    this.childrenByParent.clear()
+/**
+* 清空所有数据（服务器切换时调用）
+*/
+clearAll() {
+this.childrenByParent.clear()
     this.sessionInfo.clear()
-    this.notify()
-  }
+    this.fetchedChildren.clear()
+    this.fetchedKeysByParent.clear()
+this.notify()
+}
 
   /**
    * 清理某个父 session 的所有子 session 记录
@@ -219,9 +224,116 @@ class ChildSessionStore {
 
       if (this.childrenByParent.delete(id)) changed = true
       if (this.sessionInfo.delete(id)) changed = true
+      // session.deleted 属于缓存失效事件：同步清理已拉取的 children 列表（W3①）
+      this.removeCachedChildSession(id)
     }
 
     if (changed) this.notify()
+  }
+
+  // ============================================
+  // Fetched children 缓存（W3①：directory+parentID 键 + hydrated 标记）
+  // ============================================
+  //
+  // 侧边栏（SessionChildrenSlot）与消息区（useChatSession 恢复路径）共享：
+  // 冷切 1 次 /children，热切（缓存命中）0 请求，切回秒开。
+  // 失效/修补：session.created 追加、session.updated 原位修补、
+  // session.deleted（removeSession）移除；服务器切换时 clearAll() 全清。
+
+  /** key: `${normalizedDirectory}\n${parentID}`；存在即 hydrated */
+  private fetchedChildren = new Map<string, ApiSession[]>()
+  /** parentID -> 缓存 key 集合（失效/修补时无需知道 directory） */
+  private fetchedKeysByParent = new Map<string, Set<string>>()
+
+  private fetchedKey(directory: string | undefined, parentId: string): string {
+    return `${normalizeForComparison(directory)}\n${parentId}`
+  }
+
+  private trackFetchedKey(parentId: string, key: string) {
+    let keys = this.fetchedKeysByParent.get(parentId)
+    if (!keys) {
+      keys = new Set()
+      this.fetchedKeysByParent.set(parentId, keys)
+    }
+    keys.add(key)
+  }
+
+  hasCachedChildSessions(parentId: string, directory?: string): boolean {
+    return this.fetchedChildren.has(this.fetchedKey(directory, parentId))
+  }
+
+  /** 返回已 hydrated 的缓存列表（视为不可变，调用方勿直接修改） */
+  getCachedChildSessions(parentId: string, directory?: string): ApiSession[] | undefined {
+    return this.fetchedChildren.get(this.fetchedKey(directory, parentId))
+  }
+
+  setCachedChildSessions(parentId: string, directory: string | undefined, sessions: ApiSession[]) {
+    const key = this.fetchedKey(directory, parentId)
+    this.fetchedChildren.set(key, sessions)
+    this.trackFetchedKey(parentId, key)
+  }
+
+  /** 共享加载器：缓存命中直接返回（0 请求）；并发调用共享一次 /children 拉取 */
+  async loadChildren(parentId: string, directory?: string, options?: { force?: boolean }): Promise<ApiSession[]> {
+    const key = this.fetchedKey(directory, parentId)
+    if (!options?.force) {
+      const cached = this.fetchedChildren.get(key)
+      if (cached) return cached
+    }
+    return singleFlight(singleFlightKey('child-sessions', key), async () => {
+      const sessions = await getSessionChildren(parentId, directory)
+      this.fetchedChildren.set(key, sessions)
+      this.trackFetchedKey(parentId, key)
+      return sessions
+    })
+  }
+
+  /** session.created（带 parentID）：追加进缓存列表，保持热数据新鲜 */
+  appendCachedChildSession(session: ApiSession) {
+    if (!session.parentID) return
+    const keys = this.fetchedKeysByParent.get(session.parentID)
+    if (!keys) return
+    for (const key of keys) {
+      const cached = this.fetchedChildren.get(key)
+      if (!cached || cached.some(item => item.id === session.id)) continue
+      this.fetchedChildren.set(key, [...cached, session])
+    }
+  }
+
+  /** session.updated：原位修补缓存条目（title 等展示字段），不整体失效 */
+  patchCachedChildSession(session: ApiSession) {
+    if (!session.parentID) return
+    const keys = this.fetchedKeysByParent.get(session.parentID)
+    if (!keys) return
+    for (const key of keys) {
+      const cached = this.fetchedChildren.get(key)
+      if (!cached) continue
+      const index = cached.findIndex(item => item.id === session.id)
+      if (index === -1) continue
+      const next = [...cached]
+      next[index] = { ...cached[index], ...session }
+      this.fetchedChildren.set(key, next)
+    }
+  }
+
+  /** session.deleted / 本地移除：从所有缓存列表中移除；它作为父的列表一并删除 */
+  removeCachedChildSession(sessionId: string) {
+    for (const [key, cached] of this.fetchedChildren) {
+      const parentId = key.slice(key.indexOf('\n') + 1)
+      if (parentId === sessionId) {
+        this.fetchedChildren.delete(key)
+        continue
+      }
+      if (cached.some(item => item.id === sessionId)) {
+        this.fetchedChildren.set(key, cached.filter(item => item.id !== sessionId))
+      }
+    }
+    for (const [parentId, keys] of this.fetchedKeysByParent) {
+      for (const key of keys) {
+        if (!this.fetchedChildren.has(key)) keys.delete(key)
+      }
+      if (parentId === sessionId || keys.size === 0) this.fetchedKeysByParent.delete(parentId)
+    }
   }
 }
 
