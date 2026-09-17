@@ -37,11 +37,11 @@ function createAbortError(message: string) {
   return new DOMException(message, 'AbortError')
 }
 
-async function trackedFetch(
+async function executeTrackedRequest(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
   generation: number,
-  priority: RequestPriority = 'background',
+  priority: RequestPriority,
 ): Promise<Response> {
   const controller = new AbortController()
   const externalSignal = init?.signal
@@ -75,6 +75,74 @@ async function trackedFetch(
     externalSignal?.removeEventListener('abort', abortFromExternal)
     _apiRequestControllers.delete(controller)
   }
+}
+
+// ============================================
+// GET 幂等请求 in-flight 单飞（W3②）
+// ============================================
+//
+// 并发重复的 GET（method+path+params 相同 → URL 相同）共享同一次网络往返：
+// 双路径拉取（侧边栏/消息区）与 effect 双跑不再产生重复请求，也不额外
+// 占用 requestQueue 的 4 个并发槽。每个调用者拿到独立的 Response clone
+// （body 只能消费一次）；单个调用者的 abort 只拒绝它自己，不影响其他
+// 共享者（共享请求不绑定首个调用者的 signal）。server 切换后 generation
+// 递增：旧条目随控制器 abort 整体失败，新调用不会加入旧代次条目。
+const _inFlightGetRequests = new Map<string, Promise<Response>>()
+
+function requestMethodOf(input: RequestInfo | URL, init?: RequestInit): string {
+  if (init?.method) return init.method.toUpperCase()
+  if (typeof input !== 'string' && !(input instanceof URL)) return input.method.toUpperCase()
+  return 'GET'
+}
+
+function requestUrlOf(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.href
+  return input.url
+}
+
+function raceAbortSignal<T>(promise: Promise<T>, signal?: AbortSignal | null): Promise<T> {
+  if (!signal) return promise
+  if (signal.aborted) return Promise.reject(signal.reason ?? createAbortError('Request aborted'))
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? createAbortError('Request aborted'))
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(
+      value => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      },
+      error => {
+        signal.removeEventListener('abort', onAbort)
+        reject(error)
+      },
+    )
+  })
+}
+
+async function trackedFetch(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  generation: number,
+  priority: RequestPriority = 'background',
+): Promise<Response> {
+  if (requestMethodOf(input, init) !== 'GET' || generation !== _apiRequestGeneration) {
+    return executeTrackedRequest(input, init, generation, priority)
+  }
+
+  const key = `${generation}|${requestUrlOf(input)}`
+  let shared = _inFlightGetRequests.get(key)
+  if (!shared) {
+    // 共享请求不绑定首个调用者的外部 signal：单飞期间任意一个调用者
+    // abort 不能终止其他共享者；全局中止仍由 abortInFlightApiRequests 覆盖
+    shared = executeTrackedRequest(input, init ? { ...init, signal: undefined } : init, generation, priority)
+    _inFlightGetRequests.set(key, shared)
+    const cleanup = () => {
+      if (_inFlightGetRequests.get(key) === shared) _inFlightGetRequests.delete(key)
+    }
+    shared.then(cleanup, cleanup)
+  }
+  return (await raceAbortSignal(shared, init?.signal)).clone()
 }
 
 export function abortInFlightApiRequests(reason = 'Server endpoint changed'): void {
