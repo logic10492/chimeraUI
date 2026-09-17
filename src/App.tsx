@@ -58,13 +58,17 @@ type MobilePagerPage = 'left' | 'chat' | 'right'
 /**
  * 内容不变时保持数组引用稳定：避免 activeDirectories/pinnedDirectories
  * 仅因引用变化就触发下游 effect 的 3×N 背景请求突发（W2②）。
+ * 采用 React 官方「渲染期间根据内容 key 调整 state」模式：
+ * 仅内容真变化时多一次重渲染，引用变化内容不变时返回旧数组。
  */
 function useStableDirectories(directories: string[]): string[] {
-  const stableRef = useRef(directories)
-  if (activeDirectoriesKey(stableRef.current) !== activeDirectoriesKey(directories)) {
-    stableRef.current = directories
+  const key = activeDirectoriesKey(directories)
+  const [stable, setStable] = useState({ key, directories })
+  if (stable.key !== key) {
+    setStable({ key, directories })
+    return directories
   }
-  return stableRef.current
+  return stable.directories
 }
 
 function App() {
