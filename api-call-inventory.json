@@ -107,6 +107,7 @@
         "fields": [
           "$schema",
           "agent",
+          "attachment",
           "autoshare",
           "autoupdate",
           "command",
@@ -118,6 +119,7 @@
           "enterprise",
           "experimental",
           "formatter",
+          "free_models",
           "instructions",
           "layout",
           "logLevel",
@@ -146,6 +148,18 @@
       },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
       "sources": [{ "file": "src/api/config.ts", "line": 40 }]
+    },
+    {
+      "operationId": "experimental.resource.list",
+      "clientMethod": "experimental.resource.list",
+      "transport": "sdk",
+      "method": "GET",
+      "path": "/experimental/resource",
+      "pathParameters": [],
+      "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
+      "body": null,
+      "scope": { "kind": "instance", "query": ["directory", "workspace"] },
+      "sources": [{ "file": "src/api/mcp.ts", "line": 22 }]
     },
     {
       "operationId": "file.list",
@@ -211,6 +225,18 @@
       "sources": [{ "file": "src/api/file.ts", "line": 143 }]
     },
     {
+      "operationId": "find.text",
+      "clientMethod": "find.text",
+      "transport": "sdk",
+      "method": "GET",
+      "path": "/find",
+      "pathParameters": [],
+      "query": { "openapi": ["directory", "pattern", "workspace"], "raw": [], "middleware": [] },
+      "body": null,
+      "scope": { "kind": "instance", "query": ["directory", "workspace"] },
+      "sources": [{ "file": "src/api/file.ts", "line": 151 }]
+    },
+    {
       "operationId": "formatter.status",
       "clientMethod": "formatter.status",
       "transport": "sdk",
@@ -247,6 +273,7 @@
         "fields": [
           "$schema",
           "agent",
+          "attachment",
           "autoshare",
           "autoupdate",
           "command",
@@ -258,6 +285,7 @@
           "enterprise",
           "experimental",
           "formatter",
+          "free_models",
           "instructions",
           "layout",
           "logLevel",
@@ -310,8 +338,8 @@
       "body": null,
       "scope": { "kind": "global", "query": [] },
       "sources": [
-        { "file": "src/api/events.ts", "line": 241 },
-        { "file": "src/api/events.ts", "line": 352 }
+        { "file": "src/api/events.ts", "line": 249 },
+        { "file": "src/api/events.ts", "line": 360 }
       ]
     },
     {
@@ -443,7 +471,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": { "contentTypes": ["application/json"], "fields": ["config", "name"], "required": ["config", "name"] },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/mcp.ts", "line": 22 }]
+      "sources": [{ "file": "src/api/mcp.ts", "line": 30 }]
     },
     {
       "operationId": "mcp.auth.authenticate",
@@ -455,7 +483,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/mcp.ts", "line": 72 }]
+      "sources": [{ "file": "src/api/mcp.ts", "line": 80 }]
     },
     {
       "operationId": "mcp.auth.callback",
@@ -467,7 +495,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": { "contentTypes": ["application/json"], "fields": ["code"], "required": ["code"] },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/mcp.ts", "line": 64 }]
+      "sources": [{ "file": "src/api/mcp.ts", "line": 72 }]
     },
     {
       "operationId": "mcp.auth.remove",
@@ -479,7 +507,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/mcp.ts", "line": 56 }]
+      "sources": [{ "file": "src/api/mcp.ts", "line": 64 }]
     },
     {
       "operationId": "mcp.auth.start",
@@ -491,7 +519,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/mcp.ts", "line": 46 }]
+      "sources": [{ "file": "src/api/mcp.ts", "line": 54 }]
     },
     {
       "operationId": "mcp.connect",
@@ -503,7 +531,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/mcp.ts", "line": 30 }]
+      "sources": [{ "file": "src/api/mcp.ts", "line": 38 }]
     },
     {
       "operationId": "mcp.disconnect",
@@ -515,7 +543,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/mcp.ts", "line": 38 }]
+      "sources": [{ "file": "src/api/mcp.ts", "line": 46 }]
     },
     {
       "operationId": "mcp.status",
@@ -551,7 +579,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/permission.ts", "line": 19 }]
+      "sources": [{ "file": "src/api/permission.ts", "line": 25 }]
     },
     {
       "operationId": "permission.reply",
@@ -563,7 +591,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": { "contentTypes": ["application/json"], "fields": ["message", "reply"], "required": ["reply"] },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/permission.ts", "line": 48 }]
+      "sources": [{ "file": "src/api/permission.ts", "line": 56 }]
     },
     {
       "operationId": "permission.respond",
@@ -575,7 +603,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": { "contentTypes": ["application/json"], "fields": ["response"], "required": ["response"] },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/permission.ts", "line": 37 }]
+      "sources": [{ "file": "src/api/permission.ts", "line": 45 }]
     },
     {
       "operationId": "project.current",
@@ -799,7 +827,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/permission.ts", "line": 67 }]
+      "sources": [{ "file": "src/api/permission.ts", "line": 79 }]
     },
     {
       "operationId": "question.reject",
@@ -811,7 +839,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/permission.ts", "line": 96 }]
+      "sources": [{ "file": "src/api/permission.ts", "line": 110 }]
     },
     {
       "operationId": "question.reply",
@@ -823,7 +851,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": { "contentTypes": ["application/json"], "fields": ["answers"], "required": ["answers"] },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/permission.ts", "line": 81 }]
+      "sources": [{ "file": "src/api/permission.ts", "line": 95 }]
     },
     {
       "operationId": "session.abort",
@@ -835,7 +863,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 202 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 212 }]
     },
     {
       "operationId": "session.children",
@@ -847,7 +875,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 304 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 314 }]
     },
     {
       "operationId": "session.command",
@@ -879,7 +907,7 @@
         "required": []
       },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 153 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 163 }]
     },
     {
       "operationId": "session.delete",
@@ -891,7 +919,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 189 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 199 }]
     },
     {
       "operationId": "session.diff",
@@ -903,7 +931,7 @@
       "query": { "openapi": ["directory", "messageID", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 62 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 66 }]
     },
     {
       "operationId": "session.fork",
@@ -915,7 +943,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": { "contentTypes": ["application/json"], "fields": ["messageID"], "required": [] },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 269 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 279 }]
     },
     {
       "operationId": "session.get",
@@ -927,7 +955,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 132 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 142 }]
     },
     {
       "operationId": "session.list",
@@ -955,8 +983,8 @@
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
       "sources": [
-        { "file": "src/api/session.ts", "line": 96 },
-        { "file": "src/api/session.ts", "line": 116 }
+        { "file": "src/api/session.ts", "line": 102 },
+        { "file": "src/api/session.ts", "line": 125 }
       ]
     },
     {
@@ -1025,7 +1053,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": { "contentTypes": ["application/json"], "fields": ["messageID", "partID"], "required": ["messageID"] },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 218 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 228 }]
     },
     {
       "operationId": "session.share",
@@ -1037,7 +1065,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 246 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 256 }]
     },
     {
       "operationId": "session.status",
@@ -1049,7 +1077,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 42 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 45 }]
     },
     {
       "operationId": "session.summarize",
@@ -1065,7 +1093,7 @@
         "required": ["modelID", "providerID"]
       },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 289 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 299 }]
     },
     {
       "operationId": "session.todo",
@@ -1077,7 +1105,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 321 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 331 }]
     },
     {
       "operationId": "session.unrevert",
@@ -1089,7 +1117,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 235 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 245 }]
     },
     {
       "operationId": "session.unshare",
@@ -1101,7 +1129,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 257 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 267 }]
     },
     {
       "operationId": "session.update",
@@ -1113,7 +1141,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": { "contentTypes": ["application/json"], "fields": ["permission", "time", "title"], "required": [] },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 174 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 184 }]
     },
     {
       "operationId": "session.workBrief",
@@ -1125,7 +1153,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/session.ts", "line": 47 }]
+      "sources": [{ "file": "src/api/session.ts", "line": 51 }]
     },
     {
       "operationId": "tool.ids",
