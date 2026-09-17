@@ -1,6 +1,7 @@
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { registerSessionConsumer, useGlobalEvents } from './useGlobalEvents'
+import { serverDisposedDirectoryStore } from '../store/serverDisposedDirectoryStore'
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void
@@ -191,6 +192,10 @@ vi.mock('../store/autoApproveStore', () => ({
 
 describe('useGlobalEvents', () => {
   beforeEach(() => {
+    // 清除休眠标记，避免跨用例污染（serverDisposedDirectoryStore 是模块级单例）
+    for (const directory of ['/workspace', '/one', '/two', '/reload-me']) {
+      serverDisposedDirectoryStore.clear('local', directory)
+    }
     subscribeToEventsMock.mockReset()
     getSessionStatusMock.mockClear()
     getPendingPermissionsMock.mockClear()
@@ -847,7 +852,7 @@ describe('useGlobalEvents', () => {
     unregister()
   })
 
-  it('clears instance and global runtime scopes before resyncing', async () => {
+  it('clears runtime scopes and resyncs for non-LRU instance disposal', async () => {
     let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
     subscribeToEventsMock.mockImplementation(cb => {
       callbacks = cb
@@ -858,7 +863,7 @@ describe('useGlobalEvents', () => {
     renderHook(() => useGlobalEvents(['/workspace']))
     await waitFor(() => expect(callbacks).toBeDefined())
 
-    callbacks!.onServerInstanceDisposed?.({ directory: '/workspace' }, TEST_SCOPE)
+    callbacks!.onServerInstanceDisposed?.({ directory: '/workspace', reason: 'reload' } as never, TEST_SCOPE)
 
     expect(activeSessionStoreMock.getSessionIdsForScope).toHaveBeenCalledWith({
       serverID: 'local',
@@ -886,7 +891,46 @@ describe('useGlobalEvents', () => {
     })
   })
 
-  it('keeps pane-open sessions and their data when an instance is disposed', async () => {
+  it('downgrades LRU instance disposal to a stale marker without any resync', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    const onReconnected = vi.fn()
+    const unregister = registerSessionConsumer('pane-stale', 'session-1', { onReconnected })
+
+    renderHook(() => useGlobalEvents(['/workspace']))
+    await waitFor(() => expect(callbacks).toBeDefined())
+    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalled())
+    getSessionStatusMock.mockClear()
+    getPendingPermissionsMock.mockClear()
+    getPendingQuestionsMock.mockClear()
+    markAllSessionsStaleMock.mockClear()
+    broadcastRuntimeResyncMock.mockClear()
+    checkHealthMock.mockClear()
+    runtimeInvalidationEmitMock.mockClear()
+
+    callbacks!.onServerInstanceDisposed?.({ directory: '/workspace', reason: 'idle-sweep' } as never, TEST_SCOPE)
+
+    // 休眠标记写入：UI 可展示，后续自动刷新会跳过该目录
+    expect(serverDisposedDirectoryStore.isDisposed('local', '/workspace')).toBe(true)
+
+    // 0 自动重拉：等待超过非 LRU 路径的 250ms debounce 窗口后仍无任何请求/广播
+    await new Promise(resolve => setTimeout(resolve, 300))
+    expect(getSessionStatusMock).not.toHaveBeenCalled()
+    expect(getPendingPermissionsMock).not.toHaveBeenCalled()
+    expect(getPendingQuestionsMock).not.toHaveBeenCalled()
+    expect(checkHealthMock).not.toHaveBeenCalled()
+    expect(broadcastRuntimeResyncMock).not.toHaveBeenCalled()
+    expect(markAllSessionsStaleMock).not.toHaveBeenCalled()
+    expect(runtimeInvalidationEmitMock).not.toHaveBeenCalled()
+    expect(onReconnected).not.toHaveBeenCalled()
+
+    unregister()
+  })
+
+  it('keeps pane-open sessions and skips resync when an instance is LRU-disposed', async () => {
     let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
     subscribeToEventsMock.mockImplementation(cb => {
       callbacks = cb
@@ -909,8 +953,9 @@ describe('useGlobalEvents', () => {
     // 未在 pane 中打开的 session 维持原清理行为
     expect(clearSessionRuntimeStateMock).toHaveBeenCalledWith('closed-session', 'local')
     expect(clearPaneSessionMock).toHaveBeenCalledWith('closed-session')
-    // dispose 仍向全局订阅者广播刷新
-    expect(broadcastRuntimeResyncMock).toHaveBeenCalledWith('local')
+    // LRU 驱逐降级为 stale 标记后：不再广播刷新（0 自动重拉，W2④）
+    expect(broadcastRuntimeResyncMock).not.toHaveBeenCalled()
+    expect(markAllSessionsStaleMock).not.toHaveBeenCalled()
   })
 
   it('sends one system notification for multiple matching pane consumers', async () => {
@@ -995,7 +1040,7 @@ describe('useGlobalEvents', () => {
     },
   )
 
-  it('excludes LRU-disposed directories from automatic refetch until re-pinned', async () => {
+  it('marks LRU-disposed directories stale without auto refetch until re-pinned', async () => {
     let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
     subscribeToEventsMock.mockImplementation(cb => {
       callbacks = cb
@@ -1014,10 +1059,9 @@ describe('useGlobalEvents', () => {
       directory: '/two',
     })
 
-    await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalled(), { timeout: 2000 })
-    const directories = getSessionStatusMock.mock.calls.map(call => call[0]?.directory)
-    expect(directories).toContain('/one')
-    expect(directories).not.toContain('/two')
+    // LRU 驱逐降级为 stale 标记：0 自动重拉（不再触发任何全量 resync，W2④）
+    await new Promise(resolve => setTimeout(resolve, 300))
+    expect(getSessionStatusMock).not.toHaveBeenCalled()
 
     // 用户切回该目录（进入 pinned）后解除休眠，自动刷新恢复覆盖
     getSessionStatusMock.mockClear()

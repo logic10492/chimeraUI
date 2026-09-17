@@ -236,10 +236,10 @@ async function fetchActiveScopeData(serverID: string, directories?: string[]) {
   }
 }
 
-// 与服务器端 InstanceStore.LRU_DISPOSE_REASONS 对应：只有 LRU 驱逐才标记休眠，
-// reload / 显式 dispose 仍按原逻辑立即 resync。
+// 与服务器端 InstanceStore.LRU_DISPOSE_REASONS 对应：只有 LRU 驱逐降级为 stale 标记
+// （0 自动重拉，惰性恢复）；reload / 显式 dispose 仍按原逻辑立即 resync。
 const LRU_DISPOSE_REASONS = new Set(['idle-sweep', 'post-load-lru', 'post-request-lru'])
-// 同一 scope 的连续 dispose resync 在该窗口内合并为一次拉取
+// 同一 scope 的连续非 LRU dispose resync 在该窗口内合并为一次拉取
 const DISPOSE_RESYNC_DEBOUNCE_MS = 250
 
 /** 检查 sessionID 是否属于当前活跃的 session family。
@@ -441,17 +441,17 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
         consumer.callbacks.onReconnected?.(reason, scope.serverID)
       }
       // pane 消费者只覆盖当前打开的 session；全局订阅者（如会话列表）住在 events.ts 的
-      // allSubscribers，event-gap / dispose 若不广播会长期漂移。
+      // allSubscribers，event-gap / 非 LRU dispose 若不广播会长期漂移。
       // 复用 broadcastReconnected 的 2s cooldown 作为风暴保护；network / server-switch
-      // 本身已由该广播触发，不重复发起。
+      // 本身已由该广播触发，不重复发起。LRU 驱逐已在入口降级为 stale 标记（W2④），
+      // 不会到达这里；event-gap 保留全量 resync 作为唯一兜底（W2⑤）。
       if (reason === 'event-gap' || reason === 'dispose') broadcastRuntimeResync(scope.serverID)
     }
 
-    const disposeRuntimeScope = (scope: EventScope) => {
-      if (!isActiveScope(scope)) return
-      // 正在 pane 中打开的 session 保留显示与数据：LRU 驱逐后服务端会按需 boot，
-      // 随后的 resyncRuntime（markAllSessionsStale + 消费者 onReconnected → loadSession(force)）
-      // 会重新拉取，避免正在查看的会话在用户眼前消失。
+    // 目录实例被处置后的本地清理（不触发任何网络请求）：
+    // 正在 pane 中打开的 session 保留显示与数据（服务端会按需 boot），
+    // 未打开的 session 清空运行时状态，等下次打开时惰性重拉。
+    const clearDisposedScopeState = (scope: EventScope) => {
       const openSessionIds = new Set(
         paneLayoutStore
           .allLeaves()
@@ -470,6 +470,13 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
         clearSessionRuntimeState(sessionId, scope.serverID)
         paneLayoutStore.clearSession(sessionId)
       }
+    }
+
+    // 非 LRU 的显式处置（reload / 手动 dispose）：本地清理 + 全量 resync。
+    // LRU 驱逐不走这里（W2④ 已在入口降级为 stale 标记）。
+    const disposeRuntimeScope = (scope: EventScope) => {
+      if (!isActiveScope(scope)) return
+      clearDisposedScopeState(scope)
       resyncRuntime(scope, 'dispose', 'disposed')
     }
 
@@ -881,13 +888,19 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
       },
 
       onServerInstanceDisposed: (data, scope) => {
-        // 只有 LRU 驱逐才标记休眠并停止自动重拉；reload/显式 dispose 保持原有 resync 行为。
-        // 旧版本服务器不携带 reason，按 LRU 处理以获得风暴保护。
+        // LRU 驱逐降级为 stale 标记（W2④）：只写入休眠目录表 + 本地清理，
+        // 不 resyncRuntime、不广播、不触发任何自动重拉（0 请求）；
+        // 用户再次切回该目录（进入 pinned）时才清除标记并惰性重拉。
+        // 旧版本服务器不携带 reason，按 LRU 处理以获得同样的风暴保护。
+        // reload / 显式 dispose 意味着服务端数据可能变化，保持原有全量 resync。
         const reason = (data as { reason?: string }).reason
+        const directoryScope = { ...scope, directory: data.directory }
         if (!reason || LRU_DISPOSE_REASONS.has(reason)) {
           serverDisposedDirectoryStore.markDisposed(scope.serverID, data.directory)
+          if (isActiveScope(directoryScope)) clearDisposedScopeState(directoryScope)
+          return
         }
-        disposeRuntimeScope({ ...scope, directory: data.directory })
+        disposeRuntimeScope(directoryScope)
       },
 
       onGlobalDisposed: (_data, scope) => {
