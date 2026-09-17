@@ -4,6 +4,8 @@
 // ============================================
 
 import { getInteractiveSDKClient, getSDKClient, unwrap } from './sdk'
+import { singleFlight, singleFlightKey } from './singleFlight'
+import { serverStore } from '../store/serverStore'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type { ApiPermissionRequest, PermissionReply, ApiQuestionRequest, QuestionAnswer } from './types'
 
@@ -15,9 +17,15 @@ import type { ApiPermissionRequest, PermissionReply, ApiQuestionRequest, Questio
  * 获取待处理的权限请求列表
  */
 export async function getPendingPermissions(sessionId?: string, directory?: string): Promise<ApiPermissionRequest[]> {
-  const sdk = getSDKClient()
-  const permissions = unwrap(await sdk.permission.list({ directory: formatPathForApi(directory) }))
-  return sessionId ? permissions.filter((p: ApiPermissionRequest) => p.sessionID === sessionId) : permissions
+  // 按 server+directory 单飞：并发订阅者共享一次全量拉取；sessionId 过滤在共享结果上进行
+  return singleFlight(
+    singleFlightKey('permission.list', serverStore.getActiveServerId(), directory ?? null, sessionId ?? null),
+    async () => {
+      const sdk = getSDKClient()
+      const permissions = unwrap(await sdk.permission.list({ directory: formatPathForApi(directory) }))
+      return sessionId ? permissions.filter((p: ApiPermissionRequest) => p.sessionID === sessionId) : permissions
+    },
+  )
 }
 
 /**
@@ -63,9 +71,15 @@ export async function replyPermission(
  * 获取待处理的问题请求列表
  */
 export async function getPendingQuestions(sessionId?: string, directory?: string): Promise<ApiQuestionRequest[]> {
-  const sdk = getSDKClient()
-  const questions = unwrap(await sdk.question.list({ directory: formatPathForApi(directory) }))
-  return sessionId ? questions.filter((q: ApiQuestionRequest) => q.sessionID === sessionId) : questions
+  // 按 server+directory 单飞：并发订阅者共享一次全量拉取；sessionId 过滤在共享结果上进行
+  return singleFlight(
+    singleFlightKey('question.list', serverStore.getActiveServerId(), directory ?? null, sessionId ?? null),
+    async () => {
+      const sdk = getSDKClient()
+      const questions = unwrap(await sdk.question.list({ directory: formatPathForApi(directory) }))
+      return sessionId ? questions.filter((q: ApiQuestionRequest) => q.sessionID === sessionId) : questions
+    },
+  )
 }
 
 /**

@@ -4,6 +4,7 @@
 // ============================================
 
 import { getInteractiveSDKClient, getSDKClient, unwrap } from './sdk'
+import { singleFlight, singleFlightKey } from './singleFlight'
 import {
   activeApiScope,
   apiScopeQuery,
@@ -39,7 +40,10 @@ function scopedSession(session: ApiSession, scope: ApiScope): ApiSession {
  */
 export async function getSessionStatus(input?: ApiScopeInput): Promise<SessionStatusMap> {
   const scope = resolveApiScope(input)
-  return unwrap(await getSDKClient(scope).session.status(apiScopeQuery(scope)))
+  // 按 server+directory 单飞：并发订阅者共享一次状态拉取（W2 resync 收敛）
+  return singleFlight(singleFlightKey('session.status', scope), async () =>
+    unwrap(await getSDKClient(scope).session.status(apiScopeQuery(scope))),
+  )
 }
 
 export async function getSessionWorkBrief(sessionId: string, input?: ApiScopeInput): Promise<WorkBrief> {
@@ -92,17 +96,20 @@ export async function getSessionsPage(
 ): Promise<SessionPage> {
   const { apiScope, directory, workspace, ...query } = params
   const scope = apiScope ? resolveApiScope(apiScope) : activeApiScope(directory, workspace)
-  const client = getSDKClient(scope)
-  const result = await client.session.list({
-    ...apiScopeQuery(scope),
-    ...query,
-  } as unknown as Parameters<typeof client.session.list>[0])
-  const sessions = normalizeSessionList(unwrap(result))
-  rememberSessionApiScopes(sessions, scope)
-  return {
-    items: sessions,
-    nextCursor: result.response?.headers.get('x-next-cursor') ?? undefined,
-  }
+  // 按目录+查询参数单飞：N 个订阅者并发拉同一页时共享一次请求（W2 resync 收敛）
+  return singleFlight(singleFlightKey('session.page', scope, query), async () => {
+    const client = getSDKClient(scope)
+    const result = await client.session.list({
+      ...apiScopeQuery(scope),
+      ...query,
+    } as unknown as Parameters<typeof client.session.list>[0])
+    const sessions = normalizeSessionList(unwrap(result))
+    rememberSessionApiScopes(sessions, scope)
+    return {
+      items: sessions,
+      nextCursor: result.response?.headers.get('x-next-cursor') ?? undefined,
+    }
+  })
 }
 
 /**
@@ -111,16 +118,19 @@ export async function getSessionsPage(
 export async function getSessions(params: SessionListParams & { apiScope?: ApiScope } = {}): Promise<ApiSession[]> {
   const { apiScope, directory, workspace, ...query } = params
   const scope = apiScope ? resolveApiScope(apiScope) : activeApiScope(directory, workspace)
-  const sessions = normalizeSessionList(
-    unwrap(
-      await getSDKClient(scope).session.list({
-        ...apiScopeQuery(scope),
-        ...query,
-      }),
-    ),
-  )
-  rememberSessionApiScopes(sessions, scope)
-  return sessions
+  // 按目录+查询参数单飞：并发订阅者共享一次列表拉取（W2 resync 收敛）
+  return singleFlight(singleFlightKey('session.list', scope, query), async () => {
+    const sessions = normalizeSessionList(
+      unwrap(
+        await getSDKClient(scope).session.list({
+          ...apiScopeQuery(scope),
+          ...query,
+        }),
+      ),
+    )
+    rememberSessionApiScopes(sessions, scope)
+    return sessions
+  })
 }
 
 /**

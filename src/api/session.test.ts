@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { clearSingleFlight } from './singleFlight'
+
 const {
   activeApiScopeMock,
   apiScopeQueryMock,
@@ -46,6 +48,7 @@ import { getSessions, getSessionsPage, updateSession } from './session'
 describe('session ApiScope routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    clearSingleFlight()
     getSDKClientMock.mockReturnValue({ session: { list: listMock, update: updateMock } })
   })
 
@@ -91,6 +94,44 @@ describe('session ApiScope routing', () => {
       limit: 20,
       cursor: 'cursor-1',
     })
+  })
+
+  it('shares one in-flight page request between concurrent subscribers', async () => {
+    const scope = { serverID: 'server-a', directory: '/remote' }
+    const sessions = [{ id: 'session-1', title: 'Session', directory: '/remote' }]
+    activeApiScopeMock.mockReturnValue(scope)
+    let resolveList!: (value: unknown) => void
+    listMock.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveList = resolve
+        }),
+    )
+
+    const first = getSessionsPage({ directory: '/remote', roots: true, limit: 20 })
+    const second = getSessionsPage({ directory: '/remote', roots: true, limit: 20 })
+
+    // 同目录同参数的并发订阅者共享同一次 SDK 调用（W2① 按目录单飞）
+    expect(listMock).toHaveBeenCalledTimes(1)
+
+    resolveList({ data: sessions, response: { headers: new Headers({ 'x-next-cursor': 'cursor-9' }) } })
+
+    await expect(first).resolves.toEqual({ items: sessions, nextCursor: 'cursor-9' })
+    await expect(second).resolves.toEqual({ items: sessions, nextCursor: 'cursor-9' })
+  })
+
+  it('does not share in-flight page requests with different query params', async () => {
+    // scope 解析跟随 directory，和真实 activeApiScope 行为一致
+    activeApiScopeMock.mockImplementation((directory?: string) => ({ serverID: 'server-a', directory }))
+    listMock.mockResolvedValue({ data: [] })
+
+    await Promise.all([
+      getSessionsPage({ directory: '/remote', roots: true, limit: 20 }),
+      getSessionsPage({ directory: '/remote', roots: true, limit: 5 }),
+      getSessionsPage({ directory: '/other', roots: true, limit: 20 }),
+    ])
+
+    expect(listMock).toHaveBeenCalledTimes(3)
   })
 
   it('sends null explicitly when restoring a session', async () => {
