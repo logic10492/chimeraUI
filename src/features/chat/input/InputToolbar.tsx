@@ -35,6 +35,8 @@ interface InputToolbarProps {
   selectedModelKey?: string | null
   onModelChange?: (modelKey: string, model: ModelInfo) => void
   modelsLoading?: boolean
+  modelsError?: Error | null
+  onModelsRetry?: () => void
   // 输入框容器 ref，用于约束菜单边界
   inputContainerRef?: React.RefObject<HTMLDivElement | null>
   modelSelectorRef?: React.RefObject<ModelSelectorHandle | null>
@@ -58,6 +60,8 @@ export function InputToolbar({
   selectedModelKey = null,
   onModelChange,
   modelsLoading = false,
+  modelsError,
+  onModelsRetry,
   inputContainerRef,
   modelSelectorRef,
 }: InputToolbarProps) {
@@ -325,6 +329,8 @@ export function InputToolbar({
             selectedModelKey={selectedModelKey}
             onSelect={onModelChange}
             isLoading={modelsLoading}
+            loadError={modelsError}
+            onRetry={onModelsRetry}
             position="top"
             trigger="toolbar"
             constrainToRef={inputContainerRef}

@@ -24,6 +24,8 @@ import type { ModelInfo } from '../../api'
 interface HeaderProps {
   models: ModelInfo[]
   modelsLoading: boolean
+  modelsError?: Error | null
+  onModelsRetry?: () => void
   selectedModelKey: string | null
   onModelChange: (modelKey: string, model: ModelInfo) => void
   onOpenSidebar?: () => void
@@ -114,6 +116,8 @@ function SessionTitleControl({
 export function Header({
   models,
   modelsLoading,
+  modelsError,
+  onModelsRetry,
   selectedModelKey,
   onModelChange,
   onOpenSidebar,
@@ -217,6 +221,8 @@ export function Header({
             selectedModelKey={selectedModelKey}
             onSelect={onModelChange}
             isLoading={modelsLoading}
+            loadError={modelsError}
+            onRetry={onModelsRetry}
           />
         )}
 

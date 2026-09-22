@@ -165,4 +165,23 @@ describe('ModelSelector', () => {
     fireEvent.click(trigger)
     expect(screen.getByRole('textbox', { name: 'Search models...' })).toBeTruthy()
   })
+
+  it('shows a load error with a retry action when the model fetch failed', () => {
+    const onRetry = vi.fn()
+    render(
+      <ModelSelector
+        models={[]}
+        selectedModelKey={null}
+        onSelect={vi.fn()}
+        loadError={new Error('boom')}
+        onRetry={onRetry}
+      />,
+    )
+
+    fireEvent.click(screen.getByTitle('Select model'))
+    expect(screen.getByText('Failed to load models')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('Retry'))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
 })

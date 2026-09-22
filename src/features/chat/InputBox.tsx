@@ -167,6 +167,8 @@ export interface InputBoxProps {
   selectedModelKey?: string | null
   onModelChange?: (modelKey: string, model: ModelInfo) => void
   modelsLoading?: boolean
+  modelsError?: Error | null
+  onModelsRetry?: () => void
   modelSelectorRef?: React.RefObject<ModelSelectorHandle | null>
   rootPath?: string
   sessionId?: string | null
@@ -214,6 +216,8 @@ function InputBoxComponent({
   selectedModelKey = null,
   onModelChange,
   modelsLoading = false,
+  modelsError,
+  onModelsRetry,
   modelSelectorRef,
   rootPath = '',
   sessionId,
@@ -1495,6 +1499,8 @@ function InputBoxComponent({
                       selectedModelKey={selectedModelKey}
                       onModelChange={onModelChange}
                       modelsLoading={modelsLoading}
+                      modelsError={modelsError}
+                      onModelsRetry={onModelsRetry}
                       inputContainerRef={inputContainerRef}
                       modelSelectorRef={modelSelectorRef}
                     />

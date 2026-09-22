@@ -157,7 +157,7 @@ export const ChatPane = memo(function ChatPane({
   // ============================================
   // Models
   // ============================================
-  const { models, isLoading: modelsLoading, refetch: refetchModels } = useModels()
+  const { models, isLoading: modelsLoading, error: modelsError, refetch: refetchModels } = useModels()
   const { activeServer, getHealth } = useServerStore()
   const activeServerHealth = activeServer ? getHealth(activeServer.id) : null
   const hiddenModelKeys = useHiddenModelKeys()
@@ -802,6 +802,8 @@ export const ChatPane = memo(function ChatPane({
             <Header
               models={visibleModels}
               modelsLoading={modelsLoading}
+              modelsError={modelsError}
+              onModelsRetry={refetchModels}
               selectedModelKey={selectedModelKey}
               onModelChange={handleModelChange}
               onOpenSidebar={onOpenSidebar}
@@ -905,6 +907,8 @@ export const ChatPane = memo(function ChatPane({
           selectedModelKey={selectedModelKey}
           onModelChange={handleModelChange}
           modelsLoading={modelsLoading}
+          modelsError={modelsError}
+          onModelsRetry={refetchModels}
           modelSelectorRef={modelSelectorRef}
           rootPath={effectiveDirectory}
           sessionId={routeSessionId}

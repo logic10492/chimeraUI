@@ -34,6 +34,10 @@ interface ModelSelectorProps {
   selectedModelKey: string | null
   onSelect: (modelKey: string, model: ModelInfo) => void
   isLoading?: boolean
+  /** Model list fetch error (from useModels) — surfaces a retry affordance in the dropdown */
+  loadError?: Error | null
+  /** Refetch models when the user hits Retry in the error state */
+  onRetry?: () => void
   disabled?: boolean
   /** 弹出方向 */
   position?: 'bottom' | 'top'
@@ -347,6 +351,8 @@ export const ModelSelector = memo(
       selectedModelKey,
       onSelect,
       isLoading = false,
+      loadError = null,
+      onRetry,
       disabled = false,
       position = 'bottom',
       constrainToRef,
@@ -430,6 +436,8 @@ export const ModelSelector = memo(
       const style = window.getComputedStyle(candidate)
       return style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0'
     }, [])
+
+    const showLoadError = Boolean(loadError) && models.length === 0
 
     const displayName =
       trigger === 'header'
@@ -856,36 +864,54 @@ export const ModelSelector = memo(
           constrainToRef={constrainToRef}
           className={`!p-0 overflow-hidden flex flex-col ${dropdownMaxH}`}
         >
-          <ModelListPanel
-            menuRef={menuRef}
-            searchInputRef={searchInputRef}
-            listRef={listRef}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            setHighlightedIndex={setHighlightedIndex}
-            handleSearchKeyDown={handleSearchKeyDown}
-            handleItemKeyDown={handleItemKeyDown}
-            flatList={flatList}
-            itemIndices={itemIndices}
-            highlightedIndex={highlightedIndex}
-            selectedModelKey={selectedModelKey}
-            onItemClick={handleItemClick}
-            onTogglePin={handleTogglePin}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-            handlePinKeyDown={handlePinKeyDown}
-            ignoreMouseRef={ignoreMouseRef}
-            lastMousePosRef={lastMousePosRef}
-            idPrefix={idPrefix}
-            listboxId={listboxId}
-            maxListHeight={listMaxH}
-            searchPlaceholder={t('modelSelector.searchModels')}
-            noResultsText={t('modelSelector.noModelsFound')}
-            noResultsHint={t('modelSelector.tryDifferentKeyword')}
-            preferTouchUi={preferTouchUi}
-            pinLabel={t('modelSelector.pinToTop')}
-            unpinLabel={t('modelSelector.unpin')}
-          />
+          {showLoadError ? (
+            <div className="flex flex-col items-center justify-center gap-3 p-6 text-center">
+              <span className="text-[length:var(--fs-base)] text-text-200">{t('modelSelector.loadFailed')}</span>
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onRetry()
+                    closeMenu()
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-bg-300 hover:bg-bg-400 text-text-100 text-[length:var(--fs-sm)] transition-colors cursor-pointer"
+                >
+                  {t('modelSelector.retry')}
+                </button>
+              )}
+            </div>
+          ) : (
+            <ModelListPanel
+              menuRef={menuRef}
+              searchInputRef={searchInputRef}
+              listRef={listRef}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              setHighlightedIndex={setHighlightedIndex}
+              handleSearchKeyDown={handleSearchKeyDown}
+              handleItemKeyDown={handleItemKeyDown}
+              flatList={flatList}
+              itemIndices={itemIndices}
+              highlightedIndex={highlightedIndex}
+              selectedModelKey={selectedModelKey}
+              onItemClick={handleItemClick}
+              onTogglePin={handleTogglePin}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              handlePinKeyDown={handlePinKeyDown}
+              ignoreMouseRef={ignoreMouseRef}
+              lastMousePosRef={lastMousePosRef}
+              idPrefix={idPrefix}
+              listboxId={listboxId}
+              maxListHeight={listMaxH}
+              searchPlaceholder={t('modelSelector.searchModels')}
+              noResultsText={t('modelSelector.noModelsFound')}
+              noResultsHint={t('modelSelector.tryDifferentKeyword')}
+              preferTouchUi={preferTouchUi}
+              pinLabel={t('modelSelector.pinToTop')}
+              unpinLabel={t('modelSelector.unpin')}
+            />
+          )}
         </DropdownMenu>
       </div>
     )

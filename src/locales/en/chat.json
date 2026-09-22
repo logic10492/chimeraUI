@@ -42,7 +42,9 @@
     "vision": "Vision",
     "unpin": "Unpin",
     "pinToTop": "Pin to top",
-    "model": "Model"
+    "model": "Model",
+    "loadFailed": "Failed to load models",
+    "retry": "Retry"
   },
   "retryStatus": {
     "retrying": "Retrying (attempt {{attempt}})",
