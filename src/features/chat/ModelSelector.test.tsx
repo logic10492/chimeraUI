@@ -155,4 +155,14 @@ describe('ModelSelector', () => {
 
     expect(pinButton).not.toHaveFocus()
   })
+
+  it('keeps the trigger clickable and shows a loading label while models load', () => {
+    render(<ModelSelector models={[]} selectedModelKey={null} onSelect={vi.fn()} isLoading />)
+
+    const trigger = screen.getByTitle('...')
+    expect(trigger).not.toBeDisabled()
+
+    fireEvent.click(trigger)
+    expect(screen.getByRole('textbox', { name: 'Search models...' })).toBeTruthy()
+  })
 })

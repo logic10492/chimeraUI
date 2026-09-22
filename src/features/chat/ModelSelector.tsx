@@ -433,13 +433,13 @@ export const ModelSelector = memo(
 
     const displayName =
       trigger === 'header'
-        ? selectedModel?.name || t('modelSelector.selectModel')
+        ? selectedModel?.name || (isLoading ? '...' : t('modelSelector.selectModel'))
         : selectedModel?.name || (isLoading ? '...' : t('modelSelector.model'))
 
     // ---- Open / Close ----
 
     const openMenu = useCallback((focusTarget: 'search' | 'list' = 'search', preferredIndex?: number) => {
-      if (disabled || isLoading) return
+      if (disabled) return
       let targetIndex = 0
       if (typeof preferredIndex === 'number') {
         targetIndex = Math.max(0, Math.min(preferredIndex, itemIndices.length - 1))
@@ -459,7 +459,7 @@ export const ModelSelector = memo(
       setTimeout(() => {
         ignoreMouseRef.current = false
       }, 300)
-    }, [disabled, isLoading, selectedModelKey, flatList, itemIndices])
+    }, [disabled, selectedModelKey, flatList, itemIndices])
 
     const closeMenu = useCallback((options?: { focusTrigger?: boolean }) => {
       setIsOpen(false)
@@ -797,7 +797,7 @@ export const ModelSelector = memo(
               openMenu('list', itemIndices.length - 1)
             }
           }}
-          disabled={disabled || isLoading}
+          disabled={disabled}
           aria-expanded={isOpen}
           className="group flex items-center gap-2 px-2 py-1.5 text-text-200 rounded-lg hover:bg-bg-200 hover:text-text-100 transition-all duration-150 active:scale-95 cursor-pointer text-[length:var(--fs-base)]"
           title={displayName}
@@ -820,7 +820,7 @@ export const ModelSelector = memo(
               openMenu('list', itemIndices.length - 1)
             }
           }}
-          disabled={disabled || isLoading}
+          disabled={disabled}
           aria-expanded={isOpen}
           className="flex items-center px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer min-w-0 overflow-hidden w-full"
           title={selectedModel?.name || t('modelSelector.selectModel')}
