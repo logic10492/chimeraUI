@@ -32,7 +32,21 @@ function _setState(patch: Partial<ModelsState>) {
   _notify()
 }
 
-async function _fetchModels(force = false) {
+// Bounded retry: after a host restart the provider surface can be empty or
+// erroring for a short warmup window. Retry once after a short backoff when
+// the fetch fails or returns zero models; single-flight dedupe still applies.
+const RETRY_DELAY_MS = 1500
+let _retryTimer: ReturnType<typeof setTimeout> | null = null
+
+function _scheduleRetry() {
+  if (_retryTimer) clearTimeout(_retryTimer)
+  _retryTimer = setTimeout(() => {
+    _retryTimer = null
+    void _fetchModels(true, true)
+  }, RETRY_DELAY_MS)
+}
+
+async function _fetchModels(force = false, isRetry = false) {
   if (_fetchPromise && !force) return _fetchPromise
 
   const generation = ++_fetchGeneration
@@ -44,10 +58,12 @@ async function _fetchModels(force = false) {
       const data = await getActiveModels()
       if (generation === _fetchGeneration) {
         _setState({ models: data, isLoading: false })
+        if (data.length === 0 && !isRetry) _scheduleRetry()
       }
     } catch (e) {
       if (generation === _fetchGeneration) {
         _setState({ error: e instanceof Error ? e : new Error('Failed to fetch models'), isLoading: false })
+        if (!isRetry) _scheduleRetry()
       }
     } finally {
       if (generation === _fetchGeneration) {
@@ -60,6 +76,10 @@ async function _fetchModels(force = false) {
 }
 
 export function refreshModels() {
+  if (_retryTimer) {
+    clearTimeout(_retryTimer)
+    _retryTimer = null
+  }
   return _fetchModels(true)
 }
 
