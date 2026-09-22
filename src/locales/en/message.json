@@ -112,7 +112,8 @@
     "error": "Error",
     "stop": "Stop",
     "openSession": "Open session",
-    "waitingForResponse": "Waiting for response..."
+    "waitingForResponse": "Waiting for response...",
+    "background": "(background)"
   },
   "system": {
     "retryAttempt": "Retry attempt {{attempt}}",

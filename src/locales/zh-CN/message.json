@@ -86,7 +86,8 @@
     "error": "Error",
     "stop": "Stop",
     "openSession": "打开会话",
-    "waitingForResponse": "等待响应..."
+    "waitingForResponse": "等待响应...",
+    "background": "（后台）"
   },
   "system": {
     "retryAttempt": "重试第 {{attempt}} 次",

@@ -2,7 +2,12 @@ import { memo, useState, useCallback, useRef, useEffect, type RefCallback } from
 import { useTranslation } from 'react-i18next'
 import { ContentBlock } from '../../../../components'
 import { ChevronRightIcon, ExternalLinkIcon, StopIcon } from '../../../../components/Icons'
-import { useDelayedRender, useDisclosureScrollLock, useResponsiveMaxHeight } from '../../../../hooks'
+import {
+  useDelayedRender,
+  useDisclosureScrollLock,
+  useResponsiveMaxHeight,
+  useServerCapabilities,
+} from '../../../../hooks'
 import { useSessionState, messageStore, childSessionStore } from '../../../../store'
 import { useSessionNavigation } from '../../../../contexts/SessionNavigationContext'
 import { abortSession, getSessionMessages } from '../../../../api'
@@ -49,6 +54,10 @@ export const TaskRenderer = memo(function TaskRenderer({ part, onFullscreenChang
   // 同时运行时，fallback 会导致所有 task 都渲染最新的那个子 session
   const metadata = state.metadata as Record<string, unknown> | undefined
   const targetSessionId = metadata?.sessionId as string | undefined
+  // F4 后台子代理：服务端 capabilities 门控（delegation.background_subagents
+  // kill-switch），fail-closed——config 未加载/加载失败时不渲染标记。
+  const capabilities = useServerCapabilities()
+  const showBackgroundBadge = metadata?.background === true && capabilities.backgroundSubagents
 
   const isRunning = state.status === 'running' || state.status === 'pending'
   const isCompleted = state.status === 'completed'
@@ -103,6 +112,7 @@ export const TaskRenderer = memo(function TaskRenderer({ part, onFullscreenChang
           headerRef={headerRef}
           onToggle={() => withScrollLock(() => setExpanded(!expanded))}
           sessionId={targetSessionId}
+          background={showBackgroundBadge}
           onStop={isRunning ? handleStop : undefined}
         />
 
@@ -174,6 +184,7 @@ interface TaskHeaderProps {
   onToggle: () => void
   headerRef?: RefCallback<HTMLElement>
   sessionId?: string
+  background?: boolean
   onStop?: (e: React.MouseEvent) => void
 }
 
@@ -185,6 +196,7 @@ const TaskHeader = memo(function TaskHeader({
   onToggle,
   headerRef,
   sessionId,
+  background,
   onStop,
 }: TaskHeaderProps) {
   const { t } = useTranslation('message')
@@ -238,6 +250,13 @@ const TaskHeader = memo(function TaskHeader({
 
         {/* Description */}
         <span className="text-[length:var(--fs-sm)] text-text-300 truncate flex-1 min-w-0">{description}</span>
+
+        {/* Background marker (F4 promoted/background dispatch) */}
+        {background && (
+          <span className="flex-shrink-0 px-1.5 py-0.5 text-[length:var(--fs-xxs)] font-medium rounded-xs bg-bg-300 text-text-400">
+            {t('task.background')}
+          </span>
+        )}
       </button>
 
       {/* Stop button (running) */}
