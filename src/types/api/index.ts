@@ -126,6 +126,7 @@ export type {
   TodoItem,
   TodoUpdatedPayload,
   WorkBriefUpdatedPayload,
+  ProcessChangedPayload,
   WorktreeReadyPayload,
   WorktreeFailedPayload,
   VcsBranchUpdatedPayload,
@@ -184,6 +185,9 @@ export type { Skill, SkillList } from './skill'
 
 // PTY types
 export type { Pty, PtySize, PtyCreateParams, PtyUpdateParams } from './pty'
+
+// Process types
+export type { Process } from './process'
 
 // VCS types
 export type { VcsInfo, VcsDiffMode } from './vcs'

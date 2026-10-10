@@ -775,6 +775,9 @@ function handleEventForSubscriber(payload: GlobalEvent['payload'], callbacks: Ev
     case EventTypes.WORK_BRIEF_UPDATED:
       callbacks.onWorkBriefUpdated?.(payload.properties, scope)
       break
+    case EventTypes.PROCESS_CHANGED:
+      callbacks.onProcessChanged?.(payload.properties, scope)
+      break
     case EventTypes.FILE_EDITED:
       callbacks.onFileEdited?.(payload.properties, scope)
       break

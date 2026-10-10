@@ -1,9 +1,10 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ProviderBalanceResult, TodoItem, WorkBrief } from '../types/api'
-import { getProviderBalance, getSessionTodos, getSessionWorkBrief, subscribeToEvents } from '../api'
+import type { Process, ProviderBalanceResult, TodoItem, WorkBrief } from '../types/api'
+import { getProviderBalance, getSessionTodos, getSessionWorkBrief, listProcesses, subscribeToEvents } from '../api'
 import { todoStore, useTodoStats, useTodos } from '../store'
 import { getSessionModelSelection, parseModelKey } from '../utils/modelUtils'
+import { formatRelativeTime } from '../utils/dateUtils'
 import { useModels } from '../hooks'
 
 interface SessionStatusPanelProps {
@@ -154,6 +155,12 @@ function todoStatusClass(todo: TodoItem) {
   return 'text-text-400'
 }
 
+function processOwnerLabel(process: Process, currentSessionId: string | null | undefined, thisSessionLabel: string) {
+  const owner =
+    process.sessionID === currentSessionId ? thisSessionLabel : process.sessionTitle ?? process.sessionID
+  return process.agent ? `${owner} · ${process.agent}` : owner
+}
+
 const Section = memo(function Section({ title, children, count }: { title: string; children: React.ReactNode; count?: string | number }) {
   return (
     <section className="shrink-0 border-b border-border-200/50 bg-bg-100 px-4 py-3">
@@ -177,6 +184,8 @@ export const SessionStatusPanel = memo(function SessionStatusPanel({ sessionId, 
   const [balance, setBalance] = useState<ProviderBalanceResult | null>(null)
   const [balanceLoading, setBalanceLoading] = useState(false)
   const [balanceError, setBalanceError] = useState(false)
+  const [processes, setProcesses] = useState<Process[]>([])
+  const [processesLoading, setProcessesLoading] = useState(false)
 
   const sessionModelProviderId = useMemo(() => {
     if (!sessionId) return undefined
@@ -207,6 +216,12 @@ export const SessionStatusPanel = memo(function SessionStatusPanel({ sessionId, 
 
   const balanceSummaryValue = useMemo(() => (balance ? balanceSummary(balance) : undefined), [balance])
   const balanceDetailRows = useMemo(() => (balance ? balanceDetails(balance) : []), [balance])
+
+  // 当前会话的进程排在前面，其余保持服务端 started_at 升序（sort 稳定）
+  const processRows = useMemo(() => {
+    if (!sessionId) return processes
+    return [...processes].sort((a, b) => Number(b.sessionID === sessionId) - Number(a.sessionID === sessionId))
+  }, [processes, sessionId])
 
   useEffect(() => {
     if (!active || !sessionId) return
@@ -285,6 +300,39 @@ export const SessionStatusPanel = memo(function SessionStatusPanel({ sessionId, 
     })
   }, [active, directory, resolvedProviderId, sessionId])
 
+  useEffect(() => {
+    if (!active || !sessionId) return
+    let disposed = false
+    queueMicrotask(() => {
+      if (!disposed) setProcessesLoading(true)
+    })
+    listProcesses(directory)
+      .then(next => {
+        if (!disposed) setProcesses(next)
+      })
+      .catch(() => {
+        if (!disposed) setProcesses([])
+      })
+      .finally(() => {
+        if (!disposed) setProcessesLoading(false)
+      })
+    return () => {
+      disposed = true
+    }
+  }, [active, directory, sessionId])
+
+  useEffect(() => {
+    if (!active || !sessionId) return
+    // process.changed 的内联 process 类型比 Process 宽松，只把它当作 refetch 触发器
+    return subscribeToEvents({
+      onProcessChanged: () => {
+        listProcesses(directory)
+          .then(setProcesses)
+          .catch(() => {})
+      },
+    })
+  }, [active, directory, sessionId])
+
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-bg-100">
       <Section title={t('sessionStatus.workBrief')} count={workBriefStats.length > 0 ? workBriefStats.length : undefined}>
@@ -355,6 +403,37 @@ export const SessionStatusPanel = memo(function SessionStatusPanel({ sessionId, 
           </div>
         ) : (
           <div className="mt-2 text-[length:var(--fs-sm)] text-text-400">{t('sessionStatus.noTodo')}</div>
+        )}
+      </Section>
+
+      <Section title={t('sessionStatus.sessionProcesses')} count={processRows.length > 0 ? processRows.length : undefined}>
+        {processRows.length > 0 ? (
+          <div className="mt-2 flex flex-col gap-2">
+            {processRows.map(process => (
+              <div key={process.id} className="rounded-lg border border-border-200/50 bg-bg-200/40 px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0 truncate text-[length:var(--fs-sm)] text-text-100">{process.command}</div>
+                  <div className="shrink-0 text-[length:var(--fs-xs)] text-text-500">PID {process.pid}</div>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <div
+                    className={`min-w-0 truncate text-[length:var(--fs-xs)] ${
+                      process.sessionID === sessionId ? 'text-accent-main-100' : 'text-text-500'
+                    }`}
+                  >
+                    {processOwnerLabel(process, sessionId, t('sessionStatus.processThisSession'))}
+                  </div>
+                  <div className="shrink-0 text-[length:var(--fs-xs)] text-text-500">
+                    {formatRelativeTime(Date.parse(process.startedAt))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-2 text-[length:var(--fs-sm)] text-text-400">
+            {processesLoading ? t('sessionStatus.loadingProcesses') : t('sessionStatus.noProcesses')}
+          </div>
         )}
       </Section>
     </div>

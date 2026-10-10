@@ -89,8 +89,8 @@
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
       "sources": [
-        { "file": "src/api/client.ts", "line": 61 },
-        { "file": "src/api/client.ts", "line": 107 },
+        { "file": "src/api/client.ts", "line": 62 },
+        { "file": "src/api/client.ts", "line": 108 },
         { "file": "src/api/config.ts", "line": 57 }
       ]
     },
@@ -571,7 +571,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/client.ts", "line": 181 }]
+      "sources": [{ "file": "src/api/client.ts", "line": 182 }]
     },
     {
       "operationId": "permission.list",
@@ -610,6 +610,18 @@
       "sources": [{ "file": "src/api/permission.ts", "line": 45 }]
     },
     {
+      "operationId": "process.list",
+      "clientMethod": "process.list",
+      "transport": "sdk",
+      "method": "GET",
+      "path": "/process",
+      "pathParameters": [],
+      "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
+      "body": null,
+      "scope": { "kind": "instance", "query": ["directory", "workspace"] },
+      "sources": [{ "file": "src/api/process.ts", "line": 15 }]
+    },
+    {
       "operationId": "project.current",
       "clientMethod": "project.current",
       "transport": "sdk",
@@ -619,7 +631,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/client.ts", "line": 132 }]
+      "sources": [{ "file": "src/api/client.ts", "line": 133 }]
     },
     {
       "operationId": "project.initGit",
@@ -631,7 +643,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/client.ts", "line": 151 }]
+      "sources": [{ "file": "src/api/client.ts", "line": 152 }]
     },
     {
       "operationId": "project.list",
@@ -643,7 +655,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/client.ts", "line": 141 }]
+      "sources": [{ "file": "src/api/client.ts", "line": 142 }]
     },
     {
       "operationId": "project.update",
@@ -655,7 +667,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": { "contentTypes": ["application/json"], "fields": ["commands", "icon", "name"], "required": [] },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/client.ts", "line": 167 }]
+      "sources": [{ "file": "src/api/client.ts", "line": 168 }]
     },
     {
       "operationId": "provider.auth",
@@ -679,7 +691,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/client.ts", "line": 118 }]
+      "sources": [{ "file": "src/api/client.ts", "line": 119 }]
     },
     {
       "operationId": "provider.list",

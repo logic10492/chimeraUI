@@ -115,7 +115,11 @@
     "noBalance": "余额不可用",
     "noBalanceSources": "余额适用于 Codex/OpenAI 和 DeepSeek 账户。",
     "todo": "Todo",
-    "noTodo": "暂无 Todo"
+    "noTodo": "暂无 Todo",
+    "sessionProcesses": "会话进程",
+    "loadingProcesses": "加载进程中...",
+    "noProcesses": "暂无运行中的进程",
+    "processThisSession": "当前会话"
   },
   "sessionChanges": {
     "loadingChanges": "加载变更中...",

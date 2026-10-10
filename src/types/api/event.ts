@@ -22,6 +22,7 @@ import type {
   EventSessionDiff as SDKEventSessionDiff,
   EventSessionIdle as SDKEventSessionIdle,
   EventSessionStatus as SDKEventSessionStatus,
+  EventProcessChanged as SDKEventProcessChanged,
   EventTodoUpdated as SDKEventTodoUpdated,
   EventVcsBranchUpdated as SDKEventVcsBranchUpdated,
   EventWorktreeFailed as SDKEventWorktreeFailed,
@@ -72,6 +73,8 @@ export type TodoUpdatedPayload = Omit<SDKEventTodoUpdated['properties'], 'todos'
 }
 
 export type WorkBriefUpdatedPayload = { sessionID: string; brief: WorkBrief }
+
+export type ProcessChangedPayload = SDKEventProcessChanged['properties']
 
 export type WorktreeReadyPayload = SDKEventWorktreeReady['properties']
 
@@ -152,6 +155,8 @@ export const EventTypes = {
   TODO_UPDATED: 'todo.updated',
 
   WORK_BRIEF_UPDATED: 'work_brief.updated',
+  // Process events
+  PROCESS_CHANGED: 'process.changed',
   // TUI events
   TUI_PROMPT_APPEND: 'tui.prompt.append',
   TUI_COMMAND_EXECUTE: 'tui.command.execute',
@@ -218,6 +223,7 @@ export interface EventCallbacks {
   onQuestionRejected?: (data: QuestionRejectedPayload, scope: EventScope) => void
   onTodoUpdated?: (data: TodoUpdatedPayload, scope: EventScope) => void
   onWorkBriefUpdated?: (data: WorkBriefUpdatedPayload, scope: EventScope) => void
+  onProcessChanged?: (data: ProcessChangedPayload, scope: EventScope) => void
   onProjectUpdated?: (project: Project, scope: EventScope) => void
   onWorktreeReady?: (data: WorktreeReadyPayload, scope: EventScope) => void
   onWorktreeFailed?: (data: WorktreeFailedPayload, scope: EventScope) => void

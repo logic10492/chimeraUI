@@ -115,7 +115,11 @@
     "noBalance": "Balance unavailable",
     "noBalanceSources": "Balance is available for Codex/OpenAI and DeepSeek accounts.",
     "todo": "Todo",
-    "noTodo": "No todos"
+    "noTodo": "No todos",
+    "sessionProcesses": "Session Processes",
+    "loadingProcesses": "Loading processes...",
+    "noProcesses": "No running processes",
+    "processThisSession": "this session"
   },
   "sessionChanges": {
     "loadingChanges": "Loading changes...",
