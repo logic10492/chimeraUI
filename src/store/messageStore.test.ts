@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApiMessage, ApiMessageWithParts, ApiPart } from '../api/types'
+import type { ToolPart } from '../types/message'
 import { messageStore } from './messageStore'
 
 function createAssistantMessage(id: string, sessionID = 'session-1'): ApiMessage {
@@ -371,5 +372,105 @@ describe('messageStore', () => {
     unsubscribeSession1()
     unsubscribeSession2()
     unsubscribeAll()
+  })
+})
+
+describe('messageStore tool streaming preview', () => {
+  const makeToolPart = (
+    state: Record<string, unknown>,
+    tool = 'edit',
+  ): ApiPart & { sessionID: string; messageID: string } => ({
+    id: 'tool-1',
+    sessionID: 'session-1',
+    messageID: 'message-1',
+    type: 'tool',
+    callID: 'call-1',
+    tool,
+    state,
+  })
+
+  const sendDelta = (field: string, text: string) =>
+    messageStore.handlePartDelta({
+      sessionID: 'session-1',
+      messageID: 'message-1',
+      partID: 'tool-1',
+      field,
+      delta: text,
+    })
+
+  const toolState = () => (messageStore.getSessionState('session-1')!.messages[0].parts[0] as ToolPart).state
+
+  beforeEach(() => {
+    messageStore.clearAll()
+    messageStore.handleMessageUpdated(createAssistantMessage('message-1'))
+    messageStore.handlePartUpdated(makeToolPart({ status: 'pending', input: {} }))
+  })
+
+  it('appends raw fragments to part.state.raw', () => {
+    sendDelta('raw', '{"filePath"')
+    sendDelta('raw', ': "src/a.ts"}')
+    expect(toolState().raw).toBe('{"filePath": "src/a.ts"}')
+  })
+
+  it('appends parsed hunks and silently skips malformed payloads', () => {
+    const hunk = { index: 0, op: 'replace', filePath: 'src/a.ts', pos: '17#K2', before: 'a', after: 'b' }
+    sendDelta('hunk', JSON.stringify(hunk))
+    sendDelta('hunk', 'not-json{')
+    sendDelta('hunk', JSON.stringify('just a string'))
+    const hunks = toolState().hunks
+    expect(hunks).toHaveLength(1)
+    expect(hunks?.[0]).toEqual(hunk)
+  })
+
+  it('carries raw/hunks through a pending→running part update that omits them', () => {
+    sendDelta('raw', '{"content":"hel')
+    sendDelta('hunk', JSON.stringify({ index: 0, op: 'patch', before: '', after: 'x' }))
+
+    messageStore.handlePartUpdated(
+      makeToolPart({ status: 'running', input: { content: 'hel' }, title: 'Write src/b.ts', time: { start: 5 } }, 'write'),
+    )
+
+    const state = toolState()
+    expect(state.status).toBe('running')
+    expect(state.raw).toBe('{"content":"hel')
+    expect(state.hunks).toHaveLength(1)
+  })
+
+  it('keeps the incoming raw/hunks when the server sends them itself', () => {
+    sendDelta('raw', 'local')
+    messageStore.handlePartUpdated(
+      makeToolPart({ status: 'running', input: {}, raw: 'server', time: { start: 5 } }, 'write'),
+    )
+    expect(toolState().raw).toBe('server')
+  })
+
+  it('drops raw/hunks when the part completes', () => {
+    sendDelta('raw', '{"content":"hello"}')
+    sendDelta('hunk', JSON.stringify({ index: 0, op: 'patch', before: '', after: 'x' }))
+
+    messageStore.handlePartUpdated(
+      makeToolPart(
+        {
+          status: 'completed',
+          input: { content: 'hello' },
+          output: 'ok',
+          title: 'Write src/b.ts',
+          metadata: {},
+          time: { start: 5, end: 9 },
+        },
+        'write',
+      ),
+    )
+
+    const state = toolState()
+    expect(state.raw).toBeUndefined()
+    expect(state.hunks).toBeUndefined()
+  })
+
+  it('continues appending after the pending→running transition', () => {
+    sendDelta('raw', '{"content"')
+    messageStore.handlePartUpdated(makeToolPart({ status: 'running', input: {}, time: { start: 5 } }))
+    sendDelta('raw', ': "abc"}')
+    expect(toolState().raw).toBe('{"content": "abc"}')
   })
 })

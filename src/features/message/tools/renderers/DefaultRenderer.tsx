@@ -3,6 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { ContentBlock } from '../../../../components'
 import { AlertCircleIcon } from '../../../../components/Icons'
 import { detectLanguage } from '../../../../utils/languageUtils'
+import type { StreamingHunk } from '../../../../types/message'
+import { isEditLikeTool } from '../streamingInput'
+import { splitUnifiedDiffHunks } from '../../../../utils/diffUtils'
 import { getMaterialIconUrl } from '../../../../utils/materialIcons'
 import { themeStore } from '../../../../store/themeStore'
 import type { ToolRendererProps, ExtractedToolData } from '../types'
@@ -26,8 +29,12 @@ export function DefaultRenderer({ part, data, onFullscreenChange }: ToolRenderer
 
   const showOutput = hasOutput || hasError || (isActive && !hasOutput)
 
-  // compact 模式下，工具还在运行且没有任何输出时，不渲染任何东西
-  if (isCompact && isActive && !hasOutput && !hasError) {
+  // 流式预览：服务端推送的已完成 hunks（live-only）+ 正在增长的参数文本
+  const streamingHunks = isActive ? state.hunks : undefined
+  const hasStreamingContent = !!streamingHunks?.length || !!data.streamingPreview?.text
+
+  // compact 模式下，工具还在运行且没有任何输出/流式预览时，不渲染任何东西
+  if (isCompact && isActive && !hasOutput && !hasError && !hasStreamingContent) {
     return null
   }
 
@@ -53,6 +60,7 @@ export function DefaultRenderer({ part, data, onFullscreenChange }: ToolRenderer
         <OutputBlock
           tool={tool}
           data={data}
+          hunks={streamingHunks}
           isActive={isActive}
           hasError={hasError}
           hasOutput={hasOutput}
@@ -76,6 +84,7 @@ export function DefaultRenderer({ part, data, onFullscreenChange }: ToolRenderer
 interface OutputBlockProps {
   tool: string
   data: ExtractedToolData
+  hunks?: StreamingHunk[]
   isActive: boolean
   hasError: boolean
   hasOutput: boolean
@@ -88,6 +97,7 @@ interface OutputBlockProps {
 function OutputBlock({
   tool,
   data,
+  hunks,
   isActive,
   hasError,
   hasOutput,
@@ -113,8 +123,41 @@ function OutputBlock({
     )
   }
 
-  // 2. 工具活跃时（running/pending）统一显示 loading — compact 模式下不显示
+  // 2. 工具活跃时（running/pending）：优先渲染流式预览（逐 hunk diff 卡片 + 增长文本），否则 loading — compact 无预览时不显示
   if (isActive) {
+    const preview = data.streamingPreview
+    if (hunks?.length || preview?.text) {
+      return (
+        <div className="flex flex-col gap-2">
+          {hunks?.map((hunk, idx) => (
+            <ContentBlock
+              key={`${hunk.index}-${idx}`}
+              stateKey={`${stateBaseKey}:hunk:${hunk.index ?? idx}`}
+              label={formatHunkLabel(hunk, idx, t)}
+              filePath={hunk.filePath ?? data.filePath}
+              diff={{ before: hunk.before, after: hunk.after }}
+              language={detectLanguage(hunk.filePath ?? data.filePath)}
+              compact={compact}
+              onFullscreenChange={onFullscreenChange}
+              fullscreenId={`${fullscreenBaseId}:hunk:${hunk.index ?? idx}`}
+            />
+          ))}
+          {preview?.text && (
+            <ContentBlock
+              stateKey={`${stateBaseKey}:streaming-preview`}
+              label={t('defaultRenderer.preview')}
+              labelIcon={<StreamingCaret />}
+              content={preview.text}
+              language={preview.language}
+              filePath={preview.filePath}
+              compact={compact}
+              onFullscreenChange={onFullscreenChange}
+              fullscreenId={`${fullscreenBaseId}:streaming-preview`}
+            />
+          )}
+        </div>
+      )
+    }
     if (compact) return null
     return (
       <ContentBlock
@@ -160,8 +203,31 @@ function OutputBlock({
       )
     }
 
-    // Single diff
+    // Single diff — edit-like 工具完成态按 @@ hunk 拆分，一个 hunk 一张卡片
     if (data.diff) {
+      const hunkPieces =
+        typeof data.diff === 'string' && isEditLikeTool(tool) ? splitUnifiedDiffHunks(data.diff) : []
+      if (hunkPieces.length > 1) {
+        return (
+          <div className="flex flex-col gap-2">
+            {hunkPieces.map((piece, idx) => (
+              <ContentBlock
+                key={idx}
+                stateKey={`${stateBaseKey}:hunk:${idx}`}
+                label={t('defaultRenderer.output')}
+                labelIcon={data.filePath ? <FileResultIcon filePath={data.filePath} /> : undefined}
+                hideLabel={!!data.filePath}
+                filePath={data.filePath}
+                diff={piece}
+                language={data.outputLang}
+                compact={compact}
+                onFullscreenChange={onFullscreenChange}
+                fullscreenId={`${fullscreenBaseId}:hunk:${idx}`}
+              />
+            ))}
+          </div>
+        )
+      }
       return (
         <ContentBlock
           stateKey={stateBaseKey}
@@ -283,4 +349,22 @@ function formatLabel(name: string, t: (key: string, opts?: Record<string, unknow
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ')
   return t('defaultRenderer.nameResult', { name: formatted })
+}
+
+function formatHunkLabel(
+  hunk: StreamingHunk,
+  idx: number,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  const label = t('defaultRenderer.hunk', { index: idx + 1 })
+  return hunk.pos ? `${label} · ${hunk.pos}` : label
+}
+
+/** CSS-only 流式指示：Preview 标签前闪烁的 ▍（复用 terminal-blink keyframes） */
+function StreamingCaret() {
+  return (
+    <span className="leading-none text-accent-main-100" style={{ animation: 'terminal-blink 1s step-end infinite' }}>
+      ▍
+    </span>
+  )
 }

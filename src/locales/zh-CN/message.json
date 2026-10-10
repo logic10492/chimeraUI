@@ -11,6 +11,8 @@
   "tokensK": "{{count}}k token",
   "defaultRenderer": {
     "input": "Input",
+    "preview": "Preview",
+    "hunk": "Hunk {{index}}",
     "error": "Error",
     "output": "Output",
     "diagnostics": "Diagnostics",

@@ -32,6 +32,9 @@ export interface ExtractedToolData {
 
   // LSP 诊断
   diagnostics?: DiagnosticInfo[]
+
+  // 流式预览（live-only）：参数仍在流式生成时增长中的文本（write content / bash command / edit op lines / patch）
+  streamingPreview?: { filePath?: string; text: string; language?: string }
 }
 
 export interface DiagnosticInfo {

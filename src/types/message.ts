@@ -175,6 +175,21 @@ export interface ToolStateError {
 export type ToolStateStrict = ToolStatePending | ToolStateRunning | ToolStateCompleted | ToolStateError
 
 // 宽松的 ToolState 类型，用于实际渲染（API 返回的数据可能不完全符合严格类型）
+// 流式工具参数预览：服务端在工具参数流式生成期间推送的单个已完成 edit op / patch hunk
+export interface StreamingHunk {
+  /** 0-based，按发送顺序 */
+  index: number
+  op: 'replace' | 'append' | 'prepend' | 'patch'
+  filePath?: string
+  /** hashline 锚点，如 "17#K2" */
+  pos?: string
+  end?: string
+  /** span 对应的原始文件行（纯新增/新文件为 ""） */
+  before: string
+  after: string
+}
+
+// 宽松的 ToolState 类型，用于实际渲染（API 返回的数据可能不完全符合严格类型）
 export interface ToolState {
   status: 'pending' | 'running' | 'completed' | 'error'
   input?: Record<string, unknown>
@@ -185,6 +200,8 @@ export interface ToolState {
   metadata?: Record<string, unknown>
   attachments?: FilePart[]
   raw?: string
+  /** 客户端流式预览专用（live-only）：由 message.part.delta field "hunk" 追加 */
+  hunks?: StreamingHunk[]
   outputTruncated?: boolean
   outputSize?: number
 }

@@ -8,7 +8,7 @@
 // 3. Undo/Redo 通过 revertState 实现
 // 4. RAF 批量通知 React 组件更新
 
-import type { Message, MessageError, Part, FilePart, AgentPart } from '../types/message'
+import type { Message, MessageError, Part, FilePart, AgentPart, StreamingHunk } from '../types/message'
 import type { ApiMessageWithParts, ApiMessage, ApiPart, ApiSession, Attachment } from '../api/types'
 import { logger } from '../utils/logger'
 import { isUserUIMessage, toUIMessage, toUIMessageInfo, toUIPart } from '../utils/messageConversion'
@@ -65,6 +65,29 @@ function shouldPreserveLiveParts(
 ) {
   if (incoming && !messageIsIncomplete(incoming)) return false
   return messageIsIncomplete(previous)
+}
+
+/** hunk delta 的 payload：JSON.stringify 的 StreamingHunk；非法/非对象 payload 静默跳过 */
+function parseStreamingHunk(payload: string): StreamingHunk | undefined {
+  try {
+    const parsed = JSON.parse(payload) as unknown
+    return typeof parsed === 'object' && parsed !== null ? (parsed as StreamingHunk) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * raw/hunks 是 live-only 流式预览通道：pending→running 的服务端 state 不带它们，
+ * 本地已有则承接，让预览在状态切换后存活；incoming 已 completed/error 则丢弃，
+ * 由定稿 diff 展示接管。
+ */
+function carryToolPreview(local: Part, incoming: Part): Part {
+  if (local.type !== 'tool' || incoming.type !== 'tool') return incoming
+  if (incoming.state.status === 'completed' || incoming.state.status === 'error') return incoming
+  if (incoming.state.raw !== undefined || incoming.state.hunks?.length) return incoming
+  if (local.state.raw === undefined && !local.state.hunks?.length) return incoming
+  return { ...incoming, state: { ...incoming.state, raw: local.state.raw, hunks: local.state.hunks } }
 }
 
 class MessageStore {
@@ -587,9 +610,10 @@ class MessageStore {
     if (existingPartIndex >= 0) {
       const existing = newParts[existingPartIndex]
       // 未定稿：兼容前缀时不回退；已 completed：强制服务端定稿
-      newParts[existingPartIndex] = shouldPreserveLiveParts(oldMessage)
+      const merged = shouldPreserveLiveParts(oldMessage)
         ? mergePartPreferLiveText(existing, incoming)
         : incoming
+      newParts[existingPartIndex] = carryToolPreview(existing, merged)
     } else {
       newParts.push(incoming)
     }
@@ -609,11 +633,20 @@ class MessageStore {
     const part = msg.parts.find(p => p.id === data.partID)
     if (!part) return
 
-    if (!(data.field === 'text' && 'text' in part))
-      return // Mutable 修改：直接拼接 text，不做不可变拷贝。
-      // 一帧内可能收到多个 delta，只有最后的状态会被 React 看到。
-      // flushDirtyMessages() 会在 notify 的 rAF 回调中统一生成新引用。
-    ;(part as { text: string }).text += data.delta
+    // Mutable 修改：直接拼接，不做不可变拷贝。
+    // 一帧内可能收到多个 delta，只有最后的状态会被 React 看到。
+    // flushDirtyMessages() 会在 notify 的 rAF 回调中统一生成新引用。
+    if (data.field === 'text' && 'text' in part) {
+      ;(part as { text: string }).text += data.delta
+    } else if (data.field === 'raw' && part.type === 'tool') {
+      part.state.raw = (part.state.raw ?? '') + data.delta
+    } else if (data.field === 'hunk' && part.type === 'tool') {
+      const hunk = parseStreamingHunk(data.delta)
+      if (!hunk) return
+      ;(part.state.hunks ??= []).push(hunk)
+    } else {
+      return
+    }
 
     let dirtyPartsByMessage = this.dirtyPartsBySession.get(data.sessionID)
     if (!dirtyPartsByMessage) {

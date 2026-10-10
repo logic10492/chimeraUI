@@ -15,6 +15,12 @@ import {
   WrenchIcon,
 } from './icons'
 import { detectLanguage } from '../../../utils/languageUtils'
+import {
+  extractStreamingString,
+  extractStreamingEdits,
+  firstPatchFilePath,
+  isEditLikeTool,
+} from './streamingInput'
 
 // ============================================
 // Tool Matchers (复用的匹配函数)
@@ -198,6 +204,16 @@ export function defaultExtractData(part: ToolPart): ExtractedToolData {
 }
 
 // ============================================
+// Streaming Preview Helpers
+// ============================================
+
+/** 仅在 pending/running 且服务端已推流部分参数时返回 raw 片段；其余情况为 undefined */
+function streamingRaw(part: ToolPart): string | undefined {
+  if (part.state.status !== 'pending' && part.state.status !== 'running') return undefined
+  return part.state.raw || undefined
+}
+
+// ============================================
 // Tool-Specific Data Extractors
 // ============================================
 
@@ -214,6 +230,16 @@ function bashExtractData(part: ToolPart): ExtractedToolData {
   const cwd = inputObj?.workdir ?? inputObj?.cwd ?? metadata?.workdir ?? metadata?.cwd
   if (typeof cwd === 'string' && cwd.trim()) {
     base.cwd = cwd.trim()
+  }
+
+  const raw = streamingRaw(part)
+  if (raw) {
+    const command = extractStreamingString(raw, 'command')
+    if (command !== undefined) {
+      base.input = command
+      base.inputLang = 'bash'
+      base.streamingPreview = { text: command, language: 'bash' }
+    }
   }
 
   return base
@@ -244,6 +270,15 @@ function writeExtractData(part: ToolPart): ExtractedToolData {
     }
   }
 
+  const raw = streamingRaw(part)
+  if (raw) {
+    const content = extractStreamingString(raw, 'content')
+    if (content !== undefined) {
+      const filePath = extractStreamingString(raw, 'filePath') ?? base.filePath
+      base.streamingPreview = { filePath, text: content, language: detectLanguage(filePath) }
+    }
+  }
+
   return base
 }
 
@@ -256,6 +291,24 @@ function editExtractData(part: ToolPart): ExtractedToolData {
     base.diff = {
       before: String(inputObj.oldString),
       after: String(inputObj.newString),
+    }
+  }
+
+  const raw = streamingRaw(part)
+  if (raw) {
+    if (part.tool.toLowerCase().includes('patch')) {
+      const patchText = extractStreamingString(raw, 'patchText')
+      if (patchText !== undefined) {
+        const filePath = firstPatchFilePath(patchText) ?? base.filePath
+        base.streamingPreview = { filePath, text: patchText, language: detectLanguage(filePath) }
+      }
+    } else {
+      const edits = extractStreamingEdits(raw)
+      const current = edits.ops.find(o => !o.complete) ?? edits.ops[edits.ops.length - 1]
+      if (current?.linesText) {
+        const filePath = edits.filePath ?? base.filePath
+        base.streamingPreview = { filePath, text: current.linesText, language: detectLanguage(filePath) }
+      }
     }
   }
 
@@ -304,7 +357,7 @@ export const toolRegistry: ToolRegistry = [
 
   // Edit file
   {
-    match: includes('edit', 'replace', 'patch'),
+    match: isEditLikeTool,
     icon: <FileWriteIcon />,
     extractData: editExtractData,
   },

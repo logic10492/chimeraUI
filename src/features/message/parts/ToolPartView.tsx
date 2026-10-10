@@ -56,7 +56,6 @@ export const ToolPartView = memo(function ToolPartView({
 }: ToolPartViewProps) {
   const { t } = useTranslation('message')
   const { state, tool: toolName } = part
-  const title = state.title || getInputDescription(part) || ''
   const [lazyOutput, setLazyOutput] = useState<string | null>(null)
   const [lazyAttachments, setLazyAttachments] = useState<FilePart[] | undefined>(undefined)
   const effectiveState = useMemo(() => {
@@ -213,6 +212,10 @@ export const ToolPartView = memo(function ToolPartView({
 
   // Memoize once — shared by both the descriptive header (diffStats) and ToolBody.
   const toolData = useMemo(() => extractToolData(effectivePart), [effectivePart])
+  // 流式预览期间提前把目标文件展示到标题（pending/running 且服务端 title 还没到时）
+  const streamingFilePath =
+    state.status === 'pending' || state.status === 'running' ? toolData.streamingPreview?.filePath : undefined
+  const title = state.title || getInputDescription(part) || streamingFilePath || ''
 
   const handleFullscreenChange = useCallback((isFullscreen: boolean) => {
     setIsChildFullscreen(isFullscreen)
