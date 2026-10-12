@@ -4,40 +4,35 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { messageStore } from '../store/messageStore'
-import { useSessionFamily, childSessionStore } from '../store/childSessionStore'
+import { useSessionFamily } from '../store/childSessionStore'
 import { useSessionState } from '../store/messageStoreHooks'
 import { autoApproveStore } from '../store/autoApproveStore'
 import { useActiveSessionStore } from '../store/activeSessionStore'
-import { serverStore } from '../store/serverStore'
 import type { RevertHistoryItem } from '../store/messageStoreTypes'
 import { useSessionManager } from './useSessionManager'
-import { registerSessionConsumer, updateConsumerSessionId, hasOtherConsumerForSession } from './useGlobalEvents'
+import { hasOtherConsumerForSession } from './useGlobalEvents'
 import { usePermissions } from './usePermissions'
 import { usePermissionHandler } from './usePermissionHandler'
 import { useMessageAnimation } from './useMessageAnimation'
 import { useDirectory } from '../contexts/useDirectory'
 import { useSessionContext } from '../contexts/useSessionContext'
-import { sendMessageAsync, getSessionMessages, extractUserMessageContent } from '../api/message'
-import { abortSession, summarizeSession, updateSession, forkSession } from '../api/session'
-import { getSelectableAgents } from '../api/agent'
-import { getPendingPermissions, getPendingQuestions } from '../api/permission'
+import { extractUserMessageContent } from '../api/message'
+import { abortSession, summarizeSession, forkSession } from '../api/session'
 import { prefetchCommands, executeCommand } from '../api/command'
 import { prefetchRootDirectory } from '../api/file'
-import type { PermissionRequest as ApiPermissionRequest } from '../types/api/permission'
-import type { Session as ApiSession } from '../types/api/session'
-import type { Agent as ApiAgent } from '../types/api/agent'
-import type { Attachment } from '../features/attachment/types'
 import { getMessageText, isUserMessage, type AssistantMessageInfo, type Message as UIMessage } from '../types/message'
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
-import { isSameDirectory, normalizeToForwardSlash } from '../utils/directoryUtils'
-import { activeSessionStore } from '../store/activeSessionStore'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
-import { serverStorage } from '../utils/perServerStorage'
-import { STORAGE_KEY_SELECTED_AGENT } from '../constants'
 import { followupQueueStore, useFollowupQueue } from '../store/followupQueueStore'
 import { themeStore } from '../store/themeStore'
 import type { UseChatSessionOptions, LiveRetryStatus } from './useChatSession.types'
 import { EMPTY_SESSION_STATE } from './useChatSession.utils'
+import { useChatSessionAgents } from './useChatSessionAgents'
+import { useSessionPermissionAutoApprove } from './useSessionPermissionAutoApprove'
+import { useSessionSseConsumer } from './useSessionSseConsumer'
+import { useSessionPermissionBootstrap } from './useSessionPermissionBootstrap'
+import { useChatMessageSender } from './useChatMessageSender'
+import { useSessionNavigation } from './useSessionNavigation'
 
 const handleError = createErrorHandler('session')
 
@@ -53,25 +48,16 @@ export function useChatSession({
   const { statusMap } = useActiveSessionStore()
   const { queueFollowupMessages } = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot)
 
-  // Agents
-  const [agents, setAgents] = useState<ApiAgent[]>([])
-  const [selectedAgent, setSelectedAgentRaw] = useState<string>(
-    () => serverStorage.get(`${STORAGE_KEY_SELECTED_AGENT}:${paneId}`) || '',
-  )
   const [restoredContent, setRestoredContent] = useState<{ sessionId: string; content: RevertHistoryItem } | null>(null)
-
-  const setSelectedAgent = useCallback(
-    (agentName: string) => {
-      setSelectedAgentRaw(agentName)
-      serverStorage.set(`${STORAGE_KEY_SELECTED_AGENT}:${paneId}`, agentName)
-    },
-    [paneId],
-  )
 
   // Hooks
   const { resetPermissions } = usePermissions()
   const { currentDirectory } = useDirectory()
   const { createSession, sessions } = useSessionContext()
+
+  // Agents
+  const { agents, setAgents, selectedAgent, setSelectedAgent, handleToggleAgent, restoreAgentFromMessage } =
+    useChatSessionAgents(paneId, currentDirectory)
 
   const routeStatus = routeSessionId ? statusMap[routeSessionId] : undefined
   const routeSessionIdRef = useRef(routeSessionId)
@@ -148,10 +134,6 @@ export function useChatSession({
     isReplying,
   } = usePermissionHandler()
 
-  // Prevent infinite retry loops when auto-approve API calls fail
-  // but the server may have already processed the request (lost response).
-  const autoRetriedIdsRef = useRef(new Set<string>())
-
   // Message animations
   const { registerMessage, registerInputBox, animateUndo, animateRedo } = useMessageAnimation()
 
@@ -167,245 +149,40 @@ export function useChatSession({
     () => autoApproveStore.approvePendingOnFullAuto,
   )
 
-  const replyPermissionOnceAutomatically = useCallback(
-    (request: ApiPermissionRequest) => {
-      if (!autoApproveStore.claimAutoReply(request.id)) return
-
-      void handlePermissionReply(request.id, 'once', effectiveDirectory, request.sessionID).then(success => {
-        if (!success) {
-          autoApproveStore.releaseAutoReply(request.id)
-          // Retry once on failure. handlePermissionReply already retries 3× via withRetry,
-          // but the server may have processed the request and the response was lost.
-          // Force effect re-run by creating a new array reference.
-          if (!autoRetriedIdsRef.current.has(request.id)) {
-            autoRetriedIdsRef.current.add(request.id)
-            setPendingPermissionRequests(prev => [...prev])
-          }
-        }
-      })
-    },
-    [effectiveDirectory, handlePermissionReply, setPendingPermissionRequests],
-  )
-
-  // Clear retry tracking on each auto-approve batch
-  useEffect(() => {
-    autoRetriedIdsRef.current.clear()
-  }, [approvePendingOnFullAuto, fullAutoMode])
-
-  useEffect(() => {
-    if (!routeSessionId || !approvePendingOnFullAuto || fullAutoMode !== 'session') return
-    void refreshPendingRequests(sessionFamily, effectiveDirectory)
-  }, [
-    approvePendingOnFullAuto,
-    effectiveDirectory,
-    fullAutoMode,
-    refreshPendingRequests,
+  const replyPermissionOnceAutomatically = useSessionPermissionAutoApprove({
     routeSessionId,
+    effectiveDirectory,
     sessionFamily,
-  ])
-
-  useEffect(() => {
-    if (!approvePendingOnFullAuto || fullAutoMode === 'off' || pendingPermissionRequests.length === 0) return
-
-    for (const request of pendingPermissionRequests) {
-      replyPermissionOnceAutomatically(request)
-    }
-  }, [approvePendingOnFullAuto, fullAutoMode, pendingPermissionRequests, replyPermissionOnceAutomatically])
-
-  const buildLocalQueuedMessage = useCallback(
-    (input: {
-      sessionId: string
-      messageId: string
-      text: string
-      attachments: Attachment[]
-      agent?: string
-      model: { providerID: string; modelID: string; variant?: string }
-      createdAt: number
-    }): UIMessage => {
-      const parts: UIMessage['parts'] = [
-        {
-          id: `${input.messageId}:text`,
-          type: 'text',
-          text: input.text,
-          synthetic: false,
-          sessionID: input.sessionId,
-          messageID: input.messageId,
-        },
-      ]
-
-      for (const attachment of input.attachments) {
-        if (attachment.type === 'agent') {
-          parts.push({
-            id: attachment.id || `${input.messageId}:agent:${parts.length}`,
-            type: 'agent',
-            name: attachment.agentName || attachment.displayName,
-            source: attachment.textRange
-              ? {
-                  value: attachment.textRange.value,
-                  start: attachment.textRange.start,
-                  end: attachment.textRange.end,
-                }
-              : undefined,
-            sessionID: input.sessionId,
-            messageID: input.messageId,
-          })
-          continue
-        }
-
-        if (attachment.type !== 'file' && attachment.type !== 'folder') continue
-
-        parts.push({
-          id: attachment.id || `${input.messageId}:file:${parts.length}`,
-          type: 'file',
-          mime: attachment.mime || (attachment.type === 'folder' ? 'application/x-directory' : 'text/plain'),
-          filename: attachment.displayName,
-          url: attachment.url || '',
-          source: attachment.textRange
-            ? {
-                type: 'file',
-                path: attachment.relativePath || attachment.displayName,
-                text: {
-                  value: attachment.textRange.value,
-                  start: attachment.textRange.start,
-                  end: attachment.textRange.end,
-                },
-              }
-            : undefined,
-          sessionID: input.sessionId,
-          messageID: input.messageId,
-        })
-      }
-
-      return {
-        info: {
-          id: input.messageId,
-          sessionID: input.sessionId,
-          role: 'user',
-          time: { created: input.createdAt },
-          agent: input.agent || '',
-          model: input.model,
-        },
-        parts,
-        isStreaming: false,
-      }
-    },
-    [],
-  )
+    fullAutoMode,
+    approvePendingOnFullAuto,
+    pendingPermissionRequests,
+    handlePermissionReply,
+    setPendingPermissionRequests,
+    refreshPendingRequests,
+  })
 
   // ============================================
   // SSE 事件回调（permission / question / scroll / idle / error / reconnect）
-  // 每个 pane 都注册自己的 consumer，由 App 顶层统一建立 SSE 连接
   // ============================================
-  const sseCallbacks = useMemo(
-    () => ({
-      onPermissionAsked: (request: import('../types/api/permission').PermissionRequest) => {
-        // Full Auto 会话级：当前 session 的 handler 天然只处理当前 session 的请求
-        const effectiveFullAutoMode = autoApproveStore.getPaneFullAutoMode(paneId)
-        if (effectiveFullAutoMode === 'session') {
-          replyPermissionOnceAutomatically(request)
-          return
-        }
-
-        // 自动批准检查（实验性功能）
-        if (
-          autoApproveStore.enabled &&
-          autoApproveStore.shouldAutoApprove(request.sessionID, request.permission, request.patterns)
-        ) {
-          // 匹配规则，自动用 once 批准，不弹框
-          replyPermissionOnceAutomatically(request)
-          return
-        }
-
-        setPendingPermissionRequests(prev => {
-          if (prev.some(r => r.id === request.id)) return prev
-          return [...prev, request]
-        })
-      },
-      onPermissionReplied: (data: { sessionID: string; requestID: string }) => {
-        setPendingPermissionRequests(prev =>
-          prev.some(r => r.id === data.requestID) ? prev.filter(r => r.id !== data.requestID) : prev,
-        )
-      },
-      onQuestionAsked: (request: import('../types/api/permission').QuestionRequest) => {
-        setPendingQuestionRequests(prev => {
-          if (prev.some(r => r.id === request.id)) return prev
-          return [...prev, request]
-        })
-      },
-      onQuestionReplied: (data: { sessionID: string; requestID: string }) => {
-        setPendingQuestionRequests(prev => prev.filter(r => r.id !== data.requestID))
-      },
-      onQuestionRejected: (data: { sessionID: string; requestID: string }) => {
-        setPendingQuestionRequests(prev => prev.filter(r => r.id !== data.requestID))
-      },
-      onScrollRequest: () => {
-        chatAreaRef.current?.scrollToBottomIfAtBottom()
-      },
-      onReconnected: (_reason: import('./useGlobalEvents').SessionResyncReason, serverID: string) => {
-        if (serverID !== serverStore.getActiveServerId()) return
-
-        if (routeSessionId) {
-          loadSession(routeSessionId, { force: true })
-          refreshPendingRequests(sessionFamily, effectiveDirectory)
-        }
-        refetchModels().catch(() => {})
-        getSelectableAgents(currentDirectory)
-          .then(setAgents)
-          .catch(() => {})
-      },
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs and stable functions
-    [
-      paneId,
-      effectiveDirectory,
-      routeSessionId,
-      sessionFamily,
-      currentDirectory,
-      replyPermissionOnceAutomatically,
-      setPendingPermissionRequests,
-      setPendingQuestionRequests,
-      loadSession,
-      refreshPendingRequests,
-      refetchModels,
-    ],
-  )
-
-  // 保存 callbacks ref 供 consumer 注册使用（避免频繁重新注册）
-  const sseCallbacksRef = useRef(sseCallbacks)
-  useEffect(() => {
-    sseCallbacksRef.current = sseCallbacks
-  }, [sseCallbacks])
-
-  // 注册 pane 级 consumer，SSE 事件按 sessionId 分发到此
-  useEffect(() => {
-    const unregister = registerSessionConsumer(paneId, routeSessionId, {
-      onPermissionAsked: req => sseCallbacksRef.current.onPermissionAsked(req),
-      onPermissionReplied: data => sseCallbacksRef.current.onPermissionReplied(data),
-      onQuestionAsked: req => sseCallbacksRef.current.onQuestionAsked(req),
-      onQuestionReplied: data => sseCallbacksRef.current.onQuestionReplied(data),
-      onQuestionRejected: data => sseCallbacksRef.current.onQuestionRejected(data),
-      onScrollRequest: () => sseCallbacksRef.current.onScrollRequest(),
-      onReconnected: (reason, serverID) => sseCallbacksRef.current.onReconnected(reason, serverID),
-    })
-
-    return unregister
-  }, [paneId, routeSessionId])
-
-  // sessionId 变化时更新 consumer 关注的 session（无需重新注册）
-  useEffect(() => {
-    updateConsumerSessionId(paneId, routeSessionId)
-  }, [paneId, routeSessionId])
+  useSessionSseConsumer({
+    paneId,
+    routeSessionId,
+    effectiveDirectory,
+    sessionFamily,
+    currentDirectory,
+    chatAreaRef,
+    replyPermissionOnceAutomatically,
+    setPendingPermissionRequests,
+    setPendingQuestionRequests,
+    setAgents,
+    loadSession,
+    refreshPendingRequests,
+    refetchModels,
+  })
 
   const handleVisibleMessageIdsChange = useCallback((_ids: string[]) => {
     // No-op: parts are always in memory now
   }, [])
-
-  // Load agents
-  useEffect(() => {
-    getSelectableAgents(currentDirectory)
-      .then(setAgents)
-      .catch(err => handleError('fetch agents', err))
-  }, [currentDirectory])
 
   // Preload @ root directory and / commands for current session directory
   useEffect(() => {
@@ -415,356 +192,30 @@ export function useChatSession({
     prefetchCommands(effectiveDirectory).catch(() => {})
   }, [routeSessionId, effectiveDirectory])
 
-  // agents 列表加载后，校验当前选中的 agent 是否存在于列表中
-  useEffect(() => {
-    if (agents.length === 0) return
-    const primaryAgents = agents.filter(a => a.mode !== 'subagent' && !a.hidden)
-    if (primaryAgents.length === 0) return
-
-    // 当前选中的 agent 在列表中存在就不动
-    if (selectedAgent && primaryAgents.some(a => a.name === selectedAgent)) return
-
-    // 否则选第一个 primary agent
-    const frameId = requestAnimationFrame(() => {
-      setSelectedAgent(primaryAgents[0].name)
-    })
-
-    return () => cancelAnimationFrame(frameId)
-  }, [agents, selectedAgent, setSelectedAgent])
-
   // Load child sessions and pending permissions on session change
-  // 页面刷新时 childSessionStore 是空的，需要先从 API 恢复子 session 关系
-  // 然后再加载权限请求（包括子 session 的权限）
-  // 已执行的 routeSessionId+effectiveDirectory 组合（W3③）：相同组合只拉取一次，
-  // 消除 StrictMode 双跑与依赖抖动引发的重复全量拉取
-  const childPermissionsComboRef = useRef<string | null>(null)
-  useEffect(() => {
-    if (!routeSessionId) {
-      childPermissionsComboRef.current = null
-      resetPendingRequests()
-      return
-    }
-
-    // effectiveDirectory 未就绪时跳过（W3③）：跨项目切换时 currentDirectory 滞后于
-    // routeSessionId；当 session 元数据已知目标目录且与当前 effectiveDirectory 不一致时，
-    // 等路由/会话状态追上再拉，避免用错误目录白跑一遍再重跑（权限/问题双份全量拉取）
-    const metaDirectory = activeSessionStore.getSessionMeta(routeSessionId)?.directory
-    if (!sessionDirectory && metaDirectory && !isSameDirectory(metaDirectory, effectiveDirectory)) return
-
-    const combo = `${routeSessionId}\n${normalizeToForwardSlash(effectiveDirectory)}`
-    if (childPermissionsComboRef.current === combo) return
-    childPermissionsComboRef.current = combo
-
-    let cancelled = false
-    let completed = false
-
-    async function loadChildSessionsAndPermissions() {
-      // Step 1: 恢复子 session 关系（如果 store 中还没有）
-      const existingChildren = childSessionStore.getChildSessionIds(routeSessionId!)
-      if (existingChildren.length === 0) {
-        try {
-          // 共享缓存加载（W3①）：侧边栏与消息区用同一份 children 数据，
-          // 冷切 1 次 /children，热切（缓存命中）0 次
-          const children = await childSessionStore.loadChildren(routeSessionId!, effectiveDirectory)
-          if (cancelled) return
-          // 注册所有子 session 到 store
-          for (const child of children) {
-            childSessionStore.registerChildSession(child)
-          }
-        } catch {
-          // 获取子 session 失败不影响主流程
-        }
-      }
-
-      if (cancelled) return
-
-      // Step 2: 获取完整的 session family（主 session + 所有子孙）
-      const family = new Set(childSessionStore.getSessionAndDescendants(routeSessionId!))
-
-      // Step 3: 获取所有待处理请求，然后用 family 过滤
-      // GET /permission 和 GET /question 返回全量数据，不传 sessionId 避免 N 次重复请求
-      const [allPerms, allQuestions] = await Promise.all([
-        getPendingPermissions(undefined, effectiveDirectory).catch(() => []),
-        getPendingQuestions(undefined, effectiveDirectory).catch(() => []),
-      ])
-
-      if (cancelled) return
-
-      // 只保留属于当前 session family 的请求。
-      // OMO background subagents may publish permission.asked over SSE before
-      // /permission can list it for this routed instance, so do not drop
-      // SSE-known requests just because the snapshot is missing them.
-      const nextPerms = allPerms.filter(p => family.has(p.sessionID))
-      setPendingPermissionRequests(prev => {
-        const merged = new Map(nextPerms.map(p => [p.id, p]))
-        for (const request of prev) {
-          if (family.has(request.sessionID) && !merged.has(request.id)) merged.set(request.id, request)
-        }
-        return Array.from(merged.values())
-      })
-      setPendingQuestionRequests(allQuestions.filter(q => family.has(q.sessionID)))
-      completed = true
-    }
-
-    loadChildSessionsAndPermissions()
-
-    return () => {
-      cancelled = true
-      // 未完成即被取消：释放组合占位，允许后续 effect 重新拉取；
-      // 已完成则保留占位，相同组合的重复 effect 直接跳过
-      if (!completed && childPermissionsComboRef.current === combo) {
-        childPermissionsComboRef.current = null
-      }
-    }
-  }, [
+  useSessionPermissionBootstrap({
     routeSessionId,
     effectiveDirectory,
     sessionDirectory,
     resetPendingRequests,
     setPendingPermissionRequests,
     setPendingQuestionRequests,
-  ])
+  })
 
-  const sendMessageNow = useCallback(
-    async (input: {
-      sessionId?: string | null
-      content: string
-      attachments: Attachment[]
-      directory: string
-      model: { providerID: string; modelID: string }
-      options?: { agent?: string; variant?: string }
-      allowCreateSession?: boolean
-    }) => {
-      let sessionId = input.sessionId ?? routeSessionId
-
-      if (sessionId && input.allowCreateSession) {
-        const state = messageStore.getSessionState(sessionId)
-        if (state?.loadState === 'error' && state.messages.length === 0) {
-          clearSessionRuntimeState(sessionId)
-          sessionId = null
-        }
-      }
-
-      let rollbackSnapshot = sessionId ? messageStore.createSendRollbackSnapshot(sessionId) : null
-
-      try {
-        if (!sessionId) {
-          if (!input.allowCreateSession) return false
-          const newSession = await createSession()
-          sessionId = newSession.id
-          navigateToSession(sessionId, newSession.directory)
-        }
-
-        if (rollbackSnapshot) {
-          messageStore.truncateAfterRevert(sessionId)
-        }
-
-        messageStore.setStreaming(sessionId, true)
-
-        // 记录发送前的消息数量，作为判断 SSE 是否推送新消息的基线
-        const msgCountBeforeSend = messageStore.getSessionState(sessionId)?.messages.length ?? 0
-
-        await sendMessageAsync({
-          sessionId,
-          text: input.content,
-          attachments: input.attachments,
-          model: input.model,
-          agent: input.options?.agent,
-          variant: input.options?.variant,
-          directory: input.directory,
-        })
-
-        // 兜底：等待短暂时间后检查 SSE 是否已推送用户消息，
-        // 若未收到则主动拉取补齐，避免 SSE 断流导致用户消息不显示
-        const pullSessionId = sessionId
-        const pullDir = input.directory
-        setTimeout(() => {
-          const state = messageStore.getSessionState(pullSessionId)
-          if (!state) return
-          // 消息数量增加了，说明 SSE 已正常推送
-          if (state.messages.length > msgCountBeforeSend) return
-
-          getSessionMessages(pullSessionId, 5, pullDir)
-            .then(apiMessages => {
-              for (const msg of apiMessages) {
-                messageStore.handleMessageUpdated(msg.info)
-                if (msg.parts) {
-                  for (const part of msg.parts) {
-                    messageStore.handlePartUpdated({
-                      ...part,
-                      sessionID: pullSessionId,
-                      messageID: msg.info.id,
-                    })
-                  }
-                }
-              }
-            })
-            .catch(() => {
-              // 拉取失败不影响主流程，SSE 重连后仍可补齐
-            })
-        }, 1500)
-
-        return true
-      } catch (error) {
-        handleError('send message', error)
-        if (sessionId) {
-          if (rollbackSnapshot) {
-            messageStore.restoreSendRollback(sessionId, rollbackSnapshot)
-            rollbackSnapshot = null
-          } else {
-            messageStore.setStreaming(sessionId, false)
-          }
-        }
-
-        return false
-      }
-    },
-    [routeSessionId, navigateToSession, createSession],
-  )
-
-  // Send message handler
-  const handleSend = useCallback(
-    async (content: string, attachments: Attachment[], options?: { agent?: string; variant?: string }) => {
-      if (!currentModel) {
-        handleError('send message', new Error('No model selected'))
-        return false
-      }
-
-      // 如果队列头有失败项，用户重新发送时先清掉失败项（内容已恢复到输入框）
-      if (routeSessionId && queuedFollowupFailedId) {
-        followupQueueStore.remove(routeSessionId, queuedFollowupFailedId)
-      }
-
-      const shouldQueueFollowup =
-        !!routeSessionId && (queuedFollowups.length > 0 || (queueFollowupMessages && isSessionBusy))
-
-      if (shouldQueueFollowup) {
-        const queued = followupQueueStore.enqueue({
-          serverID: serverStore.getActiveServerId(),
-          sessionId: routeSessionId,
-          directory: effectiveDirectory || '',
-          text: content,
-          attachments,
-          model: {
-            providerID: currentModel.providerId,
-            modelID: currentModel.id,
-            variant: options?.variant,
-          },
-          variant: options?.variant,
-          agent: options?.agent,
-        })
-        messageStore.upsertLocalMessage(
-          buildLocalQueuedMessage({
-            sessionId: queued.sessionId,
-            messageId: queued.id,
-            text: queued.text,
-            attachments: queued.attachments,
-            agent: queued.agent,
-            model: queued.model,
-            createdAt: queued.createdAt,
-          }),
-        )
-        return true
-      }
-
-      return sendMessageNow({
-        sessionId: routeSessionId,
-        content,
-        attachments,
-        model: {
-          providerID: currentModel.providerId,
-          modelID: currentModel.id,
-        },
-        options,
-        directory: effectiveDirectory || '',
-        allowCreateSession: true,
-      })
-    },
-    [
-      currentModel,
-      routeSessionId,
-      queuedFollowups.length,
-      queuedFollowupFailedId,
-      queueFollowupMessages,
-      isSessionBusy,
-      effectiveDirectory,
-      buildLocalQueuedMessage,
-      sendMessageNow,
-    ],
-  )
-
-  const sendQueuedFollowup = useCallback(
-    async (draftId: string, sessionId: string) => {
-      const draft = followupQueueStore.getItem(sessionId, draftId)
-      if (!draft) return false
-      if (!followupQueueStore.startSending(draft.sessionId, draft.id)) return false
-
-      // 发送前先移除占位消息，让 sendMessageNow 走和正常发送完全一样的路径
-      messageStore.removeMessage(draft.sessionId, draft.id)
-
-      const ok = await sendMessageNow({
-        sessionId: draft.sessionId,
-        content: draft.text,
-        attachments: draft.attachments,
-        model: {
-          providerID: draft.model.providerID,
-          modelID: draft.model.modelID,
-        },
-        options: {
-          agent: draft.agent,
-          variant: draft.variant,
-        },
-        directory: draft.directory,
-      })
-
-      followupQueueStore.finishSending(draft.sessionId, draft.id)
-
-      if (ok) {
-        followupQueueStore.remove(draft.sessionId, draft.id)
-      } else {
-        // 标记失败，阻塞后续队列项
-        followupQueueStore.markFailed(draft.sessionId, draft.id)
-        // 移除剩余排队消息的本地占位，恢复队头到输入框
-        const remaining = followupQueueStore.getItems(draft.sessionId)
-        for (const item of remaining) {
-          messageStore.removeMessage(draft.sessionId, item.id)
-        }
-        setRestoredContent({
-          sessionId: draft.sessionId,
-          content: {
-            messageId: draft.id,
-            text: draft.text,
-            attachments: draft.attachments,
-            model: draft.model,
-            variant: draft.variant ?? draft.model.variant,
-            agent: draft.agent,
-          },
-        })
-      }
-
-      return ok
-    },
-    [sendMessageNow],
-  )
-
-  useEffect(() => {
-    if (!routeSessionId) return
-
-    const nextQueued = queuedFollowups[0]
-    if (!nextQueued) return
-    if (queuedFollowupSendingId) return
-    if (queuedFollowupFailedId) return
-    if (isSessionBusy) return
-
-    void sendQueuedFollowup(nextQueued.id, routeSessionId)
-  }, [
+  // Send message handler (with followup queue)
+  const { handleSend } = useChatMessageSender({
     routeSessionId,
+    effectiveDirectory,
+    currentModel,
+    isSessionBusy,
     queuedFollowups,
     queuedFollowupSendingId,
     queuedFollowupFailedId,
-    isSessionBusy,
-    sendQueuedFollowup,
-  ])
+    queueFollowupMessages,
+    navigateToSession,
+    createSession,
+    setRestoredContent,
+  })
 
   // New chat handler
   const handleNewChat = useCallback(() => {
@@ -936,76 +387,16 @@ export function useChatSession({
     await handleRedo()
   }, [animateRedo, handleRedo])
 
-  // Session selection
-  const handleSelectSession = useCallback(
-    (session: ApiSession) => {
-      navigateToSession(session.id, session.directory)
-    },
-    [navigateToSession],
-  )
-
-  // New session
-  const handleNewSession = useCallback(() => {
-    navigateHome()
-    handleNewChat()
-  }, [navigateHome, handleNewChat])
-
-  // Archive current session
-  const handleArchiveSession = useCallback(async () => {
-    if (!routeSessionId) return
-    try {
-      await updateSession(routeSessionId, { time: { archived: Date.now() } }, effectiveDirectory)
-      navigateHome()
-      handleNewChat()
-    } catch (error) {
-      handleError('archive session', error)
-    }
-  }, [routeSessionId, effectiveDirectory, navigateHome, handleNewChat])
-
-  // Navigate to previous session
-  const handlePreviousSession = useCallback(() => {
-    if (!sessions.length) return
-    const currentIndex = sessions.findIndex(s => s.id === routeSessionId)
-    if (currentIndex > 0) {
-      const target = sessions[currentIndex - 1]
-      navigateToSession(target.id, target.directory)
-    } else if (currentIndex === -1 && sessions.length > 0) {
-      // Not in any session, go to first
-      navigateToSession(sessions[0].id, sessions[0].directory)
-    }
-  }, [sessions, routeSessionId, navigateToSession])
-
-  // Navigate to next session
-  const handleNextSession = useCallback(() => {
-    if (!sessions.length) return
-    const currentIndex = sessions.findIndex(s => s.id === routeSessionId)
-    if (currentIndex >= 0 && currentIndex < sessions.length - 1) {
-      const target = sessions[currentIndex + 1]
-      navigateToSession(target.id, target.directory)
-    }
-  }, [sessions, routeSessionId, navigateToSession])
-
-  // Toggle agent (cycle through primary agents only, matching toolbar display)
-  const handleToggleAgent = useCallback(() => {
-    const primaryAgents = agents.filter(a => a.mode !== 'subagent' && !a.hidden)
-    if (primaryAgents.length <= 1) return
-    const currentIndex = primaryAgents.findIndex(a => a.name === selectedAgent)
-    const nextIndex = (currentIndex + 1) % primaryAgents.length
-    setSelectedAgent(primaryAgents[nextIndex].name)
-  }, [agents, selectedAgent, setSelectedAgent])
-
-  // 从消息中恢复 agent 选择（用于切换 session 时）
-  const restoreAgentFromMessage = useCallback(
-    (agentName: string | null | undefined) => {
-      if (!agentName) return
-      // 只有当 agent 存在于列表中时才恢复
-      const exists = agents.some(a => a.name === agentName && a.mode !== 'subagent' && !a.hidden)
-      if (exists) {
-        setSelectedAgent(agentName)
-      }
-    },
-    [agents, setSelectedAgent],
-  )
+  // Session selection / new session / archive / prev / next
+  const { handleSelectSession, handleNewSession, handleArchiveSession, handlePreviousSession, handleNextSession } =
+    useSessionNavigation({
+      routeSessionId,
+      sessions,
+      effectiveDirectory,
+      navigateToSession,
+      navigateHome,
+      handleNewChat,
+    })
 
   // Copy last AI response to clipboard
   const handleCopyLastResponse = useCallback(async () => {
