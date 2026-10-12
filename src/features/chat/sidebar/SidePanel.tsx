@@ -39,67 +39,14 @@ import { subscribeToConnectionState, type ConnectionInfo } from '../../../api/ev
 import type { Session as ApiSession } from '../../../types/api/session'
 import { getDirectoryName, isSameDirectory, normalizeToForwardSlash } from '../../../utils'
 import { uiErrorHandler } from '../../../utils'
+import { MISSING_SESSION_RETRY_WINDOW_MS, getSelectionRange, findProjectGroupForDirectory } from './SidePanel.utils'
+import type { SidePanelProps, ProjectItem } from './SidePanel.types'
 
 // 侧边栏设计模式：
 // - 按钮结构统一，不因 expanded/collapsed 改变 DOM
 // - 按钮内容使用 -translate-x-2 让图标在收起时居中
 // - 文字用 opacity 过渡，不改变布局
 // - 收起宽度 49px，展开宽度 288px
-
-// 缺失 session 补拉失败后的重试抑制窗口（毫秒）：窗口内跳过避免请求风暴，窗口过后自动重试
-const MISSING_SESSION_RETRY_WINDOW_MS = 4000
-
-interface SidePanelProps {
-  onNewSession: () => void
-  onSelectSession: (session: ApiSession) => void
-  onCloseMobile?: () => void
-  selectedSessionId: string | null
-  onAddProject: () => void
-  isMobile?: boolean
-  isExpanded?: boolean
-  onToggleSidebar: () => void
-  onOpenSettings?: () => void
-}
-
-interface ProjectItem {
-  id: string
-  worktree: string
-  name: string
-  canReorder?: boolean
-  memberDirectories?: string[]
-  reorderPath?: string
-  workspaceDirectories?: string[]
-  sectionKind?: 'project' | 'workspace'
-}
-
-function getSelectionRange(visibleIds: string[], anchorId: string, targetId: string) {
-  const startIndex = visibleIds.indexOf(anchorId)
-  const endIndex = visibleIds.indexOf(targetId)
-
-  if (startIndex === -1 || endIndex === -1) return null
-
-  const from = Math.min(startIndex, endIndex)
-  const to = Math.max(startIndex, endIndex)
-  return visibleIds.slice(from, to + 1)
-}
-
-function findProjectGroupForDirectory(projects: ProjectItem[], directory: string) {
-  return projects.find(project => {
-    if (isSameDirectory(project.id, directory) || isSameDirectory(project.worktree, directory)) {
-      return true
-    }
-
-    if (project.workspaceDirectories?.some(workspace => isSameDirectory(workspace, directory))) {
-      return true
-    }
-
-    if (project.memberDirectories?.some(memberDirectory => isSameDirectory(memberDirectory, directory))) {
-      return true
-    }
-
-    return false
-  })
-}
 
 export function SidePanel({
   onNewSession,

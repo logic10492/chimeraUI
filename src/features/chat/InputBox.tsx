@@ -8,7 +8,6 @@ import { detectMentionTrigger, getFileName, normalizePath, toFileUrl } from '../
 import type { MentionItem } from '../mention/types'
 import { SlashCommandMenu, type SlashCommandMenuHandle } from '../slash-command/SlashCommandMenu'
 import { InputToolbar } from './input/InputToolbar'
-import type { ModelSelectorHandle } from './ModelSelector'
 import { InputFooter } from './input/InputFooter'
 import { FloatingActions, CollapsedCapsule } from './input/InputActions'
 import { useMobileCollapse } from './input/useMobileCollapse'
@@ -27,8 +26,7 @@ import { removeAttachmentFromText, transformAttachmentRanges } from './attachmen
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
 import { themeStore } from '../../store/themeStore'
 import { useChatViewport } from './chatViewport'
-import type { Agent as ApiAgent } from '../../types/api/agent'
-import type { ModelInfo, FileCapabilities } from '../../types/ui'
+import type { FileCapabilities } from '../../types/ui'
 import type { Command } from '../../api/command'
 import { getDesktopPlatform, isTauri } from '../../utils/tauri'
 import {
@@ -37,55 +35,36 @@ import {
   subscribeInternalDrag,
   subscribeInternalDrop,
 } from '../../lib/internalDragCore'
+import {
+  TEXTAREA_MIN_HEIGHT,
+  TEXTAREA_VERTICAL_CHROME,
+  INPUT_TOOLBAR_FALLBACK_HEIGHT,
+  INPUT_FOOTER_FALLBACK_HEIGHT,
+  getComposerMaxHeight,
+  getMentionPathForDroppedPath,
+} from './InputBox.utils'
+import type {
+  HistoryEntry,
+  DraggedFileInfo,
+  DroppedPathInfo,
+  TauriDropPosition,
+  InputBoxProps,
+} from './InputBox.types'
+export type { CollapsedDialogInfo, InputBoxProps } from './InputBox.types'
 
 // ============================================
 // Types
 // ============================================
 
-interface HistoryEntry {
-  text: string
-  attachments: Attachment[]
-}
+// Pure types/constants/helpers live in ./InputBox.types and ./InputBox.utils.
+// CollapsedDialogInfo and InputBoxProps are re-exported above for compatibility.
 
-interface DraggedFileInfo {
-  type: 'file' | 'folder'
-  path: string
-  absolute: string
-  name: string
-}
-
-interface DroppedPathInfo {
-  type: 'file' | 'folder'
-  path: string
-  name: string
-}
-
-type TauriDropPosition = Extract<DragDropEvent, { type: 'drop' }>['position']
-
-const TEXTAREA_MIN_HEIGHT = 24
-const TEXTAREA_VERTICAL_CHROME = 24
-const INPUT_TOOLBAR_FALLBACK_HEIGHT = 36
-const INPUT_FOOTER_FALLBACK_HEIGHT = 32
-const COMPOSER_MIN_HEIGHT = 144
-const COMPOSER_DESKTOP_MAX_HEIGHT = 420
-const COMPOSER_COMPACT_MAX_HEIGHT = 320
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max)
-}
-
+// DOM-touching helpers stay local to the component module.
 function getComposerPaneHeight(anchor: HTMLElement | null): number {
   const paneRoot = anchor?.closest<HTMLElement>('[data-chat-pane-root]')
   const paneHeight = paneRoot?.getBoundingClientRect().height
   if (paneHeight && paneHeight > 0) return paneHeight
   return window.innerHeight || 800
-}
-
-function getComposerMaxHeight(paneHeight: number, isCompact: boolean): number {
-  const ratio = isCompact ? 0.44 : 0.4
-  const hardMax = isCompact ? COMPOSER_COMPACT_MAX_HEIGHT : COMPOSER_DESKTOP_MAX_HEIGHT
-  const availableMax = Math.max(COMPOSER_MIN_HEIGHT, paneHeight - 96)
-  return clamp(Math.floor(paneHeight * ratio), COMPOSER_MIN_HEIGHT, Math.min(hardMax, availableMax))
 }
 
 function getDropClientPoints(position: TauriDropPosition): Array<{ x: number; y: number }> {
@@ -109,82 +88,6 @@ function isPointInsideElement(position: TauriDropPosition, element: HTMLElement 
   return getDropClientPoints(position).some(
     ({ x, y }) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom,
   )
-}
-
-function getMentionPathForDroppedPath(absolutePath: string, rootPath: string): string {
-  const normalizedPath = normalizePath(absolutePath)
-  const normalizedRoot = normalizePath(rootPath).replace(/\/+$/, '')
-  if (!normalizedRoot) return normalizedPath
-
-  const caseInsensitive = /^[a-zA-Z]:/.test(normalizedPath) || /^[a-zA-Z]:/.test(normalizedRoot)
-  const comparablePath = caseInsensitive ? normalizedPath.toLowerCase() : normalizedPath
-  const comparableRoot = caseInsensitive ? normalizedRoot.toLowerCase() : normalizedRoot
-
-  if (comparablePath === comparableRoot) {
-    return getFileName(normalizedPath)
-  }
-
-  if (comparablePath.startsWith(`${comparableRoot}/`)) {
-    return normalizedPath.slice(normalizedRoot.length + 1)
-  }
-
-  return normalizedPath
-}
-
-export interface CollapsedDialogInfo {
-  label: string
-  queueLength: number
-  onExpand: () => void
-}
-
-export interface InputBoxProps {
-  paneId: string
-  onSend: (
-    text: string,
-    attachments: Attachment[],
-    options?: { agent?: string; variant?: string },
-  ) => Promise<boolean> | boolean
-  onAbort?: () => void
-  onCommand?: (command: string) => Promise<boolean> | boolean // 斜杠命令回调，接收完整命令字符串如 "/help"
-  onNewChat?: () => void // 新建对话回调
-  disabled?: boolean
-  isStreaming?: boolean
-  agents?: ApiAgent[]
-  selectedAgent?: string
-  onAgentChange?: (agentName: string) => void
-  variants?: string[]
-  selectedVariant?: string
-  onVariantChange?: (variant: string | undefined) => void
-  supportsImages?: boolean // 保留向后兼容（deprecated，优先用 fileCapabilities）
-  fileCapabilities?: FileCapabilities
-  // Model（移动端 InputToolbar 用）
-  models?: ModelInfo[]
-  selectedModelKey?: string | null
-  onModelChange?: (modelKey: string, model: ModelInfo) => void
-  modelsLoading?: boolean
-  modelsError?: Error | null
-  onModelsRetry?: () => void
-  modelSelectorRef?: React.RefObject<ModelSelectorHandle | null>
-  rootPath?: string
-  sessionId?: string | null
-  // Undo/Redo
-  revertedText?: string
-  revertedAttachments?: Attachment[]
-  /** revert 目标消息 id：用于识别同一 revert 目标被重建（引用变化）的场景 */
-  revertedMessageId?: string
-  canRedo?: boolean
-  revertSteps?: number
-  onRedo?: () => void
-  onRedoAll?: () => void
-  onClearRevert?: () => void
-  // Animation
-  registerInputBox?: (element: HTMLElement | null) => void
-  isAtBottom?: boolean
-  showScrollToBottom?: boolean
-  onScrollToBottom?: () => void
-  // Collapsed dialog capsules
-  collapsedPermission?: CollapsedDialogInfo
-  collapsedQuestion?: CollapsedDialogInfo
 }
 
 // ============================================

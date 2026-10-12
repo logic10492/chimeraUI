@@ -27,7 +27,6 @@ import type { PermissionRequest as ApiPermissionRequest } from '../types/api/per
 import type { Session as ApiSession } from '../types/api/session'
 import type { Agent as ApiAgent } from '../types/api/agent'
 import type { Attachment } from '../features/attachment/types'
-import type { ModelInfo } from '../types/ui'
 import { getMessageText, isUserMessage, type AssistantMessageInfo, type Message as UIMessage } from '../types/message'
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
 import { isSameDirectory, normalizeToForwardSlash } from '../utils/directoryUtils'
@@ -35,52 +34,12 @@ import { activeSessionStore } from '../store/activeSessionStore'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { serverStorage } from '../utils/perServerStorage'
 import { STORAGE_KEY_SELECTED_AGENT } from '../constants'
-import type { ChatAreaHandle } from '../features/chat/ChatArea'
 import { followupQueueStore, useFollowupQueue } from '../store/followupQueueStore'
 import { themeStore } from '../store/themeStore'
+import type { UseChatSessionOptions, LiveRetryStatus } from './useChatSession.types'
+import { EMPTY_SESSION_STATE } from './useChatSession.utils'
 
 const handleError = createErrorHandler('session')
-
-/**
- * Stable empty session state singleton.
- *
- * When routeSessionId is null (e.g. an empty split pane), useChatSession
- * uses this instead of creating a new object on every render.  A fresh
- * literal `{ messages: [], ... }` would give a different reference each
- * time, defeating React.memo on ChatArea and causing pointless re-renders
- * of the entire message tree.
- */
-const EMPTY_SESSION_STATE = {
-  messages: [] as import('../types/message').Message[],
-  isStreaming: false,
-  loadState: 'idle' as const,
-  loadError: undefined,
-  revertState: null,
-  canUndo: false,
-  canRedo: false,
-  redoSteps: 0,
-  revertedContent: null,
-  hasMoreHistory: false,
-  directory: '',
-  title: null,
-} as const
-
-interface UseChatSessionOptions {
-  paneId: string
-  chatAreaRef: React.RefObject<ChatAreaHandle | null>
-  currentModel: ModelInfo | undefined
-  refetchModels: () => Promise<void>
-  sessionId: string | null
-  navigateToSession: (sessionId: string, directory?: string) => void
-  navigateHome: () => void
-}
-
-interface LiveRetryStatus {
-  sessionID: string
-  attempt: number
-  message: string
-  next: number
-}
 
 export function useChatSession({
   paneId,

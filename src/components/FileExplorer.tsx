@@ -8,7 +8,7 @@ import { memo, useCallback, useMemo, useEffect, useRef, useState, type PointerEv
 import { useTranslation } from 'react-i18next'
 import { useFileExplorer, type FileTreeNode } from '../hooks/useFileExplorer'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
-import { layoutStore, type PreviewFile } from '../store/layoutStore'
+import { layoutStore } from '../store/layoutStore'
 import { ChevronRightIcon, ChevronDownIcon, RetryIcon, AlertCircleIcon, DownloadIcon, MaximizeIcon, SearchIcon, CloseIcon } from './Icons'
 import { CodePreview } from './CodePreview'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
@@ -24,65 +24,33 @@ import {
   buildTextDataUrl,
   decodeBase64Text,
   formatMimeType,
-  type PreviewCategory,
 } from '../utils/mimeUtils'
 import { downloadFileContent } from '../utils/downloadUtils'
 import { searchText, searchFiles } from '../api/file'
-import type { FileContent, TextSearchMatch } from '../api/types'
+import type { TextSearchMatch } from '../api/types'
 import { startInternalDrag } from '../lib/internalDragCore'
 import { toAbsolutePath } from '../features/mention/utils'
-import type { TargetLineRange } from './codeMirrorReadonlyExtensions'
-
-// 常量
-const MIN_TREE_HEIGHT = 100
-const MIN_PREVIEW_HEIGHT = 150
-
-const MARKDOWN_MIME_TYPES = new Set(['text/markdown', 'text/x-markdown', 'text/md', 'application/markdown'])
-const textEncoder = new TextEncoder()
-
-function isMarkdownPreview(language: string, mimeType?: string): boolean {
-  if (language === 'markdown' || language === 'mdx') return true
-  if (!mimeType) return false
-  return MARKDOWN_MIME_TYPES.has(mimeType.split(';', 1)[0].toLowerCase())
-}
-
-function byteOffsetToCodeUnitIndex(text: string, byteOffset: number): number {
-  let bytes = 0
-  let index = 0
-
-  while (index < text.length && bytes < byteOffset) {
-    const codePoint = text.codePointAt(index)
-    if (codePoint === undefined) break
-
-    const char = String.fromCodePoint(codePoint)
-    const charBytes = textEncoder.encode(char).length
-    if (bytes + charBytes > byteOffset) break
-
-    bytes += charBytes
-    index += char.length
-  }
-
-  return Math.min(index, text.length)
-}
-
-function getSearchMatchRanges(match: TextSearchMatch): TargetLineRange[] {
-  return match.submatches
-    .map(submatch => ({
-      from: byteOffsetToCodeUnitIndex(match.lines.text, submatch.start),
-      to: byteOffsetToCodeUnitIndex(match.lines.text, submatch.end),
-    }))
-    .filter(range => range.to > range.from)
-}
-
-interface FileExplorerProps {
-  panelTabId: string
-  directory?: string
-  previewFile: PreviewFile | null
-  previewFiles: PreviewFile[]
-  position?: 'bottom' | 'right'
-  isPanelResizing?: boolean
-  sessionId?: string | null
-}
+import type {
+  FileExplorerProps,
+  TextSearchResultsProps,
+  FileTreeItemProps,
+  FilePreviewProps,
+  MediaPreviewProps,
+  ImagePreviewProps,
+  TextMediaPreviewProps,
+  MarkdownFilePreviewProps,
+  BinaryPlaceholderProps,
+  DiffPreviewProps,
+} from './FileExplorer.types'
+import {
+  isMarkdownPreview,
+  getSearchMatchRanges,
+  MIN_TREE_HEIGHT,
+  MIN_PREVIEW_HEIGHT,
+  MIN_ZOOM,
+  MAX_ZOOM,
+  ZOOM_FACTOR,
+} from './FileExplorer.utils'
 
 export const FileExplorer = memo(function FileExplorer({
   panelTabId,
@@ -441,16 +409,6 @@ export const FileExplorer = memo(function FileExplorer({
   )
 })
 
-interface TextSearchResultsProps {
-  results: TextSearchMatch[]
-  fileResults: string[]
-  isLoading: boolean
-  error: string | null
-  onSelect: (match: TextSearchMatch) => void
-  onSelectFile: (path: string) => void
-  directory?: string
-}
-
 const TextSearchResults = memo(function TextSearchResults({
   results,
   fileResults,
@@ -598,14 +556,6 @@ const TextSearchResults = memo(function TextSearchResults({
 // File Tree Item
 // ============================================
 
-interface FileTreeItemProps {
-  node: FileTreeNode
-  depth: number
-  expandedPaths: Set<string>
-  fileStatus: Map<string, { status: string }>
-  onClick: (node: FileTreeNode) => void
-}
-
 const FileTreeItem = memo(function FileTreeItem({
   node,
   depth,
@@ -715,22 +665,6 @@ const FileTreeItem = memo(function FileTreeItem({
 // ============================================
 // File Preview
 // ============================================
-
-interface FilePreviewProps {
-  previewFiles: PreviewFile[]
-  path: string | null
-  targetLine?: number
-  targetKey?: string
-  targetRanges?: readonly TargetLineRange[]
-  content: FileContent | null
-  isLoading: boolean
-  error: string | null
-  onClose: () => void
-  onActivatePreview: (path: string) => void
-  onClosePreview: (path: string) => void
-  onReorderPreview: (draggedPath: string, targetPath: string) => void
-  isResizing?: boolean
-}
 
 function FilePreview({
   previewFiles,
@@ -1020,13 +954,6 @@ function FilePreview({
 // Media Preview - 路由到具体渲染器
 // ============================================
 
-interface MediaPreviewProps {
-  category: PreviewCategory
-  dataUrl: string
-  mimeType: string
-  fileName: string
-}
-
 function MediaPreview({ category, dataUrl, mimeType, fileName }: MediaPreviewProps) {
   switch (category) {
     case 'image':
@@ -1053,15 +980,6 @@ function MediaPreview({ category, dataUrl, mimeType, fileName }: MediaPreviewPro
 // Image Preview - 缩放 + 拖拽平移
 // 直接滚轮缩放（以鼠标为锚点），左键拖拽平移
 // ============================================
-
-const MIN_ZOOM = 0.05
-const MAX_ZOOM = 20
-const ZOOM_FACTOR = 1.15 // 每次滚轮的缩放倍率
-
-interface ImagePreviewProps {
-  dataUrl: string
-  fileName: string
-}
 
 function ImagePreview({ dataUrl, fileName }: ImagePreviewProps) {
   const { t } = useTranslation(['components', 'common'])
@@ -1255,17 +1173,6 @@ function ImagePreview({ dataUrl, fileName }: ImagePreviewProps) {
 // 支持 Preview / Code 两种视图切换
 // ============================================
 
-interface TextMediaPreviewProps {
-  dataUrl: string
-  text: string
-  language: string
-  fileName: string
-  isResizing?: boolean
-  targetLine?: number
-  targetKey?: string
-  targetRanges?: readonly TargetLineRange[]
-}
-
 function TextMediaPreview({
   dataUrl,
   text,
@@ -1313,14 +1220,6 @@ function TextMediaPreview({
       )}
     </div>
   )
-}
-
-interface MarkdownFilePreviewProps {
-  text: string
-  isResizing?: boolean
-  targetLine?: number
-  targetKey?: string
-  targetRanges?: readonly TargetLineRange[]
 }
 
 function MarkdownFilePreview({
@@ -1374,12 +1273,6 @@ function MarkdownFilePreview({
 // Binary Placeholder - 不可预览的二进制文件
 // ============================================
 
-interface BinaryPlaceholderProps {
-  mimeType: string
-  fileName: string
-  onDownload?: () => void
-}
-
 function BinaryPlaceholder({ mimeType, fileName, onDownload }: BinaryPlaceholderProps) {
   const { t } = useTranslation(['components', 'common'])
 
@@ -1414,17 +1307,6 @@ function BinaryPlaceholder({ mimeType, fileName, onDownload }: BinaryPlaceholder
 // ============================================
 // Diff Preview
 // ============================================
-
-interface DiffPreviewProps {
-  hunks: Array<{
-    oldStart: number
-    oldLines: number
-    newStart: number
-    newLines: number
-    lines: string[]
-  }>
-  isResizing?: boolean
-}
 
 // 当前未在 Files 预览中使用，保留供 Changes 面板等复用
 export function DiffPreview({ hunks, isResizing = false }: DiffPreviewProps) {

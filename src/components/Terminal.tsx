@@ -11,7 +11,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { getPtyConnectUrl, updatePtySession } from '../api/pty'
-import { apiScopeKey, resolveApiScope, type ApiScope } from '../api/scope'
+import { apiScopeKey, resolveApiScope } from '../api/scope'
 import { useTheme } from '../hooks/useTheme'
 import { layoutStore, useLayoutStore } from '../store/layoutStore'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
@@ -20,9 +20,15 @@ import { parsePtyFrame } from '../utils/ptyProtocol'
 import { isTauri } from '../utils/tauri'
 import { copyTextToClipboard, readTextFromClipboard } from '../utils/clipboard'
 import { keybindingStore } from '../store/keybindingStore'
-
-const TERMINAL_FONT_FALLBACK =
-  "'Fira Code', 'Noto Sans Mono CJK SC', 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Noto Sans Mono', 'Ubuntu Mono', 'WenQuanYi Micro Hei Mono', 'DejaVu Sans Mono', 'Noto Sans CJK SC', ui-monospace, monospace"
+import type { MobileExtraKeysProps, ModifierKey, StickyModifiers, TerminalProps } from './Terminal.types'
+import {
+  MOBILE_EXTRA_KEY_ROWS,
+  TERMINAL_FONT_FALLBACK,
+  applyStickyModifiers,
+  createStickyModifiers,
+  hasStickyModifier,
+  isNativePasteShortcut,
+} from './Terminal.utils'
 
 // ============================================
 // 终端主题 - 与应用主题配合
@@ -133,80 +139,6 @@ function isDarkMode(): boolean {
 // CTRL / ALT 为粘滞修饰键，支持同时激活，下一次按键自动附带
 // ============================================
 
-type ModifierKey = 'ctrl' | 'alt'
-
-type StickyModifiers = Record<ModifierKey, boolean>
-
-function createStickyModifiers(): StickyModifiers {
-  return { ctrl: false, alt: false }
-}
-
-interface MobileExtraKey {
-  data?: string
-  label: string
-  modifier?: ModifierKey
-}
-
-const MOBILE_EXTRA_KEY_ROWS: MobileExtraKey[][] = [
-  [
-    { label: 'ESC', data: '\x1b' },
-    { label: '/', data: '/' },
-    { label: '-', data: '-' },
-    { label: 'HOME', data: '\x1b[H' },
-    { label: '↑', data: '\x1b[A' },
-    { label: 'END', data: '\x1b[F' },
-    { label: 'PGUP', data: '\x1b[5~' },
-  ],
-  [
-    { label: 'TAB', data: '\t' },
-    { label: 'CTRL', modifier: 'ctrl' },
-    { label: 'ALT', modifier: 'alt' },
-    { label: '←', data: '\x1b[D' },
-    { label: '↓', data: '\x1b[B' },
-    { label: '→', data: '\x1b[C' },
-    { label: 'PGDN', data: '\x1b[6~' },
-  ],
-]
-
-function toCtrlSequence(data: string): string {
-  if (data.length !== 1) return data
-
-  const upper = data.toUpperCase()
-  if (upper >= 'A' && upper <= 'Z') {
-    return String.fromCharCode(upper.charCodeAt(0) - 64)
-  }
-
-  switch (data) {
-    case ' ':
-    case '@':
-    case '`':
-      return '\x00'
-    case '[':
-      return '\x1b'
-    case '\\':
-      return '\x1c'
-    case ']':
-      return '\x1d'
-    case '^':
-      return '\x1e'
-    case '_':
-    case '/':
-      return '\x1f'
-    case '?':
-      return '\x7f'
-    default:
-      return data
-  }
-}
-
-function hasStickyModifier(sticky: StickyModifiers): boolean {
-  return sticky.ctrl || sticky.alt
-}
-
-function isNativePasteShortcut(event: KeyboardEvent) {
-  return (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'v'
-}
-
 function canReadClipboardText() {
   // Ctrl/Cmd+V uses ClipboardEvent.clipboardData, but smart right-click paste must actively call
   // navigator.clipboard.readText(), which browsers only expose in secure contexts.
@@ -216,20 +148,6 @@ function canReadClipboardText() {
     typeof navigator !== 'undefined' &&
     !!navigator.clipboard?.readText
   )
-}
-
-function applyStickyModifiers(data: string, sticky: StickyModifiers): string {
-  let output = data
-  if (sticky.ctrl) output = toCtrlSequence(output)
-  if (sticky.alt) output = `\x1b${output}`
-  return output
-}
-
-interface MobileExtraKeysProps {
-  onFocusTerminal: () => void
-  onSend: (data: string) => void
-  onToggleSticky: (modifier: ModifierKey) => void
-  stickyModifiers: StickyModifiers
 }
 
 function MobileExtraKeys({ onSend, stickyModifiers, onToggleSticky, onFocusTerminal }: MobileExtraKeysProps) {
@@ -299,12 +217,6 @@ function MobileExtraKeys({ onSend, stickyModifiers, onToggleSticky, onFocusTermi
 // ============================================
 // Terminal Component
 // ============================================
-
-interface TerminalProps {
-  ptyId: string
-  apiScope: ApiScope
-  isActive: boolean
-}
 
 export const Terminal = memo(function Terminal({ ptyId, apiScope, isActive }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)

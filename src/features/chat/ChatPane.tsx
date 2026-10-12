@@ -28,7 +28,7 @@ import {
   InlineToolRequestContext,
   type InlineToolRequestContextValue,
 } from './InlineToolRequestContext'
-import { ChatViewportProvider, canUseSplitPane, useChatViewportMaybe, type ChatViewportValue } from './chatViewport'
+import { ChatViewportProvider, canUseSplitPane, useChatViewportMaybe } from './chatViewport'
 import { useChatPageViewModel } from './useChatPageViewModel'
 import { SessionNavigationContext } from '../../contexts/SessionNavigationContext'
 import { paneLayoutStore } from '../../store/paneLayoutStore'
@@ -45,72 +45,8 @@ import type { MessageError } from '../../types/message'
 import { getInternalDragSnapshot, subscribeInternalDrag, subscribeInternalDrop } from '../../lib/internalDragCore'
 import { ErrorBoundary } from '../../components/ErrorBoundary'
 import { CommandProgressIndicator } from './CommandProgressIndicator'
-
-interface ChatPaneProps {
-  paneId: string
-  sessionId: string | null
-  isFocused: boolean
-  paneCount: number
-  displayMode: 'single' | 'split'
-  isPaneFullscreen?: boolean
-  onOpenSidebar?: () => void
-  onToggleRightPanel?: () => void
-  onOpenSettings?: () => void
-  showSidebarButton?: boolean
-  onSplitPane?: () => void
-  onTogglePaneFullscreen?: () => void
-  navigatePaneToSession: (paneId: string, sessionId: string, directory?: string) => void
-  navigatePaneHome: (paneId: string) => void
-}
-
-// ============================================
-// Compact viewport value (constant, never changes)
-// ============================================
-const PANE_VIEWPORT: ChatViewportValue = {
-  presentation: {
-    surfaceVariant: 'compact',
-    isCompact: true,
-  },
-  interaction: {
-    mode: 'pointer',
-    touchCapable: false,
-    sidebarBehavior: 'overlay',
-    rightPanelBehavior: 'overlay',
-    bottomPanelBehavior: 'overlay',
-    outlineInteraction: 'pointer',
-    enableCollapsedInputDock: false,
-  },
-  layout: {
-    viewportWidth: 800,
-    viewportHeight: 600,
-    surfaceWidth: 800,
-    surfaceMinWidth: 380,
-    sidebar: {
-      railWidth: 0,
-      requestedWidth: 0,
-      openWidth: 0,
-      dockedWidth: 0,
-      overlayWidth: 0,
-      hardMinWidth: 0,
-      preferredMinWidth: 0,
-      maxWidth: 0,
-      resizeMaxWidth: 0,
-    },
-    rightPanel: {
-      requestedWidth: 0,
-      dockedWidth: 0,
-      hardMinWidth: 0,
-      maxWidth: 0,
-      resizeMaxWidth: 0,
-    },
-    bottomPanel: {
-      maxHeight: 0,
-    },
-  },
-  actions: {
-    setSidebarRequestedWidth: () => {},
-  },
-}
+import type { ChatPaneProps } from './ChatPane.types'
+import { PANE_VIEWPORT } from './ChatPane.utils'
 
 let splitSessionNavigationToken = 0
 
