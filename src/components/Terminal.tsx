@@ -20,118 +20,23 @@ import { parsePtyFrame } from '../utils/ptyProtocol'
 import { isTauri } from '../utils/tauri'
 import { copyTextToClipboard, readTextFromClipboard } from '../utils/clipboard'
 import { keybindingStore } from '../store/keybindingStore'
-import type { ModifierKey, StickyModifiers, TerminalProps } from './Terminal.types'
+import type { TerminalProps } from './Terminal.types'
 import { MobileExtraKeys } from './TerminalMobileExtraKeys'
 import {
   TERMINAL_FONT_FALLBACK,
-  applyStickyModifiers,
-  createStickyModifiers,
-  hasStickyModifier,
+  getTerminalTheme,
+  isDarkMode,
   isNativePasteShortcut,
 } from './Terminal.utils'
+import {
+  useTerminalActiveFocus,
+  useTerminalPanelResizeEnd,
+  useTerminalResize,
+  useTerminalStickyModifiers,
+  useTerminalThemeObserver,
+  useTerminalTouchScroll,
+} from './Terminal.hooks'
 
-// ============================================
-// 终端主题 - 与应用主题配合
-// ============================================
-
-// 获取 CSS 变量的实际 HSL 值并转换为 hex
-function getHSLColor(varName: string): string {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim()
-  if (!value) return ''
-
-  // CSS 变量格式是 "h s% l%" 或 "h s l"
-  const parts = value.split(/\s+/)
-  if (parts.length < 3) return ''
-
-  const h = parseFloat(parts[0])
-  const s = parseFloat(parts[1]) / 100
-  const l = parseFloat(parts[2]) / 100
-
-  // HSL to RGB
-  const a = s * Math.min(l, 1 - l)
-  const f = (n: number) => {
-    const k = (n + h / 30) % 12
-    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1)
-    return Math.round(255 * color)
-      .toString(16)
-      .padStart(2, '0')
-  }
-  return `#${f(0)}${f(8)}${f(4)}`
-}
-
-function getTerminalTheme(isDark: boolean) {
-  const fgColor = getHSLColor('--text-100') || (isDark ? '#e8e0d5' : '#2d2a26')
-  // 背景色需要设为实际颜色（而非透明），因为 xterm 在处理反转视频（\e[7m）时
-  // 会用 theme.background 作为反转后的前景色。如果设为 #00000000，
-  // 反转视频的文字会变成黑色，且反转背景也会出现黑框。
-  // 实际的透明效果由 CSS `.xterm-viewport { background-color: transparent !important }` 实现。
-  const bgColor = getHSLColor('--bg-100') || (isDark ? '#1a1a1a' : '#f5f3ef')
-
-  if (isDark) {
-    return {
-      background: bgColor,
-      foreground: fgColor,
-      cursor: '#e8e0d5',
-      cursorAccent: '#1a1a1a',
-      selectionBackground: '#4a4540',
-      selectionForeground: '#e8e0d5',
-      selectionInactiveBackground: '#3a3530',
-      // ANSI colors - 暖色调适配
-      black: '#1a1a1a',
-      red: '#e55561',
-      green: '#8cc265',
-      yellow: '#d4a656',
-      blue: '#6cb6ff',
-      magenta: '#c678dd',
-      cyan: '#56b6c2',
-      white: '#abb2bf',
-      brightBlack: '#5c6370',
-      brightRed: '#ff6b7a',
-      brightGreen: '#a8e075',
-      brightYellow: '#e5b567',
-      brightBlue: '#82cfff',
-      brightMagenta: '#de8ef0',
-      brightCyan: '#70d0dc',
-      brightWhite: '#ffffff',
-    }
-  } else {
-    return {
-      background: bgColor,
-      foreground: fgColor,
-      cursor: '#2d2a26',
-      cursorAccent: '#f5f3ef',
-      selectionBackground: '#d5d0c8',
-      selectionForeground: '#2d2a26',
-      selectionInactiveBackground: '#e5e0d8',
-      // ANSI colors - 浅色模式
-      // 注意：在浅色背景下，white/brightWhite 需要是深色，
-      // 因为 PowerShell 等 shell 会用这些 ANSI 颜色渲染用户输入文本
-      black: '#f5f3ef',
-      red: '#c9514a',
-      green: '#4a9f4a',
-      yellow: '#b58900',
-      blue: '#3a7fc9',
-      magenta: '#a04a9f',
-      cyan: '#3a9f9f',
-      white: '#655f58',
-      brightBlack: '#6b6560',
-      brightRed: '#e55561',
-      brightGreen: '#6ab56a',
-      brightYellow: '#d4a020',
-      brightBlue: '#5a9fe0',
-      brightMagenta: '#c06abf',
-      brightCyan: '#5abfbf',
-      brightWhite: '#2d2a26',
-    }
-  }
-}
-
-function isDarkMode(): boolean {
-  const mode = document.documentElement.getAttribute('data-mode')
-  if (mode === 'dark') return true
-  if (mode === 'light') return false
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-}
 
 function canReadClipboardText() {
   // Ctrl/Cmd+V uses ClipboardEvent.clipboardData, but smart right-click paste must actively call
@@ -152,11 +57,8 @@ export const Terminal = memo(function Terminal({ ptyId, apiScope, isActive }: Te
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalScopeRef = useRef(resolveApiScope(apiScope))
   const terminalScopeKeyRef = useRef(apiScopeKey(terminalScopeRef.current))
-  const [isTouchScrolling, setIsTouchScrolling] = useState(false)
-  const [stickyModifiers, setStickyModifiers] = useState<StickyModifiers>(() => createStickyModifiers())
   const terminalRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
-  const stickyModifiersRef = useRef<StickyModifiers>(createStickyModifiers())
   const cursorRef = useRef(0)
   const transportSendRef = useRef<((data: string) => void) | null>(null)
   const transportDisconnectRef = useRef<(() => void) | null>(null)
@@ -172,37 +74,12 @@ export const Terminal = memo(function Terminal({ ptyId, apiScope, isActive }: Te
   const terminalCopyOnSelectRef = useRef(terminalCopyOnSelect)
   const terminalRightClickPasteRef = useRef(terminalRightClickPaste)
 
-  const clearStickyModifiers = useCallback(() => {
-    const next = createStickyModifiers()
-    stickyModifiersRef.current = next
-    setStickyModifiers(next)
-  }, [])
-
-  const toggleStickyModifier = useCallback((modifier: ModifierKey) => {
-    setStickyModifiers(prev => {
-      const next = { ...prev, [modifier]: !prev[modifier] }
-      stickyModifiersRef.current = next
-      return next
-    })
-  }, [])
+  const { stickyModifiers, clearStickyModifiers, toggleStickyModifier, sendTerminalData } =
+    useTerminalStickyModifiers(transportSendRef)
 
   const focusTerminal = useCallback(() => {
     terminalRef.current?.focus()
   }, [])
-
-  const sendTerminalData = useCallback(
-    (data: string) => {
-      const sticky = stickyModifiersRef.current
-      const outgoing = applyStickyModifiers(data, sticky)
-
-      transportSendRef.current?.(outgoing)
-
-      if (hasStickyModifier(sticky)) {
-        clearStickyModifiers()
-      }
-    },
-    [clearStickyModifiers],
-  )
 
   useEffect(() => {
     manualTerminalTitlesRef.current = manualTerminalTitles
@@ -636,179 +513,25 @@ export const Terminal = memo(function Terminal({ ptyId, apiScope, isActive }: Te
     }
   }, [ptyId, hasBeenActive, clearStickyModifiers, sendTerminalData, preferTouchUi])
 
-  useEffect(() => {
-    const container = containerRef.current
-    const terminal = terminalRef.current
-    if (!container || !terminal) return
-    if (!touchCapable) return
-
-    let touchStartY = 0
-    let scrollStart = 0
-    let lastTouchY = 0
-    let lastTouchTime = 0
-    let velocity = 0
-    let momentumRaf = 0
-
-    const stopMomentum = () => {
-      if (momentumRaf) {
-        cancelAnimationFrame(momentumRaf)
-        momentumRaf = 0
-      }
-    }
-
-    const startMomentum = () => {
-      const viewport = terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null
-      if (!viewport || Math.abs(velocity) < 0.5) {
-        setIsTouchScrolling(false)
-        return
-      }
-
-      const friction = 0.95
-      const step = () => {
-        velocity *= friction
-        if (Math.abs(velocity) < 0.5) {
-          momentumRaf = 0
-          // 惯性结束后延迟淡出滚动条
-          setTimeout(() => setIsTouchScrolling(false), 600)
-          return
-        }
-        viewport.scrollTop += velocity
-        momentumRaf = requestAnimationFrame(step)
-      }
-      momentumRaf = requestAnimationFrame(step)
-    }
-
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return
-      stopMomentum()
-      const y = e.touches[0].clientY
-      touchStartY = y
-      lastTouchY = y
-      lastTouchTime = Date.now()
-      velocity = 0
-      const viewport = terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null
-      scrollStart = viewport?.scrollTop ?? 0
-      setIsTouchScrolling(false)
-    }
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return
-      const viewport = terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null
-      if (!viewport) return
-
-      const y = e.touches[0].clientY
-      const delta = touchStartY - y
-
-      if (Math.abs(delta) > 6) {
-        setIsTouchScrolling(true)
-      }
-
-      // 计算速度（用于惯性）
-      const now = Date.now()
-      const dt = now - lastTouchTime
-      if (dt > 0) {
-        velocity = ((lastTouchY - y) / dt) * 16 // 归一化到每帧 px
-      }
-      lastTouchY = y
-      lastTouchTime = now
-
-      viewport.scrollTop = scrollStart + delta
-      if (touchCapable) {
-        e.preventDefault()
-      }
-    }
-
-    const handleTouchEnd = () => {
-      startMomentum()
-    }
-
-    container.addEventListener('touchstart', handleTouchStart, { passive: true })
-    container.addEventListener('touchmove', handleTouchMove, { passive: false })
-    container.addEventListener('touchend', handleTouchEnd)
-
-    return () => {
-      stopMomentum()
-      container.removeEventListener('touchstart', handleTouchStart)
-      container.removeEventListener('touchmove', handleTouchMove)
-      container.removeEventListener('touchend', handleTouchEnd)
-    }
-  }, [isActive, touchCapable])
+  const { isTouchScrolling } = useTerminalTouchScroll({ containerRef, terminalRef, touchCapable, isActive })
 
   // 处理大小变化
-  useEffect(() => {
-    if (!isActive || !fitAddonRef.current || !terminalRef.current) return
-
-    const handleResize = () => {
-      if (isPanelResizingRef.current) return
-
-      if (resizeTimeoutRef.current) {
-        clearTimeout(resizeTimeoutRef.current)
-      }
-      resizeTimeoutRef.current = window.setTimeout(() => {
-        if (fitAddonRef.current && terminalRef.current && !isPanelResizingRef.current) {
-          fitAddonRef.current.fit()
-          const { cols, rows } = terminalRef.current
-          updatePtySession(ptyId, { size: { cols, rows } }, terminalScopeRef.current).catch(() => {})
-        }
-      }, 16)
-    }
-
-    window.addEventListener('resize', handleResize)
-    const resizeObserver = new ResizeObserver(handleResize)
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current)
-    }
-
-    const handlePanelResizeStart = () => {
-      isPanelResizingRef.current = true
-    }
-    window.addEventListener('panel-resize-start', handlePanelResizeStart)
-
-    handleResize()
-
-    return () => {
-      window.removeEventListener('resize', handleResize)
-      window.removeEventListener('panel-resize-start', handlePanelResizeStart)
-      resizeObserver.disconnect()
-      if (resizeTimeoutRef.current) {
-        clearTimeout(resizeTimeoutRef.current)
-        resizeTimeoutRef.current = null
-      }
-    }
-  }, [isActive, ptyId])
+  useTerminalResize({
+    containerRef,
+    terminalRef,
+    fitAddonRef,
+    isPanelResizingRef,
+    resizeTimeoutRef,
+    terminalScopeRef,
+    ptyId,
+    isActive,
+  })
 
   // 主题变化时更新
-  useEffect(() => {
-    const observer = new MutationObserver(mutations => {
-      for (const mutation of mutations) {
-        if (mutation.attributeName === 'data-mode') {
-          if (terminalRef.current) {
-            terminalRef.current.options.theme = getTerminalTheme(isDarkMode())
-          }
-          break
-        }
-      }
-    })
-
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-mode'],
-    })
-
-    return () => observer.disconnect()
-  }, [])
+  useTerminalThemeObserver(terminalRef)
 
   // 当 tab 变为活动状态时，聚焦并重新 fit
-  useEffect(() => {
-    if (isActive && terminalRef.current) {
-      terminalRef.current.focus()
-      if (fitAddonRef.current) {
-        requestAnimationFrame(() => {
-          fitAddonRef.current?.fit()
-        })
-      }
-    }
-  }, [isActive])
+  useTerminalActiveFocus({ terminalRef, fitAddonRef, isActive })
 
   useEffect(() => {
     if (!isActive) {
@@ -817,24 +540,7 @@ export const Terminal = memo(function Terminal({ ptyId, apiScope, isActive }: Te
   }, [isActive, clearStickyModifiers])
 
   // 监听面板 resize 结束事件
-  useEffect(() => {
-    if (!isActive) return
-
-    const handlePanelResizeEnd = () => {
-      isPanelResizingRef.current = false
-      if (fitAddonRef.current && terminalRef.current) {
-        requestAnimationFrame(() => {
-          if (!fitAddonRef.current || !terminalRef.current) return
-          fitAddonRef.current.fit()
-          const { cols, rows } = terminalRef.current
-          updatePtySession(ptyId, { size: { cols, rows } }, terminalScopeRef.current).catch(() => {})
-        })
-      }
-    }
-
-    window.addEventListener('panel-resize-end', handlePanelResizeEnd)
-    return () => window.removeEventListener('panel-resize-end', handlePanelResizeEnd)
-  }, [isActive, ptyId])
+  useTerminalPanelResizeEnd({ terminalRef, fitAddonRef, isPanelResizingRef, terminalScopeRef, ptyId, isActive })
 
   return (
     <>
