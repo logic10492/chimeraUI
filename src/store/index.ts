@@ -102,3 +102,6 @@ export {
   importUpdateSettingsBackup,
 } from './updateStore'
 export type { UpdateRelease, UpdateSettingsBackup, UpdateState } from './updateStore'
+
+export { onboardingStore, OnboardingStore, useOnboardingStore } from './onboardingStore'
+export type { OnboardingState, OnboardingStatus } from './onboardingStore'

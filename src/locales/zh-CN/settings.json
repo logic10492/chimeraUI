@@ -2,6 +2,9 @@
   "title": "设置",
   "subtitle": "自定义界面、行为和服务器配置",
   "closeSettings": "关闭设置",
+  "onboarding": {
+    "skip": "稍后设置"
+  },
   "version": "Chimera v{{version}}",
   "search": {
     "placeholder": "搜索设置",

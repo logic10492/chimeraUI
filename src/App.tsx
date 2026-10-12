@@ -15,6 +15,7 @@ import { useCloseServiceDialog } from './hooks/useCloseServiceDialog'
 import { useWakeLock } from './hooks/useWakeLock'
 import { usePresenceHeartbeat } from './hooks/usePresenceHeartbeat'
 import type { KeybindingHandlers } from './hooks/useKeybindings'
+import { refreshModels } from './hooks/useModels'
 import { keybindingStore } from './store/keybindingStore'
 import {
   layoutStore,
@@ -24,6 +25,9 @@ import {
   usePaneControllers,
   usePaneLayout,
   updateStore,
+  onboardingStore,
+  useOnboardingStore,
+  type OnboardingStatus,
 } from './store'
 import {
   ChatViewportProvider,
@@ -97,6 +101,10 @@ function App() {
     splitPaneEnabled,
   )
   const focusedController = usePaneController(paneLayout.focusedPaneId)
+  const focusedControllerRef = useRef(focusedController)
+  useEffect(() => {
+    focusedControllerRef.current = focusedController
+  }, [focusedController])
   const paneControllers = usePaneControllers()
   const syncingFromRouteRef = useRef(false)
   const lastRouteSessionIdRef = useRef<string | null | undefined>(undefined)
@@ -527,7 +535,45 @@ function App() {
   const openAboutSettings = useCallback(() => {
     openSettingsTab('about')
   }, [openSettingsTab])
-  const closeSettings = useCallback(() => setSettingsDialogOpen(false), [])
+  const closeSettings = useCallback(() => {
+    setSettingsDialogOpen(false)
+    const onboardingStatus = onboardingStore.getSnapshot().status
+    if (onboardingStatus === 'needs-provider') onboardingStore.skip()
+    else if (onboardingStatus === 'needs-model') onboardingStore.complete()
+  }, [])
+
+  // W2 C.3 首启状态机：检测零 connected provider，驱动自动打开 Provider 设置
+  // 与连接成功后的模型选择引导。用户关闭设置对话框即视为「以后再说」。
+  const onboarding = useOnboardingStore()
+  useEffect(() => {
+    void onboardingStore.check(currentDirectory)
+  }, [currentDirectory])
+
+  const onboardingHandledRef = useRef<OnboardingStatus>('idle')
+  useEffect(() => {
+    const handleOnboarding = () => {
+      const status = onboardingStore.getSnapshot().status
+      if (onboardingHandledRef.current === status) return
+      onboardingHandledRef.current = status
+      if (status === 'needs-provider') {
+        openSettingsTab('providers')
+        return
+      }
+      if (status === 'needs-model') {
+        setSettingsDialogOpen(false)
+        void refreshModels()
+        requestAnimationFrame(() => focusedControllerRef.current?.openModelSelector())
+        onboardingStore.complete()
+      }
+    }
+    return onboardingStore.subscribe(handleOnboarding)
+  }, [openSettingsTab])
+
+  const skipOnboarding = useCallback(() => {
+    onboardingStore.skip()
+    setSettingsDialogOpen(false)
+  }, [])
+  const onboardingActive = onboarding.status === 'needs-provider' || onboarding.status === 'needs-model'
 
   const renderPaneLeaf = useCallback(
     (paneId: string, paneSessionId: string | null) => (
@@ -1057,7 +1103,13 @@ function App() {
         </div>
 
         <Suspense fallback={null}>
-          <SettingsDialog isOpen={settingsDialogOpen} onClose={closeSettings} initialTab={settingsInitialTab} />
+          <SettingsDialog
+            isOpen={settingsDialogOpen}
+            onClose={closeSettings}
+            initialTab={settingsInitialTab}
+            onboardingActive={onboardingActive}
+            onSkipOnboarding={skipOnboarding}
+          />
           <CommandPalette
             isOpen={commandPaletteOpen}
             onClose={() => setCommandPaletteOpen(false)}

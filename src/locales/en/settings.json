@@ -2,6 +2,9 @@
   "title": "Settings",
   "subtitle": "Customize UI, behavior, and server setup",
   "closeSettings": "Close settings",
+  "onboarding": {
+    "skip": "Set up later"
+  },
   "version": "Chimera v{{version}}",
   "search": {
     "placeholder": "Search settings",

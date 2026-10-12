@@ -57,6 +57,9 @@ interface SettingsDialogProps {
   isOpen: boolean
   onClose: () => void
   initialTab?: SettingsTab | 'general'
+  /** 首启 onboarding 进行中：在标题栏提供「以后再说」出口 */
+  onboardingActive?: boolean
+  onSkipOnboarding?: () => void
 }
 
 // ============================================
@@ -176,7 +179,13 @@ function TabContent({ tab }: { tab: SettingsTab }) {
 // Main Settings Dialog
 // ============================================
 
-export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: SettingsDialogProps) {
+export function SettingsDialog({
+  isOpen,
+  onClose,
+  initialTab = 'servers',
+  onboardingActive = false,
+  onSkipOnboarding,
+}: SettingsDialogProps) {
   const { t } = useTranslation(['settings', 'commands'])
   const isMobile = useIsMobile()
   const hasDesktopCapabilities = isTauriDesktop()
@@ -289,8 +298,7 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
               (!item.targetContext || candidate.dataset.settingContext === item.targetContext),
           )
           const target =
-            matchingTargets[0] ??
-            candidates.find(candidate => candidate.dataset.settingLabel === item.fallbackLabel)
+            matchingTargets[0] ?? candidates.find(candidate => candidate.dataset.settingLabel === item.fallbackLabel)
           if (!target) return
 
           scrollRef.current?.querySelector('.settings-search-highlight')?.classList.remove('settings-search-highlight')
@@ -386,8 +394,17 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
           {/* Sticky Header + Tabs */}
           <div className="shrink-0">
             {/* Title bar */}
-            <div className="flex items-center justify-center px-4 pt-3 pb-2">
+            <div className="relative flex items-center justify-center px-4 pt-3 pb-2">
               <div className="text-[length:var(--fs-heading-3)] font-semibold text-text-100">{t('title')}</div>
+              {onboardingActive && onSkipOnboarding && (
+                <button
+                  type="button"
+                  onClick={onSkipOnboarding}
+                  className="absolute right-3 text-[length:var(--fs-sm)] font-medium text-text-400 hover:text-text-200 transition-colors"
+                >
+                  {t('onboarding.skip')}
+                </button>
+              )}
             </div>
             <div className="px-3 pb-2">{search}</div>
 
@@ -515,13 +532,24 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
                 {activeTabMeta.description}
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-text-400 hover:text-text-200 hover:bg-bg-100 rounded-md transition-colors -mr-1 shrink-0"
-              aria-label={t('closeSettings')}
-            >
-              <CloseIcon size={18} />
-            </button>
+            <div className="flex items-center gap-1 shrink-0">
+              {onboardingActive && onSkipOnboarding && (
+                <button
+                  type="button"
+                  onClick={onSkipOnboarding}
+                  className="px-2.5 py-1.5 text-[length:var(--fs-sm)] font-medium text-text-400 hover:text-text-200 hover:bg-bg-100 rounded-md transition-colors"
+                >
+                  {t('onboarding.skip')}
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="p-2 text-text-400 hover:text-text-200 hover:bg-bg-100 rounded-md transition-colors -mr-1 shrink-0"
+                aria-label={t('closeSettings')}
+              >
+                <CloseIcon size={18} />
+              </button>
+            </div>
           </div>
 
           {/* Scroll area - single scroll container for all tab content */}
