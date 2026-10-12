@@ -404,3 +404,14 @@ export function computeWordDiff(
 
   return { left, right, changes: mergedChanges }
 }
+
+// ============================================
+// DOM alignment (wrapped views)
+// ============================================
+
+/** 将 delete change bar 的背景位置对齐到行的 y 偏移（wrapped 视图测量后调用） */
+export function alignDeleteChangeBars(container: HTMLElement, yOffset: number) {
+  for (const bar of container.querySelectorAll<HTMLElement>('.diff-change-bar-delete')) {
+    bar.style.backgroundPositionY = `${-yOffset}px`
+  }
+}
