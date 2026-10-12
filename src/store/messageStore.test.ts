@@ -473,4 +473,33 @@ describe('messageStore tool streaming preview', () => {
     sendDelta('raw', ': "abc"}')
     expect(toolState().raw).toBe('{"content": "abc"}')
   })
+
+  it('stores and normalizes the server session.model (id → modelID)', () => {
+    messageStore.setMessages('child-1', [], {
+      sessionModel: { id: 'qwen3.8-27b', providerID: 'ali-inc', variant: 'high' },
+    })
+
+    expect(messageStore.getSessionModel('child-1')).toEqual({
+      providerID: 'ali-inc',
+      modelID: 'qwen3.8-27b',
+      variant: 'high',
+    })
+  })
+
+  it('keeps the previous session.model when metadata omits it', () => {
+    messageStore.setMessages('child-1', [], { sessionModel: { id: 'qwen3.8-27b', providerID: 'ali-inc' } })
+    messageStore.updateSessionMetadata('child-1', { title: 'renamed' })
+
+    expect(messageStore.getSessionModel('child-1')).toEqual({
+      providerID: 'ali-inc',
+      modelID: 'qwen3.8-27b',
+      variant: undefined,
+    })
+  })
+
+  it('reports a null session.model for a root session', () => {
+    messageStore.setMessages('root-1', [])
+
+    expect(messageStore.getSessionModel('root-1')).toBeNull()
+  })
 })

@@ -193,4 +193,66 @@ describe('useModelSelection', () => {
 
     await waitFor(() => expect(result.current.selectedModelKey).toBe('openai:gpt-4o-mini'))
   })
+
+  it('prefers the session model over global and session-local selections', () => {
+    storage.set(STORAGE_KEY_SELECTED_MODEL, 'openai:gpt-4o-mini')
+    sessionSelections.set('child-1', { modelKey: 'openai:gpt-4o-mini' })
+
+    const { result } = renderHook(() =>
+      useModelSelection({
+        models: MODELS,
+        sessionId: 'child-1',
+        sessionModel: { providerID: 'openai', modelID: 'gpt-4.1', variant: 'fast' },
+      }),
+    )
+
+    expect(result.current.selectedModelKey).toBe('openai:gpt-4.1')
+    expect(result.current.selectedVariant).toBe('fast')
+    expect(result.current.currentModel?.name).toBe('GPT-4.1')
+  })
+
+  it('applies the session model when the model list arrives late', async () => {
+    const { result, rerender } = renderHook(
+      ({ models }) =>
+        useModelSelection({
+          models,
+          sessionId: 'child-1',
+          sessionModel: { providerID: 'openai', modelID: 'gpt-4o-mini', variant: 'balanced' },
+        }),
+      { initialProps: { models: [] as ModelInfo[] } },
+    )
+
+    expect(result.current.selectedModelKey).toBeNull()
+
+    rerender({ models: MODELS })
+
+    await waitFor(() => expect(result.current.selectedModelKey).toBe('openai:gpt-4o-mini'))
+    expect(result.current.selectedVariant).toBe('balanced')
+  })
+
+  it('keeps root-session behavior unchanged when no session model is present', () => {
+    storage.set(STORAGE_KEY_SELECTED_MODEL, 'openai:gpt-4o-mini')
+
+    const { result } = renderHook(() =>
+      useModelSelection({ models: MODELS, sessionId: 'root-1', sessionModel: null }),
+    )
+
+    expect(result.current.selectedModelKey).toBe('openai:gpt-4o-mini')
+  })
+
+  it('switches off the global model when the session model arrives after mount', async () => {
+    storage.set(STORAGE_KEY_SELECTED_MODEL, 'openai:gpt-4.1')
+
+    const { result, rerender } = renderHook(
+      ({ sessionModel }: { sessionModel: { providerID: string; modelID: string; variant?: string } | null }) =>
+        useModelSelection({ models: MODELS, sessionId: 'child-1', sessionModel }),
+      { initialProps: { sessionModel: null as null | { providerID: string; modelID: string; variant?: string } } },
+    )
+
+    expect(result.current.selectedModelKey).toBe('openai:gpt-4.1')
+
+    rerender({ sessionModel: { providerID: 'openai', modelID: 'gpt-4o-mini' } })
+
+    await waitFor(() => expect(result.current.selectedModelKey).toBe('openai:gpt-4o-mini'))
+  })
 })

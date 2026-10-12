@@ -14,10 +14,13 @@ import {
 } from '../utils/modelUtils'
 import { serverStorage } from '../utils/perServerStorage'
 import { STORAGE_KEY_SELECTED_MODEL } from '../constants'
+import type { SessionModelRef } from '../store/messageStoreTypes'
 
 interface UseModelSelectionOptions {
   models: ModelInfo[]
   sessionId?: string | null
+  /** 会话自身默认模型（服务端 session.model，已归一化为 modelID）；子会话优先于本地/全局选择 */
+  sessionModel?: SessionModelRef | null
 }
 
 interface UseModelSelectionReturn {
@@ -32,16 +35,31 @@ interface UseModelSelectionReturn {
   ) => void
 }
 
-export function useModelSelection({ models, sessionId = null }: UseModelSelectionOptions): UseModelSelectionReturn {
+export function useModelSelection({
+  models,
+  sessionId = null,
+  sessionModel = null,
+}: UseModelSelectionOptions): UseModelSelectionReturn {
   const sessionSelection = sessionId ? getSessionModelSelection(sessionId) : undefined
   const initialSessionSelection = sessionId ? getSessionModelSelection(sessionId) : undefined
-  const initialSessionModel = initialSessionSelection ? findModelByKey(models, initialSessionSelection.modelKey) : undefined
+  const initialSessionModelKey = sessionModel ? `${sessionModel.providerID}:${sessionModel.modelID}` : null
+  const initialSessionModel = initialSessionModelKey ? findModelByKey(models, initialSessionModelKey) : undefined
+  const initialStoredModel = initialSessionSelection ? findModelByKey(models, initialSessionSelection.modelKey) : undefined
 
   const [{ selectedModelKey, selectedVariant }, setSelection] = useState<{
     selectedModelKey: string | null
     selectedVariant: string | undefined
   }>(() => {
-    if (initialSessionSelection && initialSessionModel) {
+    // 会话自身模型（子会话）优先
+    if (initialSessionModelKey && initialSessionModel) {
+      return {
+        selectedModelKey: initialSessionModelKey,
+        selectedVariant: sessionModel?.variant ?? getModelVariantPref(initialSessionModelKey),
+      }
+    }
+
+    // 其次该会话上次的用户选择
+    if (initialSessionSelection && initialStoredModel) {
       return {
         selectedModelKey: initialSessionSelection.modelKey,
         selectedVariant: initialSessionSelection.variant ?? getModelVariantPref(initialSessionSelection.modelKey),
@@ -55,7 +73,8 @@ export function useModelSelection({ models, sessionId = null }: UseModelSelectio
       selectedVariant: initialModelKey ? getModelVariantPref(initialModelKey) : undefined,
     }
   })
-  const hydratedSessionRef = useRef<string | null>(initialSessionSelection && !initialSessionModel ? null : sessionId)
+  const hydratedSessionRef = useRef<string | null>(initialSessionSelection && !initialStoredModel ? null : sessionId)
+  const sessionModelAppliedRef = useRef<string | null>(null)
   const skipPersistenceRef = useRef<string | null>(null)
 
   const persistedModel = selectedModelKey ? findModelByKey(models, selectedModelKey) : undefined
@@ -74,6 +93,25 @@ export function useModelSelection({ models, sessionId = null }: UseModelSelectio
     }
 
     if (hydratedSessionRef.current === sessionId) return
+
+    // 会话自身模型（子会话）优先于本地存储与全局选择
+    if (sessionModel) {
+      const modelKey = `${sessionModel.providerID}:${sessionModel.modelID}`
+      const resolvedSessionModel = findModelByKey(models, modelKey)
+      if (resolvedSessionModel) {
+        setSelection({
+          selectedModelKey: modelKey,
+          selectedVariant: sessionModel.variant ?? getModelVariantPref(modelKey),
+        })
+        skipPersistenceRef.current = sessionId
+        sessionModelAppliedRef.current = sessionId
+        hydratedSessionRef.current = sessionId
+        return
+      }
+      // 模型列表尚未就绪 → 不置位，等 models 到位后由下方 effect 重试
+      if (models.length === 0) return
+      // 模型存在但当前不可用（被隐藏）→ 退回会话本地选择
+    }
 
     if (!sessionSelection) {
       hydratedSessionRef.current = sessionId
@@ -98,7 +136,30 @@ export function useModelSelection({ models, sessionId = null }: UseModelSelectio
     })
     skipPersistenceRef.current = sessionId
     hydratedSessionRef.current = sessionId
-  }, [models, sessionId, sessionSelection])
+  }, [models, sessionId, sessionSelection, sessionModel])
+
+  // 会话自身模型可能晚于会话切换到达（getSession 异步）：模型列表就绪后补一次解析，
+  // 避免永久停留在全局/上一个会话的模型。
+  useEffect(() => {
+    if (!sessionId || !sessionModel) return
+    if (sessionModelAppliedRef.current === sessionId) return
+
+    const modelKey = `${sessionModel.providerID}:${sessionModel.modelID}`
+    if (!findModelByKey(models, modelKey)) {
+      // 模型列表已就绪仍无法解析（被隐藏）→ 放弃，避免无限重试
+      if (models.length > 0) sessionModelAppliedRef.current = sessionId
+      return
+    }
+
+    const nextVariant = sessionModel.variant ?? getModelVariantPref(modelKey)
+    setSelection(prev =>
+      prev.selectedModelKey === modelKey && prev.selectedVariant === nextVariant
+        ? prev
+        : { selectedModelKey: modelKey, selectedVariant: nextVariant },
+    )
+    skipPersistenceRef.current = sessionId
+    sessionModelAppliedRef.current = sessionId
+  }, [models, sessionId, sessionModel])
 
   useLayoutEffect(() => {
     if (sessionId && sessionSelection && hydratedSessionRef.current !== sessionId) return
@@ -131,8 +192,10 @@ export function useModelSelection({ models, sessionId = null }: UseModelSelectio
         selectedModelKey: modelKey,
         selectedVariant: getModelVariantPref(modelKey),
       })
+      // 用户显式选择后不再被迟到的 session.model 覆盖
+      sessionModelAppliedRef.current = sessionId
     },
-    [resolvedModelKey, resolvedSelectedVariant],
+    [resolvedModelKey, resolvedSelectedVariant, sessionId],
   )
 
   // Variant 变化时保存偏好

@@ -19,6 +19,11 @@ export interface RevertHistoryItem {
   variant?: string
   agent?: string
 }
+export interface SessionModelRef {
+  providerID: string
+  modelID: string
+  variant?: string
+}
 
 export interface SessionState {
   /** 所有消息（包括被撤销的） */
@@ -39,6 +44,8 @@ export interface SessionState {
   title?: string
   /** 分享链接 */
   shareUrl?: string
+  /** 会话自身默认模型（服务端 session.model）；子会话用于头部展示，根会话为 null */
+  sessionModel?: SessionModelRef | null
   /** 断线重连后是否需要重新全量拉取 */
   isStale: boolean
 }
@@ -78,6 +85,7 @@ export interface SessionStateSnapshot {
   hasMoreHistory: boolean
   directory: string
   title: string | null
+  sessionModel: SessionModelRef | null
 }
 
 // Re-export Part for convenience

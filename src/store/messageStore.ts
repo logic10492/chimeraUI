@@ -12,10 +12,10 @@ import type { Message, MessageError, Part, FilePart, AgentPart, StreamingHunk } 
 import type { ApiMessageWithParts, ApiMessage, ApiPart, ApiSession, Attachment } from '../api/types'
 import { logger } from '../utils/logger'
 import { isUserUIMessage, toUIMessage, toUIMessageInfo, toUIPart } from '../utils/messageConversion'
-import type { RevertState, RevertHistoryItem, SessionState, SendRollbackSnapshot } from './messageStoreTypes'
+import type { RevertState, RevertHistoryItem, SessionState, SessionModelRef, SendRollbackSnapshot } from './messageStoreTypes'
 
 // Re-export types for consumers
-export type { RevertState, RevertHistoryItem, SessionState, SendRollbackSnapshot } from './messageStoreTypes'
+export type { RevertState, RevertHistoryItem, SessionState, SessionModelRef, SendRollbackSnapshot } from './messageStoreTypes'
 
 type Subscriber = () => void
 
@@ -34,6 +34,12 @@ function preferCompatibleText(local: string, incoming: string): string {
 
 function partHasText(part: Part): part is Part & { text: string } {
   return 'text' in part && typeof (part as { text?: unknown }).text === 'string'
+}
+
+/** 服务端 session.model 使用 `id`，统一归一化为 WebUI 的 `modelID` 形状。 */
+function toSessionModelRef(model: ApiSession['model'] | null | undefined): SessionModelRef | null {
+  if (!model) return null
+  return { providerID: model.providerID, modelID: model.id, variant: model.variant }
 }
 
 function mergePartPreferLiveText(local: Part | undefined, incoming: Part): Part {
@@ -300,6 +306,11 @@ class MessageStore {
     return this.sessions.get(sessionId)?.shareUrl
   }
 
+  getSessionModel(sessionId: string | null): SessionModelRef | null {
+    if (!sessionId) return null
+    return this.sessions.get(sessionId)?.sessionModel ?? null
+  }
+
   getLoadState(sessionId: string | null): SessionState['loadState'] {
     if (!sessionId) return 'idle'
     return this.sessions.get(sessionId)?.loadState ?? 'idle'
@@ -329,6 +340,7 @@ class MessageStore {
         title: undefined,
         loadError: undefined,
         shareUrl: undefined,
+        sessionModel: null,
         isStale: false,
       }
       this.sessions.set(sessionId, state)
@@ -378,6 +390,7 @@ class MessageStore {
       loadState?: SessionState['loadState']
       shareUrl?: string
       loadError?: MessageError
+      sessionModel?: ApiSession['model'] | null
     },
   ) {
     const state = this.sessions.get(sessionId)
@@ -389,6 +402,7 @@ class MessageStore {
     if (options.loadState !== undefined) state.loadState = options.loadState
     if (options.loadError !== undefined) state.loadError = options.loadError
     if (options.shareUrl !== undefined) state.shareUrl = options.shareUrl
+    if (options.sessionModel !== undefined) state.sessionModel = toSessionModelRef(options.sessionModel)
 
     this.notify([sessionId])
   }
@@ -456,6 +470,7 @@ class MessageStore {
       hasMoreHistory?: boolean
       revertState?: ApiSession['revert'] | null
       shareUrl?: string
+      sessionModel?: ApiSession['model'] | null
     },
   ) {
     const state = this.ensureSession(sessionId)
@@ -479,6 +494,7 @@ class MessageStore {
     state.directory = options?.directory ?? ''
     if (options?.title !== undefined) state.title = options.title
     state.shareUrl = options?.shareUrl
+    if (options?.sessionModel !== undefined) state.sessionModel = toSessionModelRef(options.sessionModel)
     state.isStale = false
 
     // Revert 状态

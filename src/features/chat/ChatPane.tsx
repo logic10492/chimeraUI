@@ -27,7 +27,7 @@ import { useChatPageViewModel } from './useChatPageViewModel'
 import { SessionNavigationContext } from '../../contexts/SessionNavigationContext'
 import { paneLayoutStore } from '../../store/paneLayoutStore'
 import { autoApproveStore } from '../../store/autoApproveStore'
-import { messageStore, paneControllerStore, useHiddenModelKeys } from '../../store'
+import { messageStore, paneControllerStore, useHiddenModelKeys, useSessionState } from '../../store'
 import { restoreModelSelection } from '../../utils/sessionHelpers'
 import { findModelByKey, getModelKey } from '../../utils/modelUtils'
 import { useTheme } from '../../hooks/useTheme'
@@ -165,6 +165,9 @@ export const ChatPane = memo(function ChatPane({
     () => models.filter(model => !hiddenModelKeys.includes(getModelKey(model))),
     [models, hiddenModelKeys],
   )
+  // 会话自身默认模型（服务端 session.model）；子会话头部应显示它而不是全局最近使用的模型
+  const sessionState = useSessionState(sessionId)
+  const sessionModel = sessionState?.sessionModel ?? null
   const {
     selectedModelKey,
     selectedVariant,
@@ -172,7 +175,7 @@ export const ChatPane = memo(function ChatPane({
     handleModelChange,
     handleVariantChange,
     restoreFromMessage,
-  } = useModelSelection({ models: visibleModels, sessionId })
+  } = useModelSelection({ models: visibleModels, sessionId, sessionModel })
 
   // ============================================
   // Full Auto Hint
@@ -450,7 +453,9 @@ export const ChatPane = memo(function ChatPane({
     }
   }, [inputRestoreContent, visibleModels, restoreFromMessage])
 
-  // session 切换：只在 routeSessionId 变化时，从最后一条 user 消息恢复模型
+  // session 切换：优先会话自身模型（session.model，由 useModelSelection 解析），
+  // 否则从最后一条 user 消息恢复模型。仅在真正解析成功或确认无可恢复时才置位，
+  // 模型列表迟到时保持未置位以便重试，避免永久卡在全局模型。
   const restoredSessionRef = useRef<string | null>(null)
   useEffect(() => {
     // 没有 session、或者这个 session 已经恢复过了 → 跳过
@@ -458,7 +463,20 @@ export const ChatPane = memo(function ChatPane({
     // messages 还没加载完 → 等下次
     if (messages.length === 0) return
 
-    restoredSessionRef.current = routeSessionId
+    // 会话自身模型优先：模型列表能解析出它即视为恢复完成，不再用 user 消息覆盖
+    if (sessionModel) {
+      const resolvedSessionModel = restoreModelSelection(
+        { providerID: sessionModel.providerID, modelID: sessionModel.modelID },
+        sessionModel.variant ?? null,
+        visibleModels,
+      )
+      if (resolvedSessionModel) {
+        restoredSessionRef.current = routeSessionId
+        return
+      }
+      // 模型列表尚未就绪 → 等 visibleModels 到位后重试
+      if (visibleModels.length === 0) return
+    }
 
     const lastUserMsg = [...messages].reverse().find(m => m.info.role === 'user')
     if (lastUserMsg && 'model' in lastUserMsg.info) {
@@ -466,11 +484,19 @@ export const ChatPane = memo(function ChatPane({
         model?: { providerID: string; modelID: string; variant?: string }
         variant?: string
       }
+      // 模型列表未就绪时不要置位，等 visibleModels 变化后重试
+      const resolved = restoreModelSelection(
+        userInfo.model ?? null,
+        userInfo.variant ?? userInfo.model?.variant ?? null,
+        visibleModels,
+      )
+      if (!resolved) return
       restoreFromMessage(userInfo.model, userInfo.variant ?? userInfo.model?.variant)
     }
+    restoredSessionRef.current = routeSessionId
     // 依赖 routeSessionId 和 messages.length（等加载完），不依赖 messages 引用
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeSessionId, messages.length, visibleModels, restoreFromMessage])
+  }, [routeSessionId, messages.length, visibleModels, restoreFromMessage, sessionModel])
 
   // ============================================
   // Agent Restoration Effect

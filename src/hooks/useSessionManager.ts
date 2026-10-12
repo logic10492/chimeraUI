@@ -125,6 +125,7 @@ export function useSessionManager({
               directory: sessionInfo?.directory ?? dir ?? '',
               title: sessionInfo?.title,
               shareUrl: sessionInfo?.share?.url,
+              sessionModel: sessionInfo?.model,
             })
           })
           .catch(() => {
@@ -167,6 +168,7 @@ export function useSessionManager({
             title: sessionInfo?.title,
             loadState: 'loaded',
             shareUrl: sessionInfo?.share?.url,
+            sessionModel: sessionInfo?.model,
           })
           onLoadComplete?.()
           cursorRef.current.set(sid, messagePage.nextCursor)
@@ -182,6 +184,7 @@ export function useSessionManager({
           hasMoreHistory: Boolean(messagePage.nextCursor),
           revertState: sessionInfo?.revert ?? null,
           shareUrl: sessionInfo?.share?.url,
+          sessionModel: sessionInfo?.model,
         })
 
         cursorRef.current.set(sid, messagePage.nextCursor)
