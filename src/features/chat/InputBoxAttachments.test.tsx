@@ -4,7 +4,7 @@ import { InputBox } from './InputBox'
 
 let selectedFiles: File[] = []
 
-vi.mock('../attachment', () => ({
+vi.mock('../attachment/AttachmentPreview', () => ({
   AttachmentPreview: ({ attachments }: { attachments: Array<{ id: string }> }) => (
     <div data-testid="attachment-count">{attachments.length}</div>
   ),
@@ -25,14 +25,16 @@ vi.mock('./chatViewport', () => ({
   }),
 }))
 
-vi.mock('../mention', () => ({
+vi.mock('../mention/MentionMenu', () => ({
   MentionMenu: () => null,
+}))
+vi.mock('../mention/utils', () => ({
   detectMentionTrigger: () => null,
   normalizePath: (value: string) => value,
   toFileUrl: (value: string) => value,
 }))
 
-vi.mock('../slash-command', () => ({
+vi.mock('../slash-command/SlashCommandMenu', () => ({
   SlashCommandMenu: () => null,
 }))
 
@@ -52,8 +54,10 @@ vi.mock('./input/UndoStatus', () => ({
   UndoStatus: () => null,
 }))
 
-vi.mock('../../hooks', () => ({
+vi.mock('../../hooks/useIsMobile', () => ({
   useIsMobile: () => false,
+}))
+vi.mock('../../hooks/usePresence', () => ({
   usePresence: (show: boolean) => ({ shouldRender: show, ref: { current: null } }),
 }))
 

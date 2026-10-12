@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AttachmentDetailModal } from './AttachmentDetailModal'
 import type { Attachment } from './types'
-import { FullscreenProvider } from '../../contexts'
+import { FullscreenProvider } from '../../contexts/FullscreenContext'
 
 describe('AttachmentDetailModal', () => {
   beforeEach(() => {

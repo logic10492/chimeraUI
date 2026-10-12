@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { StreamingPreview } from './StreamingPreview'
 import type { StreamingPreviewProps } from './StreamingPreview'
 import type { StreamingHunk } from '../../../../types/message'
-import { FullscreenProvider } from '../../../../contexts'
+import { FullscreenProvider } from '../../../../contexts/FullscreenContext'
 
 vi.mock('../../../../hooks/useSyntaxHighlight', () => ({
   useSyntaxHighlight: (code: string, options?: { mode?: 'html' | 'tokens' }) => ({

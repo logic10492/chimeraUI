@@ -19,7 +19,7 @@ const {
   listProvidersMock: vi.fn(),
 }))
 
-vi.mock('../../../api', () => ({
+vi.mock('../../../api/provider', () => ({
   authorizeProviderOAuth: authorizeProviderOAuthMock,
   completeProviderOAuth: completeProviderOAuthMock,
   connectProviderApiKey: connectProviderApiKeyMock,
@@ -28,7 +28,9 @@ vi.mock('../../../api', () => ({
   listProviders: listProvidersMock,
 }))
 
-vi.mock('../../../hooks', () => ({ useCurrentDirectory: () => '/project' }))
+vi.mock('../../../contexts/useDirectory', () => ({
+  useCurrentDirectory: () => '/project',
+}))
 vi.mock('../../../utils/tauri', () => ({ isTauri: () => false }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ i18n: { language: 'en' } }) }))
 

@@ -9,7 +9,9 @@ vi.mock('../../components/ui/Dialog', () => ({
   Dialog: ({ isOpen, children, ariaLabel }: { isOpen: boolean; children: React.ReactNode; ariaLabel: string }) =>
     isOpen ? <div role="dialog" aria-label={ariaLabel}>{children}</div> : null,
 }))
-vi.mock('../../hooks', () => ({ useIsMobile: () => false }))
+vi.mock('../../hooks/useIsMobile', () => ({
+  useIsMobile: () => false,
+}))
 vi.mock('../../utils/tauri', () => ({ isTauriDesktop: () => true }))
 vi.mock('./KeybindingsSection', () => ({ KeybindingsSection: () => <div>Shortcuts content</div> }))
 vi.mock('./components/AgentSettings', () => ({ AgentSettings: () => <div>Agent content</div> }))

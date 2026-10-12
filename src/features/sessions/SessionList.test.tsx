@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ApiSession } from '../../api'
+import type { Session as ApiSession } from '../../types/api/session'
 import { pinnedSessionsStore } from '../../store/pinnedSessionsStore'
 import { SessionList, SessionListItem } from './SessionList'
 

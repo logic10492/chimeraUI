@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Attachment } from '../attachment'
+import type { Attachment } from '../attachment/types'
 import { removeAttachmentFromText, transformAttachmentRanges } from './attachmentRanges'
 
 function mention(id: string, value: string, start: number): Attachment {

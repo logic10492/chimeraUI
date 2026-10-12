@@ -4,7 +4,7 @@ import { useSessionStats } from './useSessionStats'
 
 const useMessageStoreMock = vi.fn()
 
-vi.mock('../store', () => ({
+vi.mock('../store/messageStoreHooks', () => ({
   useMessageStore: () => useMessageStoreMock(),
 }))
 

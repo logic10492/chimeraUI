@@ -46,7 +46,9 @@ vi.mock('react-i18next', () => ({
   }),
 }))
 
-vi.mock('../../../api/client', () => ({ getCurrentProject: getCurrentProjectMock }))
+vi.mock('../../../api/client', () => ({
+  getCurrentProject: getCurrentProjectMock,
+}))
 
 vi.mock('../../../api/config', () => ({
   getRemoteCompactionEligibility: getEligibilityMock,

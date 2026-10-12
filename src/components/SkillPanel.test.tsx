@@ -8,7 +8,7 @@ vi.mock('../api/skill', () => ({
   getSkills: (...args: unknown[]) => getSkillsMock(...args),
 }))
 
-vi.mock('../hooks', () => ({
+vi.mock('../contexts/useDirectory', () => ({
   useDirectory: () => ({ currentDirectory: '/workspace/demo' }),
 }))
 

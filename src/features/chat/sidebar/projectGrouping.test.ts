@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { GitWorkspaceMeta } from '../../../hooks'
+import type { GitWorkspaceMeta } from '../../../hooks/useGitWorkspaceCatalog'
 import { getProjectGroupIdentity } from './projectGrouping'
 
 const gitMeta: GitWorkspaceMeta = {

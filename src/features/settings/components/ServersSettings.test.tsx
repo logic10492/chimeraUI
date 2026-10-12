@@ -15,12 +15,14 @@ vi.mock('react-i18next', () => ({
   }),
 }))
 
-vi.mock('../../../hooks', () => ({
+vi.mock('../../../hooks/useServerStore', () => ({
   useServerStore: useServerStoreMock,
+}))
+vi.mock('../../../hooks/useRouter', () => ({
   useRouter: () => ({ navigateHome: navigateHomeMock, sessionId: 'session-1' }),
 }))
 
-vi.mock('../../../store', () => ({
+vi.mock('../../../store/messageStore', () => ({
   messageStore: { clearSession: clearSessionMock },
 }))
 

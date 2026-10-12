@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ModelInfo } from '../api'
+import type { ModelInfo } from '../types/ui'
 
 const { getActiveModelsMock, getSDKClientAsyncMock, onServerChangeMock } = vi.hoisted(() => ({
   getActiveModelsMock: vi.fn(),
@@ -8,7 +8,7 @@ const { getActiveModelsMock, getSDKClientAsyncMock, onServerChangeMock } = vi.ho
   onServerChangeMock: vi.fn(() => () => {}),
 }))
 
-vi.mock('../api', () => ({
+vi.mock('../api/client', () => ({
   getActiveModels: getActiveModelsMock,
 }))
 

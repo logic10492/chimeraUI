@@ -63,7 +63,7 @@ const directoryState = vi.hoisted(() => ({
   currentDirectory: '/workspace/demo',
 }))
 
-vi.mock('../store', () => ({
+vi.mock('../store/messageStore', () => ({
   messageStore: {
     markAllSessionsStale: vi.fn(),
     getSessionState: vi.fn(() => ({ messages: [] })),
@@ -74,8 +74,20 @@ vi.mock('../store', () => ({
     handleMessageUpdated: vi.fn(),
     handlePartUpdated: vi.fn(),
   },
+}))
+vi.mock('../store/childSessionStore', () => ({
   useSessionFamily: (sessionId: string | null) => useSessionFamilyMock(sessionId),
+  childSessionStore: {
+    getChildSessionIds: vi.fn(() => []),
+    registerChildSession: vi.fn(),
+    getSessionAndDescendants: vi.fn(() => []),
+    loadChildren: (...args: [string, string?]) => childLoadChildrenMock(...args),
+  },
+}))
+vi.mock('../store/messageStoreHooks', () => ({
   useSessionState: () => null,
+}))
+vi.mock('../store/autoApproveStore', () => ({
   autoApproveStore: {
     getPaneFullAutoMode: (paneId: string) => getPaneFullAutoModeMock(paneId),
     onFullAutoChange: (listener: unknown) => onFullAutoChangeMock(listener),
@@ -89,23 +101,18 @@ vi.mock('../store', () => ({
     claimAutoReply: (requestId: string) => claimAutoReplyMock(requestId),
     releaseAutoReply: (requestId: string) => releaseAutoReplyMock(requestId),
   },
-  childSessionStore: {
-    getChildSessionIds: vi.fn(() => []),
-    registerChildSession: vi.fn(),
-    getSessionAndDescendants: vi.fn(() => []),
-    loadChildren: (...args: [string, string?]) => childLoadChildrenMock(...args),
-  },
-  useActiveSessionStore: () => ({ statusMap: {} }),
 }))
-
 vi.mock('../store/activeSessionStore', () => ({
+  useActiveSessionStore: () => ({ statusMap: {} }),
   activeSessionStore: {
     getSessionMeta: (...args: [string?, string?]) => getSessionMetaMock(...args),
     removeSession: vi.fn(),
   },
 }))
 
-vi.mock('../hooks', () => ({
+
+
+vi.mock('./useSessionManager', () => ({
   useSessionManager: () => ({
     loadSession: vi.fn(),
     loadMoreHistory: vi.fn(),
@@ -114,10 +121,16 @@ vi.mock('../hooks', () => ({
     handleRedoAll: vi.fn(),
     clearRevert: vi.fn(),
   }),
+}))
+vi.mock('./useGlobalEvents', () => ({
   registerSessionConsumer: (...args: unknown[]) => registerSessionConsumerMock(...args),
   updateConsumerSessionId: (...args: unknown[]) => updateConsumerSessionIdMock(...args),
   hasOtherConsumerForSession: vi.fn(() => false),
+}))
+vi.mock('./usePermissions', () => ({
   usePermissions: () => ({ resetPermissions: vi.fn() }),
+}))
+vi.mock('./usePermissionHandler', () => ({
   usePermissionHandler: () => ({
     pendingPermissionRequests: pendingPermissionRequestsMock,
     pendingQuestionRequests: [],
@@ -130,13 +143,19 @@ vi.mock('../hooks', () => ({
     resetPendingRequests: vi.fn(),
     isReplying: false,
   }),
+}))
+vi.mock('./useMessageAnimation', () => ({
   useMessageAnimation: () => ({
     registerMessage: vi.fn(),
     registerInputBox: vi.fn(),
     animateUndo: vi.fn(),
     animateRedo: vi.fn(),
   }),
+}))
+vi.mock('../contexts/useDirectory', () => ({
   useDirectory: () => ({ currentDirectory: directoryState.currentDirectory }),
+}))
+vi.mock('../contexts/useSessionContext', () => ({
   useSessionContext: () => ({
     createSession: createSessionMock,
     sessions: [],
@@ -153,21 +172,31 @@ vi.mock('../store/notificationEventSettingsStore', () => ({
   },
 }))
 
-vi.mock('../api', () => ({
+vi.mock('../api/message', () => ({
   sendMessageAsync: vi.fn(),
   getSessionMessages: vi.fn(),
+  extractUserMessageContent: vi.fn(),
+}))
+vi.mock('../api/session', () => ({
   abortSession: vi.fn(),
-  getSelectableAgents: (...args: unknown[]) => getSelectableAgentsMock(...args),
-  getPendingPermissions: (...args: [string?, string?]) => getPendingPermissionsMock(...args),
-  getPendingQuestions: (...args: [string?, string?]) => getPendingQuestionsMock(...args),
-  prefetchCommands: vi.fn(() => Promise.resolve()),
-  prefetchRootDirectory: vi.fn(() => Promise.resolve()),
   getSessionChildren: vi.fn(() => Promise.resolve([])),
-  executeCommand: (...args: unknown[]) => executeCommandMock(...args),
   summarizeSession: (...args: unknown[]) => summarizeSessionMock(...args),
   updateSession: vi.fn(),
   forkSession: vi.fn(),
-  extractUserMessageContent: vi.fn(),
+}))
+vi.mock('../api/agent', () => ({
+  getSelectableAgents: (...args: unknown[]) => getSelectableAgentsMock(...args),
+}))
+vi.mock('../api/permission', () => ({
+  getPendingPermissions: (...args: [string?, string?]) => getPendingPermissionsMock(...args),
+  getPendingQuestions: (...args: [string?, string?]) => getPendingQuestionsMock(...args),
+}))
+vi.mock('../api/command', () => ({
+  prefetchCommands: vi.fn(() => Promise.resolve()),
+  executeCommand: (...args: unknown[]) => executeCommandMock(...args),
+}))
+vi.mock('../api/file', () => ({
+  prefetchRootDirectory: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('../utils', () => ({

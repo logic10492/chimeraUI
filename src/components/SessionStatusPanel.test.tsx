@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Process } from '../types/api'
+import type { Process } from '../types/api/process'
 import { SessionStatusPanel } from './SessionStatusPanel'
 
 type ProcessChangedSubscriber = { onProcessChanged?: () => void }
@@ -11,8 +11,10 @@ const { listProcessesMock, subscribeToEventsMock, processSubscribers } = vi.hois
   processSubscribers: [] as ProcessChangedSubscriber[],
 }))
 
-vi.mock('../api', () => ({
+vi.mock('../api/client', () => ({
   getProviderBalance: vi.fn(),
+}))
+vi.mock('../api/session', () => ({
   getSessionTodos: vi.fn().mockResolvedValue([]),
   getSessionWorkBrief: vi.fn().mockResolvedValue({
     confirmedDecisions: [],
@@ -22,20 +24,24 @@ vi.mock('../api', () => ({
     relevantEvidence: [],
     closeout: [],
   }),
+}))
+vi.mock('../api/process', () => ({
   listProcesses: (...args: unknown[]) => listProcessesMock(...args),
+}))
+vi.mock('../api/events', () => ({
   subscribeToEvents: (callbacks: ProcessChangedSubscriber) => {
     processSubscribers.push(callbacks)
     return () => {}
   },
 }))
 
-vi.mock('../store', () => ({
+vi.mock('../store/todoStore', () => ({
   todoStore: { setTodos: vi.fn() },
   useTodos: () => [],
   useTodoStats: () => ({ total: 0, completed: 0 }),
 }))
 
-vi.mock('../hooks', () => ({
+vi.mock('../hooks/useModels', () => ({
   useModels: () => ({ models: [] }),
 }))
 

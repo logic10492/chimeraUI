@@ -42,10 +42,12 @@ let latestEventCallbacks: Partial<EventCallbacks> = {}
 let latestContext: ContextType<typeof SessionContext> = null
 let latestServerChange: (() => void) | undefined
 
-vi.mock('../api', () => ({
+vi.mock('../api/session', () => ({
   getSessions: (...args: unknown[]) => getSessionsMock(...args),
   createSession: (...args: unknown[]) => createSessionMock(...args),
   deleteSession: (...args: unknown[]) => deleteSessionMock(...args),
+}))
+vi.mock('../api/events', () => ({
   subscribeToEvents: (...args: unknown[]) => subscribeToEventsMock(...args),
 }))
 

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { DiffView } from './DiffView'
-import { FullscreenProvider } from '../contexts'
+import { FullscreenProvider } from '../contexts/FullscreenContext'
 
 vi.mock('../hooks/useSyntaxHighlight', () => ({
   useSyntaxHighlight: (code: string, options?: { mode?: 'html' | 'tokens' }) => ({

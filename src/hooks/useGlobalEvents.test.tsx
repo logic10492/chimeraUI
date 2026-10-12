@@ -101,19 +101,22 @@ const {
   },
 }))
 
-vi.mock('../api', () => ({
+vi.mock('../api/events', () => ({
   subscribeToEvents: subscribeToEventsMock,
-  getSessionStatus: getSessionStatusMock,
-  getPendingPermissions: getPendingPermissionsMock,
-  getPendingQuestions: getPendingQuestionsMock,
   broadcastRuntimeResync: broadcastRuntimeResyncMock,
 }))
-
+vi.mock('../api/session', () => ({
+  getSessionStatus: getSessionStatusMock,
+}))
 vi.mock('../api/permission', () => ({
+  getPendingPermissions: getPendingPermissionsMock,
+  getPendingQuestions: getPendingQuestionsMock,
   replyPermission: replyPermissionMock,
 }))
 
-vi.mock('../store', () => ({
+
+
+vi.mock('../store/messageStore', () => ({
   messageStore: {
     handleMessageUpdated: vi.fn(),
     handlePartUpdated: vi.fn(),
@@ -126,6 +129,8 @@ vi.mock('../store', () => ({
     removeMessage: messageRemoveMock,
     markAllSessionsStale: markAllSessionsStaleMock,
   },
+}))
+vi.mock('../store/childSessionStore', () => ({
   childSessionStore: {
     belongsToSession: childBelongsToSessionMock,
     getSessionAndDescendants: getSessionAndDescendantsMock,
@@ -135,11 +140,15 @@ vi.mock('../store', () => ({
     appendCachedChildSession: appendCachedChildSessionMock,
     patchCachedChildSession: patchCachedChildSessionMock,
   },
+}))
+vi.mock('../store/paneLayoutStore', () => ({
   paneLayoutStore: {
     getFocusedSessionId: getFocusedSessionIdMock,
     clearSession: clearPaneSessionMock,
     allLeaves: allLeavesMock,
   },
+}))
+vi.mock('../store/serverStore', () => ({
   serverStore: {
     applyServerConnectedTimestamp: applyServerConnectedTimestampMock,
     getActiveServerId: getActiveServerIdMock,

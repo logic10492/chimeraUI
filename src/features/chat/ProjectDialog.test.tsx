@@ -1,15 +1,18 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProjectDialog } from './ProjectDialog'
-import { getPath, listDirectory } from '../../api'
+import { getPath } from '../../api/client'
+import { listDirectory } from '../../api/file'
 
 vi.mock('../../components/ui/Dialog', () => ({
   Dialog: ({ isOpen, children }: { isOpen: boolean; children: React.ReactNode }) =>
     isOpen ? <div>{children}</div> : null,
 }))
 
-vi.mock('../../api', () => ({
+vi.mock('../../api/client', () => ({
   getPath: vi.fn().mockResolvedValue({ home: '/workspace/project' }),
+}))
+vi.mock('../../api/file', () => ({
   listDirectory: vi.fn().mockResolvedValue([
     { name: '.config', type: 'directory', absolute: '/workspace/project/.config' },
     { name: 'src', type: 'directory', absolute: '/workspace/project/src' },

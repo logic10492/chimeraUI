@@ -16,8 +16,10 @@ const subscribeToEventsMock = vi.fn()
 const onServerChangeMock = vi.fn()
 let latestServerChange: (() => void) | undefined
 
-vi.mock('../api', () => ({
+vi.mock('../api/client', () => ({
   getCurrentProject: (...args: unknown[]) => getCurrentProjectMock(...args),
+}))
+vi.mock('../api/worktree', () => ({
   listWorktrees: (...args: unknown[]) => listWorktreesMock(...args),
 }))
 

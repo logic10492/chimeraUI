@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ProjectSelector } from './ProjectSelector'
-import type { ApiProject } from '../../api'
+import type { Project as ApiProject } from '../../types/api/project'
 
 const GLOBAL_PROJECT = {
   id: 'global',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ApiPermissionRequest, ApiQuestionRequest } from '../../api'
+import type { PermissionRequest as ApiPermissionRequest, QuestionRequest as ApiQuestionRequest } from '../../types/api/permission'
 import type { Message } from '../../types/message'
 import { findUnmatchedInlineToolRequests } from './InlineToolRequestContext'
 

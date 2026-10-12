@@ -20,7 +20,7 @@ const onServerChangeMock = vi.fn()
 let latestEventCallbacks: Partial<EventCallbacks> = {}
 let latestServerChange: (() => void) | undefined
 
-vi.mock('../api', () => ({
+vi.mock('../api/session', () => ({
   getSessionsPage: async (...args: unknown[]) => {
     const result = await getSessionsMock(...args)
     return Array.isArray(result) ? { items: result } : result
@@ -28,6 +28,8 @@ vi.mock('../api', () => ({
   createSession: (...args: unknown[]) => createSessionMock(...args),
   deleteSession: (...args: unknown[]) => deleteSessionMock(...args),
   updateSession: (...args: unknown[]) => updateSessionMock(...args),
+}))
+vi.mock('../api/events', () => ({
   subscribeToEvents: (...args: unknown[]) => subscribeToEventsMock(...args),
 }))
 

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useRef } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ApiAgent } from '../../../api/client'
+import type { Agent as ApiAgent } from '../../../types/api/agent'
 import { InputToolbar } from './InputToolbar'
 
 const useIsMobileMock = vi.fn()
@@ -15,8 +15,10 @@ const agents: ApiAgent[] = [
   { name: 'plan', description: 'Plan work', mode: 'primary', permission: [], options: {} },
 ]
 
-vi.mock('../../../hooks', () => ({
+vi.mock('../../../hooks/useIsMobile', () => ({
   useIsMobile: () => useIsMobileMock(),
+}))
+vi.mock('../../../hooks/useSessionStats', () => ({
   useSessionStats: () => ({
     inputTokens: 0,
     outputTokens: 0,
@@ -30,8 +32,12 @@ vi.mock('../../../hooks', () => ({
     contextPercent: 0,
     contextEstimated: false,
   }),
+}))
+vi.mock('../../../hooks/useConnectionState', () => ({
   useConnectionState: () => 'connected',
-  formatTokens: (n: number) => `${n}`,
+}))
+vi.mock('../../../utils/formatUtils', () => ({
+  formatNumber: (n: number) => `${n}`,
   formatCost: (n: number) => `$${n.toFixed(2)}`,
 }))
 

@@ -11,8 +11,10 @@ vi.mock('motion/mini', () => ({
   animate: () => Promise.resolve(),
 }))
 
-vi.mock('../../hooks', () => ({
+vi.mock('../../hooks/useDelayedRender', () => ({
   useDelayedRender: (show: boolean) => show,
+}))
+vi.mock('../../hooks/useDisclosureScrollLock', () => ({
   useDisclosureScrollLock: () => ({
     rootRef: () => undefined,
     headerRef: () => undefined,
@@ -40,17 +42,31 @@ vi.mock('../../components/ui', () => ({
   SmoothHeight: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
 
-vi.mock('./parts', () => ({
+vi.mock('./parts/TextPartView', () => ({
   TextPartView: ({ part }: { part: { text: string } }) => <div>{part.text}</div>,
+}))
+vi.mock('./parts/ReasoningPartView', () => ({
   ReasoningPartView: () => null,
+}))
+vi.mock('./parts/ToolPartView', () => ({
   ToolPartView: () => null,
+}))
+vi.mock('./parts/AttachmentPartViews', () => ({
   FilePartView: () => null,
   AgentPartView: () => null,
   SyntheticTextPartView: () => null,
+}))
+vi.mock('./parts/StepFinishPartView', () => ({
   StepFinishPartView: () => null,
+}))
+vi.mock('./parts/SubtaskPartView', () => ({
   SubtaskPartView: () => null,
+}))
+vi.mock('./parts/SystemPartViews', () => ({
   RetryPartView: () => null,
   CompactionPartView: () => <div>History compacted</div>,
+}))
+vi.mock('./parts/MessageErrorView', () => ({
   MessageErrorView: () => null,
 }))
 

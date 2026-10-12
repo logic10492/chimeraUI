@@ -27,15 +27,17 @@ vi.mock('../../../../contexts/SessionNavigationContext', () => ({
   }),
 }))
 
-vi.mock('../../../../api', () => ({
+vi.mock('../../../../api/session', () => ({
   abortSession: abortSessionMock,
 }))
 
-vi.mock('../../../../store', () => ({
+vi.mock('../../../../store/childSessionStore', () => ({
   childSessionStore: {
     getSessionInfo: () => ({ parentID: 'parent' }),
     isChildOf: () => false,
   },
+}))
+vi.mock('../../../../store/messageStore', () => ({
   messageStore: {
     getSessionState: () => ({ directory: '/repo' }),
   },

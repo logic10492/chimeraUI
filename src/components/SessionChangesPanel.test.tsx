@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SessionChangesPanel } from './SessionChangesPanel'
 import { changeScopeStore } from '../store/changeScopeStore'
-import { FullscreenProvider } from '../contexts'
+import { FullscreenProvider } from '../contexts/FullscreenContext'
 
 const { getCurrentProject, initGitProject, getSessionDiff, getLastTurnDiff, getVcsInfo, getVcsDiff } = vi.hoisted(
   () => ({

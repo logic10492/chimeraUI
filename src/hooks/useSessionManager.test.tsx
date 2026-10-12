@@ -17,15 +17,17 @@ const { getSessionMock, getSessionMessagesMock, messageStoreMock, sessionErrorHa
   sessionErrorHandlerMock: vi.fn(),
 }))
 
-vi.mock('../api', () => ({
+vi.mock('../api/session', () => ({
   getSession: (...args: unknown[]) => getSessionMock(...args),
-  getSessionMessagesPage: (...args: unknown[]) => getSessionMessagesMock(...args),
   revertMessage: vi.fn(),
   unrevertSession: vi.fn(),
+}))
+vi.mock('../api/message', () => ({
+  getSessionMessagesPage: (...args: unknown[]) => getSessionMessagesMock(...args),
   extractUserMessageContent: vi.fn(),
 }))
 
-vi.mock('../store', () => ({
+vi.mock('../store/messageStore', () => ({
   messageStore: messageStoreMock,
 }))
 

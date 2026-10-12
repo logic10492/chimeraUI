@@ -17,8 +17,10 @@ vi.mock('react-i18next', () => ({
   }),
 }))
 
-vi.mock('../../../hooks', () => ({
+vi.mock('../../../hooks/useDelayedRender', () => ({
   useDelayedRender: (show: boolean) => show,
+}))
+vi.mock('../../../hooks/useDisclosureScrollLock', () => ({
   useDisclosureScrollLock: () => ({
     rootRef: () => undefined,
     headerRef: () => undefined,
@@ -63,13 +65,21 @@ vi.mock('../../chat/InlineQuestion', () => ({
   InlineQuestion: () => null,
 }))
 
-vi.mock('../tools', () => ({
+vi.mock('../tools/registry', () => ({
   getToolIcon: () => <span data-testid="tool-icon">icon</span>,
   extractToolData: () => ({}),
   getToolConfig: () => undefined,
+}))
+vi.mock('../tools/renderers/DefaultRenderer', () => ({
   DefaultRenderer: () => null,
+}))
+vi.mock('../tools/renderers/TodoRenderer', () => ({
   TodoRenderer: () => null,
+}))
+vi.mock('../tools/renderers/TaskRenderer', () => ({
   TaskRenderer: () => null,
+}))
+vi.mock('../tools/renderers/todoUtils', () => ({
   hasTodos: () => false,
 }))
 

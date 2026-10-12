@@ -28,7 +28,7 @@ const {
   },
 }))
 
-vi.mock('../api', () => ({
+vi.mock('../api/permission', () => ({
   replyPermission: replyPermissionMock,
   replyQuestion: replyQuestionMock,
   rejectQuestion: rejectQuestionMock,
@@ -36,7 +36,7 @@ vi.mock('../api', () => ({
   getPendingQuestions: getPendingQuestionsMock,
 }))
 
-vi.mock('../store', () => ({
+vi.mock('../store/activeSessionStore', () => ({
   activeSessionStore: activeSessionStoreMock,
 }))
 

@@ -16,12 +16,16 @@ const { listDirectory, getFileContent, getFileStatus, getSessionDiff, getLastTur
     getActiveServerId: vi.fn(() => 'local'),
   }))
 
-vi.mock('../api', () => ({
+vi.mock('../api/file', () => ({
   listDirectory,
   getFileContent,
   getFileStatus,
+}))
+vi.mock('../api/session', () => ({
   getSessionDiff,
   getLastTurnDiff,
+}))
+vi.mock('../api/vcs', () => ({
   getVcsDiff,
 }))
 

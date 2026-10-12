@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { ModelsSettings } from './ModelsSettings'
-import type { ModelInfo } from '../../../api'
+import type { ModelInfo } from '../../../types/ui'
 
 const { useModelsMock, useHiddenModelKeysMock, setVisibleMock, setManyVisibleMock } = vi.hoisted(() => ({
   useModelsMock: vi.fn(),
@@ -10,11 +10,11 @@ const { useModelsMock, useHiddenModelKeysMock, setVisibleMock, setManyVisibleMoc
   setManyVisibleMock: vi.fn(),
 }))
 
-vi.mock('../../../hooks', () => ({
+vi.mock('../../../hooks/useModels', () => ({
   useModels: useModelsMock,
 }))
 
-vi.mock('../../../store', () => ({
+vi.mock('../../../store/modelVisibilityStore', () => ({
   modelVisibilityStore: {
     setVisible: setVisibleMock,
     setManyVisible: setManyVisibleMock,

@@ -5,8 +5,10 @@ import type { ReasoningPart } from '../../../types/message'
 
 let mockReasoningDisplayMode: 'italic' | 'markdown' | 'capsule' = 'italic'
 
-vi.mock('../../../hooks', () => ({
+vi.mock('../../../hooks/useDelayedRender', () => ({
   useDelayedRender: (show: boolean) => show,
+}))
+vi.mock('../../../hooks/useDisclosureScrollLock', () => ({
   useDisclosureScrollLock: () => ({
     rootRef: () => undefined,
     headerRef: () => undefined,
