@@ -12,6 +12,15 @@ import {
   INPUT_FOOTER_FALLBACK_HEIGHT,
   getComposerMaxHeight,
 } from './InputBox.utils'
+import type { DragDropEvent } from '@tauri-apps/api/webview'
+import { isTauri, getDesktopPlatform } from '../../utils/tauri'
+import {
+  getInternalDragSnapshot,
+  isPointInsideElement,
+  subscribeInternalDrag,
+  subscribeInternalDrop,
+} from '../../lib/internalDragCore'
+import type { DraggedFileInfo } from './InputBox.types'
 
 // DOM-touching helper: composer pane height fallback chain.
 function getComposerPaneHeight(anchor: HTMLElement | null): number {
@@ -197,4 +206,133 @@ export function useTextareaAutosize({
     const scrollHeight = textarea.scrollHeight
     textarea.style.height = Math.max(TEXTAREA_MIN_HEIGHT, Math.min(scrollHeight, textareaMaxHeight)) + 'px'
   }, [text, textareaMaxHeight, textareaRef])
+}
+
+// ============================================
+// External (Tauri) file-drop listeners
+// --
+// 两条平台互斥的监听：非 macOS 走标准 onDragDropEvent，macOS 走 Rust 端
+// 转发的 file-drop-* 事件。仅订阅，不做状态，回调由 InputBox 注入。
+// ============================================
+
+export function useTauriDropListeners(handleTauriDragDropEvent: (event: DragDropEvent) => void) {
+  // 非 macOS：Tauri 标准 onDragDropEvent API
+  useEffect(() => {
+    if (!isTauri() || getDesktopPlatform() === 'macos') return
+
+    let disposed = false
+    let unlisten: (() => void) | null = null
+
+    void import('@tauri-apps/api/webview')
+      .then(async ({ getCurrentWebview }) => {
+        const cleanup = await getCurrentWebview().onDragDropEvent(event => {
+          handleTauriDragDropEvent(event.payload)
+        })
+
+        if (disposed) {
+          cleanup()
+        } else {
+          unlisten = cleanup
+        }
+      })
+      .catch(err => {
+        console.warn('[InputBox] Failed to listen for Tauri drag-drop events:', err)
+      })
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [handleTauriDragDropEvent])
+
+  // macOS：Rust 端 WindowEvent::DragDrop 转发的 file-drop-* 事件
+  useEffect(() => {
+    if (!isTauri() || getDesktopPlatform() !== 'macos') return
+
+    let disposed = false
+    const cleanupFns: (() => void)[] = []
+
+    void import('@tauri-apps/api/event').then(async ({ listen }) => {
+      if (disposed) return
+
+      const { PhysicalPosition } = await import('@tauri-apps/api/dpi')
+
+      const onEnter = await listen<[string[], number, number]>('file-drop-enter', e => {
+        if (disposed) return
+        handleTauriDragDropEvent({
+          type: 'enter',
+          paths: e.payload[0],
+          position: new PhysicalPosition(e.payload[1], e.payload[2]),
+        })
+      })
+      cleanupFns.push(onEnter)
+
+      const onOver = await listen<[number, number]>('file-drop-over', e => {
+        if (disposed) return
+        handleTauriDragDropEvent({ type: 'over', position: new PhysicalPosition(e.payload[0], e.payload[1]) })
+      })
+      cleanupFns.push(onOver)
+
+      const onDrop = await listen<[string[], number, number]>('file-drop-drop', e => {
+        if (disposed) return
+        handleTauriDragDropEvent({
+          type: 'drop',
+          paths: e.payload[0],
+          position: new PhysicalPosition(e.payload[1], e.payload[2]),
+        })
+      })
+      cleanupFns.push(onDrop)
+
+      const onLeave = await listen<void>('file-drop-leave', () => {
+        if (disposed) return
+        handleTauriDragDropEvent({ type: 'leave' })
+      })
+      cleanupFns.push(onLeave)
+    })
+
+    return () => {
+      disposed = true
+      cleanupFns.forEach(fn => fn())
+    }
+  }, [handleTauriDragDropEvent])
+}
+
+// ============================================
+// Internal file-mention drag indicator
+// --
+// 内部拖拽（sidebar 文件 → 输入框）状态与落点订阅；返回是否处于拖入态。
+// ============================================
+
+export function useInternalFileDrop({
+  inputContainerRef,
+  onDropFile,
+}: {
+  inputContainerRef: RefObject<HTMLDivElement | null>
+  onDropFile: (file: DraggedFileInfo) => void
+}) {
+  const [isInternalFileDragging, setIsInternalFileDragging] = useState(false)
+
+  useEffect(() => {
+    const updateInternalFileDragState = () => {
+      const active = getInternalDragSnapshot().active
+      if (!active || active.payload.kind !== 'file-mention') {
+        setIsInternalFileDragging(false)
+        return
+      }
+      setIsInternalFileDragging(isPointInsideElement(active.current, inputContainerRef.current))
+    }
+
+    updateInternalFileDragState()
+    return subscribeInternalDrag(updateInternalFileDragState)
+  }, [inputContainerRef])
+
+  useEffect(() => {
+    return subscribeInternalDrop(event => {
+      if (event.payload.kind !== 'file-mention') return
+      if (!isPointInsideElement(event.point, inputContainerRef.current)) return
+      onDropFile(event.payload.file)
+    })
+  }, [inputContainerRef, onDropFile])
+
+  return isInternalFileDragging
 }
