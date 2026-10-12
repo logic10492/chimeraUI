@@ -12,8 +12,7 @@ import { Trans, useTranslation } from 'react-i18next'
 import { ChatArea, type ChatAreaHandle } from './ChatArea'
 import { Header } from './Header'
 import { InputBox } from './InputBox'
-import { PermissionDialog } from './PermissionDialog'
-import { QuestionDialog } from './QuestionDialog'
+import { InteractionCard } from './InteractionCard'
 import { type ModelSelectorHandle } from './ModelSelector'
 import { OutlineIndex } from '../../components/OutlineIndex'
 import { PaneHeader } from './PaneHeader'
@@ -619,18 +618,17 @@ export const ChatPane = memo(function ChatPane({
       </div>
 
       {dialogPermissionRequests.length > 0 && (
-        <PermissionDialog
-          request={dialogPermissionRequests[0]}
-          onReply={reply =>
-            handlePermissionReply(
-              dialogPermissionRequests[0].id,
-              reply,
-              effectiveDirectory,
-              dialogPermissionRequests[0].sessionID,
-            )
-          }
-          queueLength={dialogPermissionRequests.length}
+        <InteractionCard
+          variant="stack"
+          permission={dialogPermissionRequests[0]}
+          onPermissionReply={(requestId, reply) => {
+            const request = dialogPermissionRequests.find(r => r.id === requestId) ?? dialogPermissionRequests[0]
+            return handlePermissionReply(requestId, reply, effectiveDirectory, request.sessionID)
+          }}
+          onQuestionReply={(requestId, answers) => handleQuestionReply(requestId, answers, effectiveDirectory)}
+          onQuestionReject={requestId => handleQuestionReject(requestId, effectiveDirectory)}
           isReplying={isReplying}
+          queueLength={dialogPermissionRequests.length}
           currentSessionId={routeSessionId}
           collapsed={permissionCollapsed}
           onCollapsedChange={setPermissionCollapsed}
@@ -638,12 +636,14 @@ export const ChatPane = memo(function ChatPane({
       )}
 
       {dialogPermissionRequests.length === 0 && dialogQuestionRequests.length > 0 && (
-        <QuestionDialog
-          request={dialogQuestionRequests[0]}
-          onReply={answers => handleQuestionReply(dialogQuestionRequests[0].id, answers, effectiveDirectory)}
-          onReject={() => handleQuestionReject(dialogQuestionRequests[0].id, effectiveDirectory)}
-          queueLength={dialogQuestionRequests.length}
+        <InteractionCard
+          variant="stack"
+          question={dialogQuestionRequests[0]}
+          onPermissionReply={(requestId, reply) => handlePermissionReply(requestId, reply, effectiveDirectory)}
+          onQuestionReply={(requestId, answers) => handleQuestionReply(requestId, answers, effectiveDirectory)}
+          onQuestionReject={requestId => handleQuestionReject(requestId, effectiveDirectory)}
           isReplying={isReplying}
+          queueLength={dialogQuestionRequests.length}
           collapsed={questionCollapsed}
           onCollapsedChange={setQuestionCollapsed}
         />

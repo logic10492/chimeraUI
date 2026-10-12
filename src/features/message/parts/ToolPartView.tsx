@@ -17,8 +17,7 @@ import {
   findPermissionRequestForTool,
   findQuestionRequestForTool,
 } from '../../chat/InlineToolRequestContext'
-import { InlinePermission } from '../../chat/InlinePermission'
-import { InlineQuestion } from '../../chat/InlineQuestion'
+import { InteractionCard } from '../../chat/InteractionCard'
 import { getToolIcon, extractToolData, getToolConfig } from '../tools/registry'
 import { DefaultRenderer } from '../tools/renderers/DefaultRenderer'
 import { TodoRenderer } from '../tools/renderers/TodoRenderer'
@@ -235,9 +234,12 @@ export const ToolPartView = memo(function ToolPartView({
       )}
       {displayPermission && (
         <div className={hideToolBodyForPermission && !permissionContentHidden ? '' : 'pt-2'}>
-          <InlinePermission
-            request={displayPermission}
-            onReply={onPermissionReply}
+          <InteractionCard
+            variant="inline"
+            permission={displayPermission}
+            onPermissionReply={onPermissionReply}
+            onQuestionReply={onQuestionReply}
+            onQuestionReject={onQuestionReject}
             isReplying={isReplying}
             resolved={permissionResolved}
             contentHidden={permissionContentHidden}
@@ -246,10 +248,12 @@ export const ToolPartView = memo(function ToolPartView({
       )}
       {questionRequest && (
         <div className="pt-2">
-          <InlineQuestion
-            request={questionRequest}
-            onReply={onQuestionReply}
-            onReject={onQuestionReject}
+          <InteractionCard
+            variant="inline"
+            question={questionRequest}
+            onPermissionReply={onPermissionReply}
+            onQuestionReply={onQuestionReply}
+            onQuestionReject={onQuestionReject}
             isReplying={isReplying}
           />
         </div>

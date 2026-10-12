@@ -63,8 +63,6 @@
   },
   "questionDialog": {
     "title": "Question",
-    "moreCount": "+{{count}} more",
-    "minimize": "Minimize",
     "typeYourAnswer": "Type your own answer..."
   },
   "permissionDialog": {
@@ -72,11 +70,11 @@
     "moreCount": "+{{count}} more",
     "minimize": "Minimize",
     "fromSubtask": "From subtask: {{title}}",
-    "changesPreview": "Changes preview",
     "request": "Request",
     "rule": "Rule",
     "allowOnce": "Allow once",
     "alwaysAllow": "Always allow",
+    "applying": "Applying…",
     "subtaskFallback": "Subtask",
     "browserSession": "Frontend temporary",
     "thisSession": "Backend always",

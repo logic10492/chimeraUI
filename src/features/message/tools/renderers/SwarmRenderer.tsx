@@ -6,8 +6,7 @@ import { abortSession } from '../../../../api/session'
 import { childSessionStore } from '../../../../store/childSessionStore'
 import { messageStore } from '../../../../store/messageStore'
 import { useInlineToolRequests } from '../../../chat/InlineToolRequestContext'
-import { InlinePermission } from '../../../chat/InlinePermission'
-import { InlineQuestion } from '../../../chat/InlineQuestion'
+import { InteractionCard } from '../../../chat/InteractionCard'
 import type { PermissionRequest as ApiPermissionRequest, QuestionRequest as ApiQuestionRequest } from '../../../../types/api/permission'
 import type { ToolRendererProps } from '../types'
 import { SubSessionView } from './TaskRenderer'
@@ -189,13 +188,22 @@ const SwarmChild = memo(function SwarmChild({ run }: { run: SwarmChildRun }) {
             <div className="pt-2 space-y-2">
               {run.sessionId && <SubSessionView sessionId={run.sessionId} isParentRunning={isRunning} />}
               {permissionRequest && (
-                <InlinePermission request={permissionRequest} onReply={onPermissionReply} isReplying={isReplying} />
+                <InteractionCard
+                  variant="inline"
+                  permission={permissionRequest}
+                  onPermissionReply={onPermissionReply}
+                  onQuestionReply={onQuestionReply}
+                  onQuestionReject={onQuestionReject}
+                  isReplying={isReplying}
+                />
               )}
               {questionRequest && (
-                <InlineQuestion
-                  request={questionRequest}
-                  onReply={onQuestionReply}
-                  onReject={onQuestionReject}
+                <InteractionCard
+                  variant="inline"
+                  question={questionRequest}
+                  onPermissionReply={onPermissionReply}
+                  onQuestionReply={onQuestionReply}
+                  onQuestionReject={onQuestionReject}
                   isReplying={isReplying}
                 />
               )}

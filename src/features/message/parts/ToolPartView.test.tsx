@@ -57,12 +57,8 @@ vi.mock('../../chat/InlineToolRequestContext', () => ({
   findQuestionRequestForTool: () => undefined,
 }))
 
-vi.mock('../../chat/InlinePermission', () => ({
-  InlinePermission: () => null,
-}))
-
-vi.mock('../../chat/InlineQuestion', () => ({
-  InlineQuestion: () => null,
+vi.mock('../../chat/InteractionCard', () => ({
+  InteractionCard: () => null,
 }))
 
 vi.mock('../tools/registry', () => ({

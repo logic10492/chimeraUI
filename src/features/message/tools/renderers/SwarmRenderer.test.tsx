@@ -47,12 +47,9 @@ vi.mock('../../../chat/InlineToolRequestContext', () => ({
   useInlineToolRequests: () => inlineRequestsMock(),
 }))
 
-vi.mock('../../../chat/InlinePermission', () => ({
-  InlinePermission: ({ request }: { request: { id: string } }) => <div data-testid={`permission-${request.id}`} />,
-}))
-
-vi.mock('../../../chat/InlineQuestion', () => ({
-  InlineQuestion: ({ request }: { request: { id: string } }) => <div data-testid={`question-${request.id}`} />,
+vi.mock('../../../chat/InteractionCard', () => ({
+  InteractionCard: ({ permission, question }: { permission?: { id: string }; question?: { id: string } }) =>
+    permission ? <div data-testid={`permission-${permission.id}`} /> : question ? <div data-testid={`question-${question.id}`} /> : null,
 }))
 
 vi.mock('./TaskRenderer', () => ({

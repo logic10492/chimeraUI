@@ -63,8 +63,6 @@
   },
   "questionDialog": {
     "title": "问题",
-    "moreCount": "还有 {{count}} 个",
-    "minimize": "最小化",
     "typeYourAnswer": "输入你的回答..."
   },
   "permissionDialog": {
@@ -72,11 +70,11 @@
     "moreCount": "还有 {{count}} 个",
     "minimize": "最小化",
     "fromSubtask": "来自 Subtask：{{title}}",
-    "changesPreview": "变更预览",
     "request": "请求",
     "rule": "规则",
     "allowOnce": "允许一次",
     "alwaysAllow": "始终允许",
+    "applying": "应用中…",
     "subtaskFallback": "Subtask",
     "browserSession": "前端临时",
     "thisSession": "后端始终",
