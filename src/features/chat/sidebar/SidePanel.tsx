@@ -1,11 +1,10 @@
-import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SessionList } from '../../sessions/SessionList'
 import { FolderRecentList } from './FolderRecentList'
 import { getProjectGroupIdentity } from './projectGrouping'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
-import { ActiveSessionItem } from './ActiveSessionItem'
-import { NotificationItem } from './NotificationItem'
+import { ActiveSessionsTab } from './ActiveSessionsTab'
 import { SidebarFooter } from './SidebarFooter'
 import { buildActiveSessionTree } from './activeSessionTree'
 import { getParentPath } from './sidebarUtils'
@@ -31,9 +30,8 @@ import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useLayoutStore } from '../../../store/layoutStore'
 import { childSessionStore } from '../../../store/childSessionStore'
 import { useBusySessions, useBusyCount } from '../../../store/activeSessionStore'
-import { notificationStore, useNotifications, useUnreadNotificationCount } from '../../../store/notificationStore'
+import { useNotifications, useUnreadNotificationCount } from '../../../store/notificationStore'
 import { pinnedSessionsStore } from '../../../store/pinnedSessionsStore'
-import type { NotificationEntry } from '../../../store/notificationStore'
 import { updateSession, deleteSession as apiDeleteSession } from '../../../api/session'
 import { useConnectionState } from '../../../hooks/useConnectionState'
 import type { Session as ApiSession } from '../../../types/api/session'
@@ -519,26 +517,6 @@ export function SidePanel({
       }
     },
     [addDirectory, onSelectSession, onCloseMobile],
-  )
-
-  const renderActiveSessionNode = useCallback(
-    function renderActiveSessionNode(entry: (typeof busySessions)[number], level = 0): ReactNode {
-      const resolvedSession = sessionLookup.get(entry.sessionId)
-      const childEntries = activeSessionTree.childrenByParent.get(entry.sessionId) ?? []
-
-      return (
-        <div key={entry.sessionId} style={level > 0 ? { marginLeft: level * 12 } : undefined}>
-          <ActiveSessionItem
-            entry={entry}
-            resolvedSession={resolvedSession}
-            isSelected={entry.sessionId === selectedSessionId}
-            onSelect={handleSelectActive}
-          />
-          {childEntries.map(childEntry => renderActiveSessionNode(childEntry, level + 1))}
-        </div>
-      )
-    },
-    [activeSessionTree.childrenByParent, handleSelectActive, selectedSessionId, sessionLookup],
   )
 
   const handleRename = useCallback(
@@ -1133,58 +1111,14 @@ export function SidePanel({
 
           {/* Active Sessions Tab */}
           {sidebarTab === 'active' && (
-            <div className="flex-1 overflow-y-auto custom-scrollbar px-2 pb-3">
-              {busySessions.length === 0 && notifications.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-text-400 opacity-60">
-                  <p className="text-[length:var(--fs-sm)]">{t('sidebar.noActiveSessions')}</p>
-                </div>
-              ) : (
-                <div className="mt-1 space-y-0.5">
-                  {/* Busy sessions — 子 session 挂在父下面 */}
-                  {activeSessionTree.rootEntries.map(entry => renderActiveSessionNode(entry))}
-
-                  {/* Divider + actions between busy and notifications */}
-                  {notifications.length > 0 && (
-                    <div
-                      className={`flex items-center justify-between gap-2 ${busySessions.length > 0 ? 'mt-2 pt-2 border-t border-border-200/30' : ''}`}
-                    >
-                      <span className="text-[length:var(--fs-xxs)] font-medium text-text-400 uppercase tracking-wider pl-[6px]">
-                        {t('sidebar.notifications')}
-                      </span>
-                      <div className="flex items-center gap-0.5">
-                        {notifications.some((n: NotificationEntry) => !n.read) && (
-                          <button
-                            className="text-[length:var(--fs-xxs)] text-text-400 hover:text-text-200 px-1.5 py-0.5 rounded-md hover:bg-bg-200 transition-all duration-150 active:scale-95"
-                            onClick={() => notificationStore.markAllRead()}
-                          >
-                            {t('sidebar.readAll')}
-                          </button>
-                        )}
-                        <button
-                          className="text-[length:var(--fs-xxs)] text-text-400 hover:text-text-200 px-1.5 py-0.5 rounded-md hover:bg-bg-200 transition-all duration-150 active:scale-95"
-                          onClick={() => notificationStore.clearAll()}
-                        >
-                          {t('common:clear')}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Notification history */}
-                  {notifications.map((entry: NotificationEntry) => {
-                    const resolvedSession = sessionLookup.get(entry.sessionId)
-                    return (
-                      <NotificationItem
-                        key={entry.id}
-                        entry={entry}
-                        resolvedSession={resolvedSession}
-                        onSelect={handleSelectActive}
-                      />
-                    )
-                  })}
-                </div>
-              )}
-            </div>
+            <ActiveSessionsTab
+              busySessions={busySessions}
+              notifications={notifications}
+              sessionLookup={sessionLookup}
+              activeSessionTree={activeSessionTree}
+              selectedSessionId={selectedSessionId}
+              onSelect={handleSelectActive}
+            />
           )}
         </div>
       </div>
