@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { autoApproveStore } from '../../../store'
+import { autoApproveStore } from '../../../store/autoApproveStore'
 import type { AlwaysAllowMode } from '../../../store/autoApproveStore'
 import { themeStore, type ToolCardStyle } from '../../../store/themeStore'
 import { Toggle, SegmentedControl, SettingRow, SettingsSection } from './SettingsUI'

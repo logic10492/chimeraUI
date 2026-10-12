@@ -3,7 +3,8 @@
 // ============================================
 
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
-import { getPath, type ApiPath } from '../api'
+import { getPath } from '../api/client'
+import type { PathResponse as ApiPath } from '../types/api/project'
 import { useRouter } from '../hooks/useRouter'
 import { handleError, normalizeToForwardSlash, getDirectoryName, isSameDirectory, serverStorage } from '../utils'
 import { layoutStore, useLayoutStore } from '../store/layoutStore'

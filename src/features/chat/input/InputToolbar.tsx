@@ -8,8 +8,8 @@ import { ModelSelector, type ModelSelectorHandle } from '../ModelSelector'
 import { useChatViewport } from '../chatViewport'
 import { isTauri, isTauriMobile, extToMime } from '../../../utils/tauri'
 import { findModelByKey } from '../../../utils/modelUtils'
-import type { ApiAgent } from '../../../api/client'
-import type { ModelInfo, FileCapabilities } from '../../../api'
+import type { Agent as ApiAgent } from '../../../types/api/agent'
+import type { ModelInfo, FileCapabilities } from '../../../types/ui'
 
 interface InputToolbarProps {
   agents: ApiAgent[]

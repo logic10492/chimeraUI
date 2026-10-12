@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ApiSession } from '../../../api'
+import type { Session as ApiSession } from '../../../types/api/session'
 import {
   FolderIcon,
   FolderOpenIcon,
@@ -13,15 +13,17 @@ import {
 } from '../../../components/Icons'
 import { ExpandableSection } from '../../../components/ui'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
-import { useDelayedRender, useSessions, useVcsInfo } from '../../../hooks'
+import { useDelayedRender } from '../../../hooks/useDelayedRender'
+import { useSessions } from '../../../hooks/useSessions'
+import { useVcsInfo } from '../../../hooks/useVcsInfo'
 import { useInputCapabilities } from '../../../hooks/useInputCapabilities'
 import { useInView } from '../../../hooks/useInView'
 import { getDirectoryName, isSameDirectory, normalizeToForwardSlash } from '../../../utils'
-import { useLayoutStore } from '../../../store'
+import { useLayoutStore } from '../../../store/layoutStore'
 import { useBusySessions } from '../../../store/activeSessionStore'
 import { useNotifications } from '../../../store/notificationStore'
 import { pinnedSessionsStore, type PinnedSessionEntry } from '../../../store/pinnedSessionsStore'
-import { SessionListItem } from '../../sessions'
+import { SessionListItem } from '../../sessions/SessionList'
 import { SessionChildrenSlot } from './SessionChildrenSlot'
 
 const DIRECTORY_PAGE_SIZE = 5

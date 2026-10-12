@@ -3,18 +3,9 @@
 // ============================================
 
 import { useState, useCallback, useRef } from 'react'
-import {
-  replyPermission,
-  replyQuestion,
-  rejectQuestion,
-  getPendingPermissions,
-  getPendingQuestions,
-  type ApiPermissionRequest,
-  type ApiQuestionRequest,
-  type PermissionReply,
-  type QuestionAnswer,
-} from '../api'
-import { activeSessionStore } from '../store'
+import { replyPermission, replyQuestion, rejectQuestion, getPendingPermissions, getPendingQuestions } from '../api/permission'
+import type { PermissionRequest as ApiPermissionRequest, QuestionRequest as ApiQuestionRequest, PermissionReply, QuestionAnswer } from '../types/api/permission'
+import { activeSessionStore } from '../store/activeSessionStore'
 import { permissionErrorHandler } from '../utils'
 
 export interface UsePermissionHandlerResult {

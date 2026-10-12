@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RetryIcon, PatchIcon, ChevronDownIcon, FileIcon } from '../../../components/Icons'
 import { useDelayedRender } from '../../../hooks/useDelayedRender'
-import { useDisclosureScrollLock } from '../../../hooks'
+import { useDisclosureScrollLock } from '../../../hooks/useDisclosureScrollLock'
 import type { RetryPart, CompactionPart, PatchPart } from '../../../types/message'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 

@@ -5,7 +5,7 @@
 // 这些类型扩展了 API 类型，添加了 UI 层特有的状态
 //
 
-import type { Message as ApiMessage, Part as ApiPart } from './api'
+import type { Message as ApiMessage, Part as ApiPart } from './api/message'
 
 /**
  * UI 层消息类型

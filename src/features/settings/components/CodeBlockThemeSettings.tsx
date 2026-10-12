@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SettingRow, SettingsSection } from './SettingsUI'
-import { useTheme } from '../../../hooks'
+import { useTheme } from '../../../hooks/useTheme'
 import {
   AVAILABLE_CODE_BLOCK_THEMES,
   filterThemesByType,

@@ -1,5 +1,5 @@
 import { createContext } from 'react'
-import type { ApiSession } from '../api'
+import type { Session as ApiSession } from '../types/api/session'
 
 export interface SessionContextValue {
   sessions: ApiSession[]

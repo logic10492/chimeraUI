@@ -5,14 +5,10 @@
 import { useState, useCallback } from 'react'
 import type { Message } from '../types/message'
 import { toUIMessage } from '../utils/messageConversion'
-import {
-  getSessionMessages,
-  revertMessage,
-  unrevertSession,
-  extractUserMessageContent,
-  type ApiSession,
-  type RevertedMessage,
-} from '../api'
+import { getSessionMessages, extractUserMessageContent } from '../api/message'
+import { revertMessage, unrevertSession } from '../api/session'
+import type { Session as ApiSession } from '../types/api/session'
+import type { RevertedMessage } from '../api/types'
 import { revertErrorHandler } from '../utils'
 import { INITIAL_MESSAGE_LIMIT } from '../constants'
 

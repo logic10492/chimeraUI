@@ -1,8 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { QuestionIcon, CheckIcon, ReturnIcon, ChevronDownIcon } from '../../components/Icons'
-import type { ApiQuestionRequest, ApiQuestionInfo, QuestionAnswer } from '../../api'
-import { usePresence } from '../../hooks'
+import type { QuestionRequest as ApiQuestionRequest, QuestionInfo as ApiQuestionInfo, QuestionAnswer } from '../../types/api/permission'
+import { usePresence } from '../../hooks/usePresence'
 import { useChatViewport } from './chatViewport'
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
 

@@ -1,16 +1,17 @@
 import { memo, useState, useCallback, useRef, useEffect, type RefCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ContentBlock } from '../../../../components'
+import { ContentBlock } from '../../../../components/ContentBlock'
 import { ChevronRightIcon, ExternalLinkIcon, StopIcon } from '../../../../components/Icons'
-import {
-  useDelayedRender,
-  useDisclosureScrollLock,
-  useResponsiveMaxHeight,
-  useServerCapabilities,
-} from '../../../../hooks'
-import { useSessionState, messageStore, childSessionStore } from '../../../../store'
+import { useDelayedRender } from '../../../../hooks/useDelayedRender'
+import { useDisclosureScrollLock } from '../../../../hooks/useDisclosureScrollLock'
+import { useResponsiveMaxHeight } from '../../../../hooks/useResponsiveMaxHeight'
+import { useServerCapabilities } from '../../../../hooks/useServerCapabilities'
+import { useSessionState } from '../../../../store/messageStoreHooks'
+import { messageStore } from '../../../../store/messageStore'
+import { childSessionStore } from '../../../../store/childSessionStore'
 import { useSessionNavigation } from '../../../../contexts/SessionNavigationContext'
-import { abortSession, getSessionMessages } from '../../../../api'
+import { abortSession } from '../../../../api/session'
+import { getSessionMessages } from '../../../../api/message'
 import { sessionErrorHandler } from '../../../../utils'
 import { formatToolName } from '../../../../utils/formatUtils'
 import { useUiDisclosureState } from '../../../../utils/uiDisclosureState'

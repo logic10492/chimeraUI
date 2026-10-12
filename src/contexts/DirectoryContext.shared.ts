@@ -1,5 +1,5 @@
 import { createContext } from 'react'
-import type { ApiPath } from '../api'
+import type { PathResponse as ApiPath } from '../types/api/project'
 
 export interface SavedDirectory {
   path: string

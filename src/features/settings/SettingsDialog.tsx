@@ -16,7 +16,7 @@ import {
   CogIcon,
   ArchiveIcon,
 } from '../../components/Icons'
-import { useIsMobile } from '../../hooks'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import { isTauriDesktop } from '../../utils/tauri'
 import { KeybindingsSection } from './KeybindingsSection'
 import { AgentSettings } from './components/AgentSettings'

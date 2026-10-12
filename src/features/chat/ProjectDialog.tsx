@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderIcon, ArrowUpIcon, SpinnerIcon, PlusIcon } from '../../components/Icons'
-import { listDirectory, getPath } from '../../api'
+import { listDirectory } from '../../api/file'
+import { getPath } from '../../api/client'
 import { fileErrorHandler } from '../../utils'
 import { Dialog } from '../../components/ui/Dialog'
 

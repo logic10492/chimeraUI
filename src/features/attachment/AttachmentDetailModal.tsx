@@ -8,8 +8,8 @@ import { saveData } from '../../utils/downloadUtils'
 import type { Attachment } from './types'
 import { CodePreview } from '../../components/CodePreview'
 import { detectLanguage } from '../../utils/languageUtils'
-import { useFullscreen } from '../../contexts'
-import type { FullscreenLayer } from '../../contexts'
+import { useFullscreen } from '../../contexts/useFullscreen'
+import type { FullscreenLayer } from '../../contexts/FullscreenContext.shared'
 
 // ============================================
 // 常量

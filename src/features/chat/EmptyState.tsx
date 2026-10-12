@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MessageSquareIcon, FolderIcon, ChevronDownIcon, NewChatIcon } from '../../components/Icons'
-import { getPath, type ApiProject, type ApiPath } from '../../api'
+import { getPath } from '../../api/client'
+import type { Project as ApiProject, PathResponse as ApiPath } from '../../types/api/project'
 import { serverStore } from '../../store/serverStore'
 import { handleError } from '../../utils'
 

@@ -1,4 +1,4 @@
-import type { Attachment } from '../attachment'
+import type { Attachment } from '../attachment/types'
 
 function getEditSpan(previousText: string, nextText: string) {
   const maxPrefix = Math.min(previousText.length, nextText.length)

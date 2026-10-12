@@ -14,8 +14,8 @@ import {
   QuestionIcon,
   AlertCircleIcon,
 } from '../../../components/Icons'
-import { useNotification } from '../../../hooks'
-import { notificationStore } from '../../../store'
+import { useNotification } from '../../../hooks/useNotification'
+import { notificationStore } from '../../../store/notificationStore'
 import {
   notificationEventSettingsStore,
   useNotificationEventSettings,

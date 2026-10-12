@@ -22,7 +22,7 @@ import {
 import { layoutStore, useLayoutStore, type PanelTab, type PanelPosition, type PanelTabType } from '../store/layoutStore'
 import { updatePtySession } from '../api/pty'
 import type { ApiScope } from '../api/scope'
-import { useTheme } from '../hooks'
+import { useTheme } from '../hooks/useTheme'
 import { uiErrorHandler } from '../utils'
 import {
   getInternalDragSnapshot,

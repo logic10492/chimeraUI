@@ -7,7 +7,7 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CheckIcon } from '../../components/Icons'
-import type { ApiQuestionRequest, ApiQuestionInfo, QuestionAnswer } from '../../api'
+import type { QuestionRequest as ApiQuestionRequest, QuestionInfo as ApiQuestionInfo, QuestionAnswer } from '../../types/api/permission'
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
 
 interface InlineQuestionProps {

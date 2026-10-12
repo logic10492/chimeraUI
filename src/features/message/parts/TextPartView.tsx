@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { MarkdownRenderer } from '../../../components'
+import { MarkdownRenderer } from '../../../components/MarkdownRenderer'
 import type { TextPart } from '../../../types/message'
 
 interface TextPartViewProps {

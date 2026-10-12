@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import type { ActiveSessionEntry } from '../../../store/activeSessionStore'
-import type { ApiSession } from '../../../api'
+import type { Session as ApiSession } from '../../../types/api/session'
 import { startInternalDrag } from '../../../lib/internalDragCore'
 
 interface ActiveSessionItemProps {

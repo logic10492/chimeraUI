@@ -1,12 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from 'react'
-import {
-  getSessions,
-  createSession as apiCreateSession,
-  deleteSession as apiDeleteSession,
-  subscribeToEvents,
-  type ApiSession,
-  type SessionListParams,
-} from '../api'
+import { getSessions, createSession as apiCreateSession, deleteSession as apiDeleteSession } from '../api/session'
+import { subscribeToEvents } from '../api/events'
+import type { Session as ApiSession, SessionListParams } from '../types/api/session'
 import { todoStore } from '../store/todoStore'
 import { serverStore } from '../store/serverStore'
 import { pinnedSessionsStore } from '../store/pinnedSessionsStore'

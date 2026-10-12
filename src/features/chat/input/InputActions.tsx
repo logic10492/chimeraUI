@@ -2,7 +2,7 @@ import { memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowDownIcon, ArrowUpIcon, PermissionListIcon, QuestionIcon } from '../../../components/Icons'
 import { UndoStatus } from './UndoStatus'
-import { usePresence } from '../../../hooks'
+import { usePresence } from '../../../hooks/usePresence'
 import type { CollapsedDialogInfo } from '../InputBox'
 
 // ============================================

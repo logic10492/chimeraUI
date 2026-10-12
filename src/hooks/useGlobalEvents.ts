@@ -9,7 +9,10 @@
 // 4. 与具体 session 无关，处理所有 session 的事件
 
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { messageStore, childSessionStore, paneLayoutStore, serverStore } from '../store'
+import { messageStore } from '../store/messageStore'
+import { childSessionStore } from '../store/childSessionStore'
+import { paneLayoutStore } from '../store/paneLayoutStore'
+import { serverStore } from '../store/serverStore'
 import { activeSessionStore } from '../store/activeSessionStore'
 import { commandProgressStore } from '../store/commandProgressStore'
 import { notificationEventSettingsStore } from '../store/notificationEventSettingsStore'
@@ -18,13 +21,9 @@ import { runtimeInvalidationStore } from '../store/runtimeInvalidationStore'
 import { soundStore } from '../store/soundStore'
 import { playNotificationSoundDeduped } from '../utils/notificationSoundBridge'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
-import {
-  subscribeToEvents,
-  getSessionStatus,
-  getPendingPermissions,
-  getPendingQuestions,
-  broadcastRuntimeResync,
-} from '../api'
+import { subscribeToEvents, broadcastRuntimeResync } from '../api/events'
+import { getSessionStatus } from '../api/session'
+import { getPendingPermissions, getPendingQuestions } from '../api/permission'
 import { invalidateRootDirectoryCache } from '../api/file'
 import { replyPermission } from '../api/permission'
 import { autoApproveStore } from '../store/autoApproveStore'

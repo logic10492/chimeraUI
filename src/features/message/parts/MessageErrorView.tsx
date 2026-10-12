@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { MessageError } from '../../../types/message'
 import { AlertCircleIcon, ChevronDownIcon } from '../../../components/Icons'
 import { useDelayedRender } from '../../../hooks/useDelayedRender'
-import { useDisclosureScrollLock } from '../../../hooks'
+import { useDisclosureScrollLock } from '../../../hooks/useDisclosureScrollLock'
 import { CodeBlock } from '../../../components/CodeBlock'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 

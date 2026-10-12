@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useRef, memo } from 'react'
 import { SidePanel } from './sidebar/SidePanel'
 import { ProjectDialog } from './ProjectDialog'
-import { useDirectory } from '../../hooks'
-import { type ApiSession } from '../../api'
+import { useDirectory } from '../../contexts/useDirectory'
+import type { Session as ApiSession } from '../../types/api/session'
 import { useChatViewport } from './chatViewport'
 
 function clampSidebarWidth(width: number, minWidth: number, maxWidth: number) {

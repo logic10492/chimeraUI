@@ -5,27 +5,23 @@ import { animate } from 'motion/mini'
 import { ChevronDownIcon, ChevronRightIcon, SplitIcon, SpinnerIcon, UndoIcon } from '../../components/Icons'
 import { CopyButton, SmoothHeight } from '../../components/ui'
 import { MarkdownRenderer } from '../../components/MarkdownRenderer'
-import { useDelayedRender, useDisclosureScrollLock } from '../../hooks'
+import { useDelayedRender } from '../../hooks/useDelayedRender'
+import { useDisclosureScrollLock } from '../../hooks/useDisclosureScrollLock'
 import { useTheme } from '../../hooks/useTheme'
 import {
   useInlineToolRequests,
   findPermissionRequestForTool,
   findQuestionRequestForTool,
 } from '../chat/InlineToolRequestContext'
-import {
-  TextPartView,
-  ReasoningPartView,
-  ToolPartView,
-  FilePartView,
-  AgentPartView,
-  SyntheticTextPartView,
-  StepFinishPartView,
-  SubtaskPartView,
-  RetryPartView,
-  CompactionPartView,
-  MessageErrorView,
-} from './parts'
-import { extractToolData } from './tools'
+import { TextPartView } from './parts/TextPartView'
+import { ReasoningPartView } from './parts/ReasoningPartView'
+import { ToolPartView } from './parts/ToolPartView'
+import { FilePartView, AgentPartView, SyntheticTextPartView } from './parts/AttachmentPartViews'
+import { StepFinishPartView } from './parts/StepFinishPartView'
+import { SubtaskPartView } from './parts/SubtaskPartView'
+import { RetryPartView, CompactionPartView } from './parts/SystemPartViews'
+import { MessageErrorView } from './parts/MessageErrorView'
+import { extractToolData } from './tools/registry'
 import type {
   Message,
   Part,

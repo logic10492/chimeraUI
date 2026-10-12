@@ -16,7 +16,7 @@ import {
 } from './Icons'
 import { getSkills } from '../api/skill'
 import type { Skill } from '../types/api/skill'
-import { useDirectory } from '../hooks'
+import { useDirectory } from '../contexts/useDirectory'
 import { apiErrorHandler } from '../utils'
 
 // ============================================

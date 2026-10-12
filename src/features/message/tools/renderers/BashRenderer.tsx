@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MaximizeIcon, MinimizeIcon } from '../../../../components/Icons'
-import { useFullscreen } from '../../../../contexts'
+import { useFullscreen } from '../../../../contexts/useFullscreen'
 import { useSyntaxHighlight } from '../../../../hooks/useSyntaxHighlight'
 import { useResponsiveMaxHeight } from '../../../../hooks/useResponsiveMaxHeight'
 import { parseAnsi, type AnsiSegment } from '../../../../utils/ansiUtils'

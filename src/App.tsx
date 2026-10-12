@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
-import { Sidebar } from './features/chat'
+import { Sidebar } from './features/chat/Sidebar'
 import { ChatPane } from './features/chat/ChatPane'
 import { SplitContainer } from './features/chat/SplitContainer'
 import type { CommandItem } from './components/CommandPalette'
@@ -9,7 +9,10 @@ import { ToastContainer } from './components/ToastContainer'
 import { RightPanel } from './components/RightPanel'
 import { BottomPanel } from './components/BottomPanel'
 import { DesktopTitlebar } from './components/DesktopTitlebar'
-import { useDirectory, useGlobalEvents, useGlobalKeybindings, useRouter } from './hooks'
+import { useDirectory } from './contexts/useDirectory'
+import { useGlobalEvents } from './hooks/useGlobalEvents'
+import { useGlobalKeybindings } from './hooks/useKeybindings'
+import { useRouter } from './hooks/useRouter'
 import { useViewportHeight } from './hooks/useViewportHeight'
 import { useCloseServiceDialog } from './hooks/useCloseServiceDialog'
 import { useWakeLock } from './hooks/useWakeLock'
@@ -17,18 +20,11 @@ import { usePresenceHeartbeat } from './hooks/usePresenceHeartbeat'
 import type { KeybindingHandlers } from './hooks/useKeybindings'
 import { refreshModels } from './hooks/useModels'
 import { keybindingStore } from './store/keybindingStore'
-import {
-  layoutStore,
-  paneLayoutStore,
-  useLayoutStore,
-  usePaneController,
-  usePaneControllers,
-  usePaneLayout,
-  updateStore,
-  onboardingStore,
-  useOnboardingStore,
-  type OnboardingStatus,
-} from './store'
+import { layoutStore, useLayoutStore } from './store/layoutStore'
+import { paneLayoutStore, usePaneLayout } from './store/paneLayoutStore'
+import { usePaneController, usePaneControllers } from './store/paneControllerStore'
+import { updateStore } from './store/updateStore'
+import { onboardingStore, useOnboardingStore, type OnboardingStatus } from './store/onboardingStore'
 import {
   ChatViewportProvider,
   CHAT_SURFACE_MIN_WIDTH,

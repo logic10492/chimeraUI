@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { SessionList } from '../../sessions'
+import { SessionList } from '../../sessions/SessionList'
 import { FolderRecentList } from './FolderRecentList'
 import { getProjectGroupIdentity } from './projectGrouping'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
@@ -22,21 +22,21 @@ import {
   CloseIcon,
   SpinnerIcon,
 } from '../../../components/Icons'
-import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog, useVcsInfo, useSessions } from '../../../hooks'
+import { useDirectory } from '../../../contexts/useDirectory'
+import { useKeybindingLabel } from '../../../hooks/useKeybindings'
+import { useGitWorkspaceCatalog } from '../../../hooks/useGitWorkspaceCatalog'
+import { useVcsInfo } from '../../../hooks/useVcsInfo'
+import { useSessions } from '../../../hooks/useSessions'
 import { useSessionContext } from '../../../contexts/useSessionContext'
-import { useLayoutStore, childSessionStore } from '../../../store'
+import { useLayoutStore } from '../../../store/layoutStore'
+import { childSessionStore } from '../../../store/childSessionStore'
 import { useBusySessions, useBusyCount } from '../../../store/activeSessionStore'
 import { notificationStore, useNotifications, useUnreadNotificationCount } from '../../../store/notificationStore'
 import { pinnedSessionsStore } from '../../../store/pinnedSessionsStore'
 import type { NotificationEntry } from '../../../store/notificationStore'
-import {
-  updateSession,
-  deleteSession as apiDeleteSession,
-  getSession,
-  subscribeToConnectionState,
-  type ApiSession,
-  type ConnectionInfo,
-} from '../../../api'
+import { updateSession, deleteSession as apiDeleteSession, getSession } from '../../../api/session'
+import { subscribeToConnectionState, type ConnectionInfo } from '../../../api/events'
+import type { Session as ApiSession } from '../../../types/api/session'
 import { getDirectoryName, isSameDirectory, normalizeToForwardSlash } from '../../../utils'
 import { uiErrorHandler } from '../../../utils'
 

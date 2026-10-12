@@ -1,4 +1,4 @@
-import type { GitWorkspaceMeta } from '../../../hooks'
+import type { GitWorkspaceMeta } from '../../../hooks/useGitWorkspaceCatalog'
 import { isSameDirectory, normalizeToForwardSlash } from '../../../utils'
 
 export function isWorkspaceRootDirectory(directory: string, meta: GitWorkspaceMeta | undefined) {

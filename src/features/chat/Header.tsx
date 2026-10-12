@@ -12,14 +12,15 @@ import {
 import { IconButton } from '../../components/ui'
 import { ModelSelector, type ModelSelectorHandle } from './ModelSelector'
 import { ShareDialog } from './ShareDialog'
-import { messageStore, useMessageStore } from '../../store'
+import { messageStore } from '../../store/messageStore'
+import { useMessageStore } from '../../store/messageStoreHooks'
 import { useLayoutStore, layoutStore } from '../../store/layoutStore'
 import { useSessionContext } from '../../contexts/useSessionContext'
-import { updateSession } from '../../api'
+import { updateSession } from '../../api/session'
 import { useDirectory } from '../../contexts/useDirectory'
 import { uiErrorHandler } from '../../utils'
 import { useChatViewport } from './chatViewport'
-import type { ModelInfo } from '../../api'
+import type { ModelInfo } from '../../types/ui'
 
 interface HeaderProps {
   models: ModelInfo[]

@@ -6,14 +6,14 @@
 
 import { memo, useCallback, useMemo, useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useFileExplorer, type FileTreeNode } from '../hooks'
+import { useFileExplorer, type FileTreeNode } from '../hooks/useFileExplorer'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
 import { layoutStore, type PreviewFile } from '../store/layoutStore'
 import { ChevronRightIcon, ChevronDownIcon, RetryIcon, AlertCircleIcon, DownloadIcon, MaximizeIcon, SearchIcon, CloseIcon } from './Icons'
 import { CodePreview } from './CodePreview'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { MarkdownRenderer } from './MarkdownRenderer'
-import { useFullscreenLayer } from '../contexts'
+import { useFullscreenLayer } from '../contexts/useFullscreen'
 import { getMaterialIconUrl } from '../utils/materialIcons'
 import { detectLanguage } from '../utils/languageUtils'
 import {
@@ -30,7 +30,7 @@ import { downloadFileContent } from '../utils/downloadUtils'
 import { searchText, searchFiles } from '../api/file'
 import type { FileContent, TextSearchMatch } from '../api/types'
 import { startInternalDrag } from '../lib/internalDragCore'
-import { toAbsolutePath } from '../features/mention'
+import { toAbsolutePath } from '../features/mention/utils'
 import type { TargetLineRange } from './codeMirrorReadonlyExtensions'
 
 // 常量

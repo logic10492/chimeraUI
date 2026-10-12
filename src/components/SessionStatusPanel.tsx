@@ -1,11 +1,17 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { Process, ProviderBalanceResult, TodoItem, WorkBrief } from '../types/api'
-import { getProviderBalance, getSessionTodos, getSessionWorkBrief, listProcesses, subscribeToEvents } from '../api'
-import { todoStore, useTodoStats, useTodos } from '../store'
+import type { Process } from '../types/api/process'
+import type { ProviderBalanceResult } from '../types/api/model'
+import type { TodoItem } from '../types/api/event'
+import type { WorkBrief } from '../types/api/session'
+import { getProviderBalance } from '../api/client'
+import { getSessionTodos, getSessionWorkBrief } from '../api/session'
+import { listProcesses } from '../api/process'
+import { subscribeToEvents } from '../api/events'
+import { todoStore, useTodoStats, useTodos } from '../store/todoStore'
 import { getSessionModelSelection, parseModelKey } from '../utils/modelUtils'
 import { formatRelativeTime } from '../utils/dateUtils'
-import { useModels } from '../hooks'
+import { useModels } from '../hooks/useModels'
 
 interface SessionStatusPanelProps {
   sessionId?: string | null

@@ -1,5 +1,5 @@
 import { useCallback, useContext } from 'react'
-import type { ApiPath } from '../api'
+import type { PathResponse as ApiPath } from '../types/api/project'
 import { layoutStore, useLayoutStore } from '../store/layoutStore'
 import { DirectoryContext, type DirectoryContextValue, type SavedDirectory } from './DirectoryContext.shared'
 

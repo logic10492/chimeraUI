@@ -7,7 +7,7 @@ import { detectLanguage } from '../utils/languageUtils'
 import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
 import { ViewModeSwitch } from './FullscreenViewer'
 import { DiffViewer, useDiffViewerData, type ViewMode } from './DiffViewer'
-import { useFullscreenLayer } from '../contexts'
+import { useFullscreenLayer } from '../contexts/useFullscreen'
 
 interface DiffViewProps {
   /** Unified diff format string */

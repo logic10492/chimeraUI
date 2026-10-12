@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog, Button, IconButton } from '../../components/ui'
 import { LinkIcon, CopyIcon, GlobeIcon, SpinnerIcon, CheckIcon } from '../../components/Icons'
-import { shareSession, unshareSession } from '../../api'
-import { useMessageStore, messageStore } from '../../store'
+import { shareSession, unshareSession } from '../../api/session'
+import { useMessageStore } from '../../store/messageStoreHooks'
+import { messageStore } from '../../store/messageStore'
 import { apiErrorHandler, clipboardErrorHandler, copyTextToClipboard } from '../../utils'
 
 interface ShareDialogProps {

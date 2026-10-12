@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useMessageStore } from '../store'
+import { useMessageStore } from '../store/messageStoreHooks'
 import type { AssistantMessageInfo, Message, Part } from '../types/message'
 export { formatTokens, formatCost } from './sessionStatsUtils'
 

@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react'
-import type { Attachment } from '../features/attachment'
+import type { Attachment } from '../features/attachment/types'
 import { notificationStore } from './notificationStore'
 
 const STORAGE_PREFIX = 'chimera:followup-queue:v1'

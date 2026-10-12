@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getCurrentProject, getProjects, type ApiProject } from '../api'
+import { getCurrentProject, getProjects } from '../api/client'
+import type { Project as ApiProject } from '../types/api/project'
 import { serverStore } from '../store/serverStore'
 import { apiErrorHandler } from '../utils'
 import { serverStorage } from '../utils/perServerStorage'

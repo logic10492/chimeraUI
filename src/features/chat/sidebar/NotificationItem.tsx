@@ -5,7 +5,7 @@ import { notificationStore } from '../../../store/notificationStore'
 import { useInputCapabilities } from '../../../hooks/useInputCapabilities'
 import { formatNotificationTime } from './sidebarUtils'
 import type { NotificationEntry } from '../../../store/notificationStore'
-import type { ApiSession } from '../../../api'
+import type { Session as ApiSession } from '../../../types/api/session'
 
 const notifTypeConfig = {
   completed: {

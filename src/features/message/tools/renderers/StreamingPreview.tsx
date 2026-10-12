@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { ContentBlock } from '../../../../components'
+import { ContentBlock } from '../../../../components/ContentBlock'
 import { detectLanguage } from '../../../../utils/languageUtils'
 import type { StreamingHunk } from '../../../../types/message'
 

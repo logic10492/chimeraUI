@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import type { ToolType, PermissionDecision } from '../types'
+import type { ToolType, PermissionDecision } from '../types/chat'
 
 interface UsePermissionsReturn {
   // 会话级别已授权的工具

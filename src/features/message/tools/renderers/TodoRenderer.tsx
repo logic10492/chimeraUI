@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next'
 import { ChevronDownIcon, CheckIcon, ClockIcon, CloseIcon, CircleIcon } from '../../../../components/Icons'
 import type { ToolRendererProps } from '../types'
-import { useDelayedRender, useDisclosureScrollLock } from '../../../../hooks'
+import { useDelayedRender } from '../../../../hooks/useDelayedRender'
+import { useDisclosureScrollLock } from '../../../../hooks/useDisclosureScrollLock'
 import { extractTodos } from './todoUtils'
 import { useUiDisclosureState } from '../../../../utils/uiDisclosureState'
 

@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Provider, ProviderAuthAuthorization, ProviderAuthMethod } from '../../../types/api/model'
-import {
-  authorizeProviderOAuth,
-  completeProviderOAuth,
-  connectProviderApiKey,
-  disconnectProvider,
-  listProviderAuthMethods,
-  listProviders,
-} from '../../../api'
-import { useCurrentDirectory } from '../../../hooks'
+import { authorizeProviderOAuth, completeProviderOAuth, connectProviderApiKey, disconnectProvider, listProviderAuthMethods, listProviders } from '../../../api/provider'
+import { useCurrentDirectory } from '../../../contexts/useDirectory'
 import { isTauri } from '../../../utils/tauri'
 import { SettingsCard, SettingsSection } from './SettingsUI'
 import { tx } from './configEditorUtils'

@@ -1,5 +1,6 @@
 import { useSyncExternalStore, useCallback } from 'react'
-import { getActiveModels, type ModelInfo } from '../api'
+import { getActiveModels } from '../api/client'
+import type { ModelInfo } from '../types/ui'
 import { getSDKClientAsync } from '../api/sdk'
 import { serverStore } from '../store/serverStore'
 

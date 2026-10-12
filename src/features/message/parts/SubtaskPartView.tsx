@@ -1,9 +1,10 @@
 import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SubtaskPart } from '../../../types/message'
-import { useChildSessions, type ChildSessionInfo } from '../../../store'
+import { useChildSessions, type ChildSessionInfo } from '../../../store/childSessionStore'
 import { useSessionNavigation } from '../../../contexts/SessionNavigationContext'
-import { useDelayedRender, useDisclosureScrollLock } from '../../../hooks'
+import { useDelayedRender } from '../../../hooks/useDelayedRender'
+import { useDisclosureScrollLock } from '../../../hooks/useDisclosureScrollLock'
 import { UsersIcon, ChevronDownIcon, LayersIcon, TerminalIcon, ReturnIcon } from '../../../components/Icons'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 

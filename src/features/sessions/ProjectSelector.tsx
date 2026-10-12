@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { FolderIcon, GlobeIcon, ChevronDownIcon, PlusIcon, TrashIcon } from '../../components/Icons'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { useIsServerDisposedDirectory } from '../../store/serverDisposedDirectoryStore'
-import type { ApiProject } from '../../api'
+import type { Project as ApiProject } from '../../types/api/project'
 
 // ============================================
 // Types

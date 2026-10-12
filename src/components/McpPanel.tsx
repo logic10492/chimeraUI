@@ -30,7 +30,7 @@ import {
   addMcpServer,
 } from '../api/mcp'
 import type { MCPResource, MCPStatus, McpServerConfig } from '../types/api/mcp'
-import { useDirectory } from '../hooks'
+import { useDirectory } from '../contexts/useDirectory'
 import { logger } from '../utils/logger'
 import { apiErrorHandler } from '../utils'
 

@@ -7,7 +7,7 @@
  */
 
 import { createContext, useContext } from 'react'
-import type { ApiPermissionRequest, ApiQuestionRequest, PermissionReply, QuestionAnswer } from '../../api'
+import type { PermissionRequest as ApiPermissionRequest, QuestionRequest as ApiQuestionRequest, PermissionReply, QuestionAnswer } from '../../types/api/permission'
 import { isToolPart, type Message, type ToolPart } from '../../types/message'
 
 export interface InlineToolRequestContextValue {

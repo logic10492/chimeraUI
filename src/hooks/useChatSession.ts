@@ -3,43 +3,31 @@
 // ============================================
 
 import { useState, useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
-import {
-  messageStore,
-  useSessionFamily,
-  useSessionState,
-  autoApproveStore,
-  childSessionStore,
-  useActiveSessionStore,
-  serverStore,
-  type RevertHistoryItem,
-} from '../store'
-import {
-  useSessionManager,
-  registerSessionConsumer,
-  updateConsumerSessionId,
-  hasOtherConsumerForSession,
-} from '../hooks'
-import { usePermissions, usePermissionHandler, useMessageAnimation, useDirectory, useSessionContext } from '../hooks'
-import {
-  sendMessageAsync,
-  getSessionMessages,
-  abortSession,
-  getSelectableAgents,
-  getPendingPermissions,
-  getPendingQuestions,
-  prefetchCommands,
-  prefetchRootDirectory,
-  executeCommand,
-  summarizeSession,
-  updateSession,
-  forkSession,
-  extractUserMessageContent,
-  type ApiPermissionRequest,
-  type ApiSession,
-  type ApiAgent,
-  type Attachment,
-  type ModelInfo,
-} from '../api'
+import { messageStore } from '../store/messageStore'
+import { useSessionFamily, childSessionStore } from '../store/childSessionStore'
+import { useSessionState } from '../store/messageStoreHooks'
+import { autoApproveStore } from '../store/autoApproveStore'
+import { useActiveSessionStore } from '../store/activeSessionStore'
+import { serverStore } from '../store/serverStore'
+import type { RevertHistoryItem } from '../store/messageStoreTypes'
+import { useSessionManager } from './useSessionManager'
+import { registerSessionConsumer, updateConsumerSessionId, hasOtherConsumerForSession } from './useGlobalEvents'
+import { usePermissions } from './usePermissions'
+import { usePermissionHandler } from './usePermissionHandler'
+import { useMessageAnimation } from './useMessageAnimation'
+import { useDirectory } from '../contexts/useDirectory'
+import { useSessionContext } from '../contexts/useSessionContext'
+import { sendMessageAsync, getSessionMessages, extractUserMessageContent } from '../api/message'
+import { abortSession, summarizeSession, updateSession, forkSession } from '../api/session'
+import { getSelectableAgents } from '../api/agent'
+import { getPendingPermissions, getPendingQuestions } from '../api/permission'
+import { prefetchCommands, executeCommand } from '../api/command'
+import { prefetchRootDirectory } from '../api/file'
+import type { PermissionRequest as ApiPermissionRequest } from '../types/api/permission'
+import type { Session as ApiSession } from '../types/api/session'
+import type { Agent as ApiAgent } from '../types/api/agent'
+import type { Attachment } from '../features/attachment/types'
+import type { ModelInfo } from '../types/ui'
 import { getMessageText, isUserMessage, type AssistantMessageInfo, type Message as UIMessage } from '../types/message'
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
 import { isSameDirectory, normalizeToForwardSlash } from '../utils/directoryUtils'
@@ -47,7 +35,7 @@ import { activeSessionStore } from '../store/activeSessionStore'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { serverStorage } from '../utils/perServerStorage'
 import { STORAGE_KEY_SELECTED_AGENT } from '../constants'
-import type { ChatAreaHandle } from '../features/chat'
+import type { ChatAreaHandle } from '../features/chat/ChatArea'
 import { followupQueueStore, useFollowupQueue } from '../store/followupQueueStore'
 import { themeStore } from '../store/themeStore'
 
@@ -351,7 +339,7 @@ export function useChatSession({
   // ============================================
   const sseCallbacks = useMemo(
     () => ({
-      onPermissionAsked: (request: import('../api').ApiPermissionRequest) => {
+      onPermissionAsked: (request: import('../types/api/permission').PermissionRequest) => {
         // Full Auto 会话级：当前 session 的 handler 天然只处理当前 session 的请求
         const effectiveFullAutoMode = autoApproveStore.getPaneFullAutoMode(paneId)
         if (effectiveFullAutoMode === 'session') {
@@ -379,7 +367,7 @@ export function useChatSession({
           prev.some(r => r.id === data.requestID) ? prev.filter(r => r.id !== data.requestID) : prev,
         )
       },
-      onQuestionAsked: (request: import('../api').ApiQuestionRequest) => {
+      onQuestionAsked: (request: import('../types/api/permission').QuestionRequest) => {
         setPendingQuestionRequests(prev => {
           if (prev.some(r => r.id === request.id)) return prev
           return [...prev, request]

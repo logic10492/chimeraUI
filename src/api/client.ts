@@ -22,34 +22,6 @@ function requireArray<T = unknown>(value: unknown, message: string): T[] {
   throw new Error(message)
 }
 
-// Re-export all types
-export * from './types'
-export * from './scope'
-
-// Re-export from Attachment feature
-export { fromFilePart, fromAgentPart } from '../features/attachment'
-
-// Re-export from sub-modules
-export * from './session'
-export * from './message'
-export * from './permission'
-export * from './file'
-export * from './agent'
-export * from './skill'
-export * from './events'
-export * from './config'
-export * from './provider'
-export * from './vcs'
-export * from './mcp'
-export * from './pty'
-export * from './process'
-export * from './worktree'
-export * from './command'
-export * from './global'
-export * from './preferences'
-export * from './tool'
-export * from './lsp'
-export * from './graph'
 
 // ============================================
 // Model API Functions

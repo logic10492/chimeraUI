@@ -1,17 +1,12 @@
 import { useState, useRef, useEffect, useCallback, useMemo, useSyncExternalStore, useLayoutEffect, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { DragDropEvent } from '@tauri-apps/api/webview'
-import { AttachmentPreview, type Attachment } from '../attachment'
-import {
-  MentionMenu,
-  detectMentionTrigger,
-  getFileName,
-  normalizePath,
-  toFileUrl,
-  type MentionMenuHandle,
-  type MentionItem,
-} from '../mention'
-import { SlashCommandMenu, type SlashCommandMenuHandle } from '../slash-command'
+import { AttachmentPreview } from '../attachment/AttachmentPreview'
+import type { Attachment } from '../attachment/types'
+import { MentionMenu, type MentionMenuHandle } from '../mention/MentionMenu'
+import { detectMentionTrigger, getFileName, normalizePath, toFileUrl } from '../mention/utils'
+import type { MentionItem } from '../mention/types'
+import { SlashCommandMenu, type SlashCommandMenuHandle } from '../slash-command/SlashCommandMenu'
 import { InputToolbar } from './input/InputToolbar'
 import type { ModelSelectorHandle } from './ModelSelector'
 import { InputFooter } from './input/InputFooter'
@@ -32,8 +27,8 @@ import { removeAttachmentFromText, transformAttachmentRanges } from './attachmen
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
 import { themeStore } from '../../store/themeStore'
 import { useChatViewport } from './chatViewport'
-import type { ApiAgent } from '../../api/client'
-import type { ModelInfo, FileCapabilities } from '../../api'
+import type { Agent as ApiAgent } from '../../types/api/agent'
+import type { ModelInfo, FileCapabilities } from '../../types/ui'
 import type { Command } from '../../api/command'
 import { getDesktopPlatform, isTauri } from '../../utils/tauri'
 import {

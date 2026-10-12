@@ -14,7 +14,8 @@ import {
   useMemo,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { searchFiles, listDirectory, type ApiAgent } from '../../api/client'
+import { searchFiles, listDirectory } from '../../api/file'
+import type { Agent as ApiAgent } from '../../types/api/agent'
 import { fileErrorHandler } from '../../utils'
 import type { MentionType, MentionItem } from './types'
 import { getFileName, toAbsolutePath, normalizePath } from './utils'

@@ -1,7 +1,7 @@
 import { useRef, useMemo, useCallback, useEffect } from 'react'
 import { useMessages } from '../../../store/messageStoreHooks'
 import { getMessageText, type FilePart, type AgentPart } from '../../../types/message'
-import type { Attachment } from '../../attachment'
+import type { Attachment } from '../../attachment/types'
 
 // ============================================
 // useInputHistory

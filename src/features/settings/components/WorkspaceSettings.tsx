@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
-import { useTheme } from '../../../hooks'
-import { layoutStore, useLayoutStore } from '../../../store'
+import { useTheme } from '../../../hooks/useTheme'
+import { layoutStore, useLayoutStore } from '../../../store/layoutStore'
 import { Toggle, SegmentedControl, SettingRow, SettingsSection } from './SettingsUI'
 
 export function WorkspaceSettings() {

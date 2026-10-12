@@ -7,7 +7,7 @@ import type {
   RemoteCompactionResolution,
   RemoteCompactionValueMetadata,
 } from '../../../types/api/config'
-import type { ApiProject } from '../../../api'
+import type { Project as ApiProject } from '../../../types/api/project'
 import { getCurrentProject } from '../../../api/client'
 import {
   getRemoteCompactionEligibility,

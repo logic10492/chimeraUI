@@ -2,17 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertCircleIcon, CheckIcon, CloseIcon, SettingsIcon, UndoIcon } from '../../../components/Icons'
 import { Dialog } from '../../../components/ui/Dialog'
-import {
-  getConfig,
-  getGlobalConfig,
-  getProviderConfigs,
-  listAvailableShells,
-  providerCatalog as buildProviderCatalog,
-  providerModelChoices,
-  updateGlobalConfig,
-} from '../../../api'
+import { getConfig, getGlobalConfig, getProviderConfigs, providerCatalog as buildProviderCatalog, providerModelChoices, updateGlobalConfig } from '../../../api/config'
+import { listAvailableShells } from '../../../api/pty'
 import type { Config } from '../../../types/api/config'
-import { useCurrentDirectory, useIsMobile } from '../../../hooks'
+import { useCurrentDirectory } from '../../../contexts/useDirectory'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 import { SettingsCard, SettingsSection } from './SettingsUI'
 import {
   validateConfig,

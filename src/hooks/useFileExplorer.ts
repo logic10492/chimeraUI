@@ -5,7 +5,9 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { listDirectory, getFileContent, getFileStatus, getSessionDiff, getLastTurnDiff, getVcsDiff } from '../api'
+import { listDirectory, getFileContent, getFileStatus } from '../api/file'
+import { getSessionDiff, getLastTurnDiff } from '../api/session'
+import { getVcsDiff } from '../api/vcs'
 import type { FileNode, FileContent, FileStatusItem, FileDiff } from '../api/types'
 import { useSessionChangeScope } from '../store/changeScopeStore'
 import { useAutoRefresh } from './useAutoRefresh'

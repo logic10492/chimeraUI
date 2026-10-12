@@ -10,15 +10,11 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { logger } from '../utils/logger'
 import { isUserUIMessage, toApiMessageWithParts } from '../utils/messageConversion'
-import { messageStore, type RevertState, type SessionState } from '../store'
-import {
-  getSessionMessagesPage,
-  getSession,
-  revertMessage,
-  unrevertSession,
-  extractUserMessageContent,
-  type ApiMessageWithParts,
-} from '../api'
+import { messageStore } from '../store/messageStore'
+import type { RevertState, SessionState } from '../store/messageStoreTypes'
+import { getSessionMessagesPage, extractUserMessageContent } from '../api/message'
+import { getSession, revertMessage, unrevertSession } from '../api/session'
+import type { MessageWithParts as ApiMessageWithParts } from '../types/api/message'
 import { sessionErrorHandler } from '../utils'
 import { isSessionNotFoundError } from '../utils/sessionErrors'
 import { INITIAL_MESSAGE_LIMIT, HISTORY_LOAD_BATCH_SIZE } from '../constants'

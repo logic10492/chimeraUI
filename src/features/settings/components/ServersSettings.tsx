@@ -12,8 +12,9 @@ import {
   KeyIcon,
   PencilIcon,
 } from '../../../components/Icons'
-import { useServerStore, useRouter } from '../../../hooks'
-import { messageStore } from '../../../store'
+import { useServerStore } from '../../../hooks/useServerStore'
+import { useRouter } from '../../../hooks/useRouter'
+import { messageStore } from '../../../store/messageStore'
 import { SettingsCard } from './SettingsUI'
 import type { ServerConfig, ServerHealth } from '../../../store/serverStore'
 

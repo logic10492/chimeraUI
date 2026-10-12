@@ -21,7 +21,7 @@ import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
 import { DropdownMenu } from './ui'
 import { changeScopeStore, useSessionChangeScope, type ChangeScopeMode } from '../store/changeScopeStore'
-import { useFullscreenLayer } from '../contexts'
+import { useFullscreenLayer } from '../contexts/useFullscreen'
 import { useAutoRefresh } from '../hooks/useAutoRefresh'
 
 // 常量

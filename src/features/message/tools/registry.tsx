@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import type { ToolPart } from '../../../types/message'
 import type { ToolConfig, ToolRegistry, ExtractedToolData, DiagnosticInfo } from './types'
-import { BashRenderer, QuestionRenderer } from './renderers'
+import { BashRenderer } from './renderers/BashRenderer'
+import { QuestionRenderer } from './renderers/QuestionRenderer'
 import {
   FileReadIcon,
   FileWriteIcon,

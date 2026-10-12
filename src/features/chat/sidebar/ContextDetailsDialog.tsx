@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { Dialog } from '../../../components/ui'
 import { CodeBlock } from '../../../components/CodeBlock'
 import { ChevronDownIcon, ChevronUpIcon, CpuIcon, DollarSignIcon } from '../../../components/Icons'
-import { useMessageStore } from '../../../store'
-import { useSessionStats, formatTokens, formatCost } from '../../../hooks'
+import { useMessageStore } from '../../../store/messageStoreHooks'
+import { useSessionStats } from '../../../hooks/useSessionStats'
+import { formatNumber as formatTokens, formatCost } from '../../../utils/formatUtils'
 import type { Message, TokenUsage } from '../../../types/message'
 
 interface ContextDetailsDialogProps {

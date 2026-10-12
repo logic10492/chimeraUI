@@ -3,11 +3,12 @@ import { useTranslation } from 'react-i18next'
 import { diffLines } from 'diff'
 import { ChevronDownIcon, ChevronRightIcon } from '../../../components/Icons'
 import type { FilePart, ToolPart } from '../../../types/message'
-import { useDelayedRender, useDisclosureScrollLock } from '../../../hooks'
+import { useDelayedRender } from '../../../hooks/useDelayedRender'
+import { useDisclosureScrollLock } from '../../../hooks/useDisclosureScrollLock'
 import { useNow } from '../../../hooks/useNow'
 import { serverStore } from '../../../store/serverStore'
 import { getPartOutput } from '../../../api/message'
-import { messageStore } from '../../../store'
+import { messageStore } from '../../../store/messageStore'
 import { useTheme } from '../../../hooks/useTheme'
 import { formatToolName, formatDuration } from '../../../utils/formatUtils'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
@@ -18,16 +19,12 @@ import {
 } from '../../chat/InlineToolRequestContext'
 import { InlinePermission } from '../../chat/InlinePermission'
 import { InlineQuestion } from '../../chat/InlineQuestion'
-import {
-  getToolIcon,
-  extractToolData,
-  getToolConfig,
-  DefaultRenderer,
-  TodoRenderer,
-  TaskRenderer,
-  SwarmRenderer,
-  hasTodos,
-} from '../tools'
+import { getToolIcon, extractToolData, getToolConfig } from '../tools/registry'
+import { DefaultRenderer } from '../tools/renderers/DefaultRenderer'
+import { TodoRenderer } from '../tools/renderers/TodoRenderer'
+import { TaskRenderer } from '../tools/renderers/TaskRenderer'
+import { SwarmRenderer } from '../tools/renderers/SwarmRenderer'
+import { hasTodos } from '../tools/renderers/todoUtils'
 
 // ============================================
 // ToolPartView - 单个工具调用

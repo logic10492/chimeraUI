@@ -8,9 +8,9 @@
 import { memo } from 'react'
 import { useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ApiPermissionRequest, PermissionReply } from '../../api'
-import { ContentBlock } from '../../components'
-import { autoApproveStore } from '../../store'
+import type { PermissionRequest as ApiPermissionRequest, PermissionReply } from '../../types/api/permission'
+import { ContentBlock } from '../../components/ContentBlock'
+import { autoApproveStore } from '../../store/autoApproveStore'
 import { themeStore } from '../../store/themeStore'
 
 interface InlinePermissionProps {

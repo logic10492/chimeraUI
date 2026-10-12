@@ -4,14 +4,15 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { updateSession, deleteSession as apiDeleteSession, type ApiSession } from '../../../api'
+import { updateSession, deleteSession as apiDeleteSession } from '../../../api/session'
+import type { Session as ApiSession } from '../../../types/api/session'
 import { SpinnerIcon } from '../../../components/Icons'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { useInputCapabilities } from '../../../hooks/useInputCapabilities'
 import { childSessionStore } from '../../../store/childSessionStore'
 import { pinnedSessionsStore } from '../../../store/pinnedSessionsStore'
 import { uiErrorHandler } from '../../../utils'
-import { SessionListItem } from '../../sessions'
+import { SessionListItem } from '../../sessions/SessionList'
 
 interface SessionChildrenSlotProps {
   parentSession: ApiSession

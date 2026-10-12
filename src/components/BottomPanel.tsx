@@ -6,7 +6,7 @@ import { layoutStore, useLayoutStore, type TerminalTab, type PanelTab } from '..
 import { serverStore } from '../store/serverStore'
 import { createPtySession, removePtySession, listPtySessions } from '../api/pty'
 import { activeApiScope, apiScopeKey, resolveSessionApiScope, type ApiScope } from '../api/scope'
-import { useMessageStore } from '../store'
+import { useMessageStore } from '../store/messageStoreHooks'
 import { ResizablePanel } from './ui/ResizablePanel'
 import { logger } from '../utils/logger'
 import { normalizeToForwardSlash, uiErrorHandler } from '../utils'

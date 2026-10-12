@@ -16,7 +16,7 @@ import { useInputCapabilities } from '../../hooks/useInputCapabilities'
 import { useSessionActiveEntry } from '../../store/activeSessionStore'
 import { notificationStore, useHasUnreadCompletedNotification } from '../../store/notificationStore'
 import { SessionChildrenSlot } from '../chat/sidebar/SessionChildrenSlot'
-import type { ApiSession } from '../../api'
+import type { Session as ApiSession } from '../../types/api/session'
 import { startInternalDrag } from '../../lib/internalDragCore'
 import { pinnedSessionsStore } from '../../store/pinnedSessionsStore'
 

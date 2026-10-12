@@ -20,7 +20,7 @@ import { ViewModeSwitch } from './FullscreenViewer'
 import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
 import { useDelayedRender } from '../hooks/useDelayedRender'
 import { useResponsiveMaxHeight } from '../hooks/useResponsiveMaxHeight'
-import { useFullscreenLayer } from '../contexts'
+import { useFullscreenLayer } from '../contexts/useFullscreen'
 import { useUiDisclosureState } from '../utils/uiDisclosureState'
 import { streamingCaretExtension } from './codeMirrorReadonlyExtensions'
 

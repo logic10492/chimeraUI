@@ -1,27 +1,11 @@
 import { STORAGE_KEY_NOTIFICATIONS_ENABLED } from '../constants/storage'
-import {
-  exportLayoutBackup,
-  exportNotificationEventSettingsBackup,
-  exportNotificationPreferencesBackup,
-  exportServerSettingsBackup,
-  exportServiceSettingsBackup,
-  exportThemeBackup,
-  exportUpdateSettingsBackup,
-  importLayoutBackup,
-  importNotificationEventSettingsBackup,
-  importNotificationPreferencesBackup,
-  importServerSettingsBackup,
-  importServiceSettingsBackup,
-  importThemeBackup,
-  importUpdateSettingsBackup,
-  type LayoutBackup,
-  type NotificationEventSettingsBackup,
-  type NotificationPreferencesBackup,
-  type ServerSettingsBackup,
-  type ServiceSettingsBackup,
-  type ThemeBackup,
-  type UpdateSettingsBackup,
-} from '../store'
+import { exportLayoutBackup, importLayoutBackup, type LayoutBackup } from '../store/layoutStore'
+import { exportNotificationEventSettingsBackup, importNotificationEventSettingsBackup, type NotificationEventSettingsBackup } from '../store/notificationEventSettingsStore'
+import { exportNotificationPreferencesBackup, importNotificationPreferencesBackup, type NotificationPreferencesBackup } from '../store/notificationStore'
+import { exportServerSettingsBackup, importServerSettingsBackup, type ServerSettingsBackup } from '../store/serverStore'
+import { exportServiceSettingsBackup, importServiceSettingsBackup, type ServiceSettingsBackup } from '../store/serviceStore'
+import { exportThemeBackup, importThemeBackup, type ThemeBackup } from '../store/themeStore'
+import { exportUpdateSettingsBackup, importUpdateSettingsBackup, type UpdateSettingsBackup } from '../store/updateStore'
 import { exportKeybindingBackup, importKeybindingBackup, type KeybindingBackup } from '../store/keybindingStore'
 import { exportSoundBackup, importSoundBackup, type SoundBackup } from '../store/soundStore'
 import {

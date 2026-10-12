@@ -1,13 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import {
-  getSessionsPage,
-  createSession,
-  deleteSession,
-  updateSession,
-  subscribeToEvents,
-  type ApiSession,
-  type SessionListParams,
-} from '../api'
+import { getSessionsPage, createSession, deleteSession, updateSession } from '../api/session'
+import { subscribeToEvents } from '../api/events'
+import type { Session as ApiSession, SessionListParams } from '../types/api/session'
 import { serverStore } from '../store/serverStore'
 import { pinnedSessionsStore } from '../store/pinnedSessionsStore'
 import { autoDetectPathStyle, isSameDirectory } from '../utils'

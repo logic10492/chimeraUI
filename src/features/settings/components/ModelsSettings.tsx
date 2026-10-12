@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CloseIcon, SearchIcon } from '../../../components/Icons'
-import { useModels } from '../../../hooks'
-import { modelVisibilityStore, useHiddenModelKeys } from '../../../store'
+import { useModels } from '../../../hooks/useModels'
+import { modelVisibilityStore, useHiddenModelKeys } from '../../../store/modelVisibilityStore'
 import { groupModelsByProvider, getModelKey } from '../../../utils/modelUtils'
 import { SettingsSection, Toggle } from './SettingsUI'
 

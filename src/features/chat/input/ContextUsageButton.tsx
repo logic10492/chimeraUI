@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { StatusIndicator } from '../../../components/StatusIndicator'
 import { DropdownMenu } from '../../../components/ui'
 import { ContextDetailsDialog } from '../sidebar/ContextDetailsDialog'
-import { useSessionStats, useConnectionState, formatTokens, formatCost } from '../../../hooks'
+import { useSessionStats } from '../../../hooks/useSessionStats'
+import { useConnectionState } from '../../../hooks/useConnectionState'
+import { formatNumber as formatTokens, formatCost } from '../../../utils/formatUtils'
 
 interface ContextUsageButtonProps {
   inputContainerRef?: React.RefObject<HTMLElement | null>

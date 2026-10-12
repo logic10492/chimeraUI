@@ -1,10 +1,11 @@
-import type { ApiPermissionRequest, PermissionReply } from '../../api'
+import type { PermissionRequest as ApiPermissionRequest, PermissionReply } from '../../types/api/permission'
 import { useTranslation } from 'react-i18next'
 import { PermissionListIcon, UsersIcon, ReturnIcon, ChevronDownIcon } from '../../components/Icons'
 import { DiffView } from '../../components/DiffView'
-import { ContentBlock } from '../../components'
-import { childSessionStore, autoApproveStore } from '../../store'
-import { usePresence } from '../../hooks'
+import { ContentBlock } from '../../components/ContentBlock'
+import { childSessionStore } from '../../store/childSessionStore'
+import { autoApproveStore } from '../../store/autoApproveStore'
+import { usePresence } from '../../hooks/usePresence'
 import { useChatViewport } from './chatViewport'
 
 interface PermissionDialogProps {

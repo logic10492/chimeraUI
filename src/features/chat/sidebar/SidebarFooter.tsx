@@ -12,7 +12,7 @@ import {
   ShareIcon,
   MenuIcon,
 } from '../../../components/Icons'
-import { useTheme } from '../../../hooks'
+import { useTheme } from '../../../hooks/useTheme'
 
 export interface SidebarFooterProps {
   showLabels: boolean
