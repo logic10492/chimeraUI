@@ -1,83 +1,59 @@
 /**
- * 主题状态管理 Store
+ * 主题状态管理 Store（内核）
  *
  * 管理：
  * - 主题风格选择（内置预设）
  * - 日夜模式（system / light / dark）
  * - 自定义 CSS 覆盖（可用于覆盖字体等）
  * - CSS 变量注入
+ *
+ * 本文件只保留共享状态骨架（state / 订阅 / emit / DOM 样式注入）与模块级 API；
+ * 职责方法按 slice 拆分到同目录文件，通过 prototype 混入：
+ *   - themeStore.theme.ts       主题预设 / 日夜模式 / 主题应用
+ *   - themeStore.settings.ts    各偏好读写 + 自定义 CSS 方案管理
+ *   - themeStore.persistence.ts 启动时状态恢复
+ * slice 之间不互相 import；共享类型见 themeStore.types.ts，纯函数见 themeStore.utils.ts。
  */
-
-import { getThemePreset, themeColorsToCSSVars, builtinThemes, DEFAULT_THEME_ID } from '../themes'
-import type { ThemePreset, ThemeColors } from '../themes'
+import { getThemePreset, DEFAULT_THEME_ID } from '../themes'
 import type { WebUIPreferences } from '../types/api/preferences'
 import {
-  clampFontScale,
-  normalizeThemeBackup,
-  parseCustomCSSSnippets,
-  DEFAULT_STEP_FINISH_DISPLAY,
-  DEFAULT_COMPLETED_AT_FORMAT,
   DEFAULT_REASONING_DISPLAY_MODE,
   DEFAULT_RENDER_USER_MARKDOWN,
-  DEFAULT_DIFF_STYLE,
-  DEFAULT_DESCRIPTIVE_TOOL_STEPS,
-  DEFAULT_INLINE_TOOL_REQUESTS,
-  DEFAULT_CODE_WORD_WRAP,
-  DEFAULT_UI_FONT_SCALE,
-  DEFAULT_CODE_FONT_SCALE,
-  DEFAULT_TOOL_CARD_STYLE,
-  DEFAULT_IMMERSIVE_MODE,
-  DEFAULT_COMPACT_INLINE_PERMISSION,
-  DEFAULT_GLASS_EFFECT,
-  DEFAULT_QUEUE_FOLLOWUP_MESSAGES,
-  DEFAULT_MANUAL_TERMINAL_TITLES,
-  DEFAULT_EXTERNAL_FILE_DROP_MODE,
-  DEFAULT_CODE_BLOCK_THEME_LIGHT,
-  DEFAULT_CODE_BLOCK_THEME_DARK,
-  DEFAULT_OUTLINE_CURRENT_HIGHLIGHT,
-  STORAGE_KEY_PRESET,
+  STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID,
+  STORAGE_KEY_CODE_BLOCK_THEME_DARK,
+  STORAGE_KEY_CODE_BLOCK_THEME_LIGHT,
+  STORAGE_KEY_CODE_FONT_SCALE,
+  STORAGE_KEY_CODE_WORD_WRAP,
+  STORAGE_KEY_COLLAPSE_USER_MESSAGES,
+  STORAGE_KEY_COMPACT_INLINE_PERMISSION,
+  STORAGE_KEY_COMPLETED_AT_FORMAT,
   STORAGE_KEY_COLOR_MODE,
   STORAGE_KEY_CUSTOM_CSS,
   STORAGE_KEY_CUSTOM_CSS_SNIPPETS,
-  STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID,
-  STORAGE_KEY_COLLAPSE_USER_MESSAGES,
+  STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS,
+  STORAGE_KEY_DIFF_STYLE,
+  STORAGE_KEY_EXTERNAL_FILE_DROP_MODE,
+  STORAGE_KEY_FONT_SCALE,
+  STORAGE_KEY_GLASS_EFFECT,
+  STORAGE_KEY_IMMERSIVE_MODE,
+  STORAGE_KEY_INLINE_TOOL_REQUESTS,
+  STORAGE_KEY_MANUAL_TERMINAL_TITLES,
+  STORAGE_KEY_OUTLINE_CURRENT_HIGHLIGHT,
+  STORAGE_KEY_PRESET,
+  STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES,
+  STORAGE_KEY_REASONING_DISPLAY_MODE,
   STORAGE_KEY_RENDER_USER_MARKDOWN,
   STORAGE_KEY_STEP_FINISH_DISPLAY,
-  STORAGE_KEY_COMPLETED_AT_FORMAT,
-  STORAGE_KEY_REASONING_DISPLAY_MODE,
-  STORAGE_KEY_WIDE_MODE,
-  STORAGE_KEY_DIFF_STYLE,
-  STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS,
-  STORAGE_KEY_INLINE_TOOL_REQUESTS,
-  STORAGE_KEY_CODE_WORD_WRAP,
-  STORAGE_KEY_FONT_SCALE,
-  STORAGE_KEY_CODE_FONT_SCALE,
   STORAGE_KEY_TOOL_CARD_STYLE,
-  STORAGE_KEY_IMMERSIVE_MODE,
-  STORAGE_KEY_COMPACT_INLINE_PERMISSION,
-  STORAGE_KEY_GLASS_EFFECT,
-  STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES,
-  STORAGE_KEY_MANUAL_TERMINAL_TITLES,
-  STORAGE_KEY_EXTERNAL_FILE_DROP_MODE,
-  STORAGE_KEY_OUTLINE_CURRENT_HIGHLIGHT,
-  STORAGE_KEY_CODE_BLOCK_THEME_LIGHT,
-  STORAGE_KEY_CODE_BLOCK_THEME_DARK,
-  STYLE_ID_THEME,
-  STYLE_ID_FONT_SCALE,
+  STORAGE_KEY_WIDE_MODE,
   STYLE_ID_CUSTOM,
+  STYLE_ID_FONT_SCALE,
+  normalizeThemeBackup,
 } from './themeStore.utils'
-import type {
-  ColorMode,
-  CustomCSSSnippet,
-  StepFinishDisplay,
-  CompletedAtFormat,
-  ReasoningDisplayMode,
-  DiffStyle,
-  ToolCardStyle,
-  ExternalFileDropMode,
-  ThemeState,
-  ThemeBackup,
-} from './themeStore.types'
+import type { ColorMode, ThemeBackup, ThemeState } from './themeStore.types'
+import { themeMethods, type ThemeSlice } from './themeStore.theme'
+import { settingsMethods, type SettingsSlice } from './themeStore.settings'
+import { restoreThemeState } from './themeStore.persistence'
 
 export type {
   ColorMode,
@@ -94,265 +70,23 @@ export type {
 export { FONT_SCALE_MIN, FONT_SCALE_MAX } from './themeStore.utils'
 
 // ============================================
-// Color Conversion Utility
-// ============================================
-
-/**
- * 将浏览器 getComputedStyle 返回的任意格式颜色字符串转为 #RRGGBB 十六进制
- *
- * 现代 Chromium WebView 可能返回多种格式：
- * - rgb(29, 36, 50)   — 逗号分隔
- * - rgb(29 36 50)     — 空格分隔 (CSS Color Level 4)
- * - color(srgb 0.11 0.14 0.20) — sRGB 函数
- * - oklch(...)        — OKLab 色彩空间
- *
- * 利用 Canvas 2D 做万能转换，让浏览器自己解析任何合法 CSS 颜色
- */
-function computedColorToHex(cssColor: string): string | null {
-  try {
-    const ctx = document.createElement('canvas').getContext('2d')
-    if (!ctx) return null
-    ctx.fillStyle = cssColor
-    // ctx.fillStyle 会被浏览器标准化为 #rrggbb 或 rgba(...) 格式
-    const normalized = ctx.fillStyle
-    if (normalized.startsWith('#')) return normalized
-    // 如果返回 rgba/rgb 格式，提取数值转 hex
-    const match = normalized.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/)
-    if (match) {
-      const r = parseInt(match[1], 10)
-      const g = parseInt(match[2], 10)
-      const b = parseInt(match[3], 10)
-      return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`
-    }
-    return null
-  } catch {
-    return null
-  }
-}
-
-// ============================================
 // Store Implementation
 // ============================================
 
-class ThemeStore {
-  private state: ThemeState
+export interface ThemeStore extends ThemeSlice, SettingsSlice {}
+
+export class ThemeStore {
+  state: ThemeState
   private listeners = new Set<() => void>()
 
   constructor() {
-    const savedPreset = localStorage.getItem(STORAGE_KEY_PRESET) || DEFAULT_THEME_ID
-    const normalizedPreset = getThemePreset(savedPreset) ? savedPreset : DEFAULT_THEME_ID
-    const savedMode = (localStorage.getItem(STORAGE_KEY_COLOR_MODE) as ColorMode) || 'system'
-    const savedCSS = localStorage.getItem(STORAGE_KEY_CUSTOM_CSS) || ''
-    const customCSSSnippets = parseCustomCSSSnippets(localStorage.getItem(STORAGE_KEY_CUSTOM_CSS_SNIPPETS))
-    const savedActiveCustomCSSSnippetId = localStorage.getItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID)
-    const activeCustomCSSSnippetId = customCSSSnippets.some(item => item.id === savedActiveCustomCSSSnippetId)
-      ? savedActiveCustomCSSSnippetId
-      : null
-    const savedCollapse = localStorage.getItem(STORAGE_KEY_COLLAPSE_USER_MESSAGES)
-    const collapseUserMessages = savedCollapse === null ? true : savedCollapse === 'true'
-    const savedRenderUserMarkdown = localStorage.getItem(STORAGE_KEY_RENDER_USER_MARKDOWN)
-    const renderUserMarkdown =
-      savedRenderUserMarkdown === null ? DEFAULT_RENDER_USER_MARKDOWN : savedRenderUserMarkdown === 'true'
-    const savedReasoningDisplay = localStorage.getItem(STORAGE_KEY_REASONING_DISPLAY_MODE)
-    const reasoningDisplayMode: ReasoningDisplayMode =
-      savedReasoningDisplay === 'italic' || savedReasoningDisplay === 'markdown'
-        ? savedReasoningDisplay
-        : DEFAULT_REASONING_DISPLAY_MODE
-
-    let stepFinishDisplay = DEFAULT_STEP_FINISH_DISPLAY
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_STEP_FINISH_DISPLAY)
-      if (saved) stepFinishDisplay = { ...DEFAULT_STEP_FINISH_DISPLAY, ...JSON.parse(saved) }
-    } catch {
-      /* ignore */
-    }
-
-    const savedCompletedAtFormat = localStorage.getItem(STORAGE_KEY_COMPLETED_AT_FORMAT)
-    const completedAtFormat: CompletedAtFormat =
-      savedCompletedAtFormat === 'dateTime' ? 'dateTime' : DEFAULT_COMPLETED_AT_FORMAT
-
-    const savedWideMode = localStorage.getItem(STORAGE_KEY_WIDE_MODE) === 'true'
-    const savedDiffStyle = localStorage.getItem(STORAGE_KEY_DIFF_STYLE) as DiffStyle | null
-    const diffStyle: DiffStyle = savedDiffStyle === 'changeBars' ? 'changeBars' : DEFAULT_DIFF_STYLE
-
-    const savedDescriptiveToolSteps = localStorage.getItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS)
-    const descriptiveToolSteps =
-      savedDescriptiveToolSteps === null ? DEFAULT_DESCRIPTIVE_TOOL_STEPS : savedDescriptiveToolSteps === 'true'
-
-    const savedInlineToolRequests = localStorage.getItem(STORAGE_KEY_INLINE_TOOL_REQUESTS)
-    const inlineToolRequests =
-      savedInlineToolRequests === null ? DEFAULT_INLINE_TOOL_REQUESTS : savedInlineToolRequests === 'true'
-
-    const savedCodeWordWrap = localStorage.getItem(STORAGE_KEY_CODE_WORD_WRAP)
-    const codeWordWrap = savedCodeWordWrap === 'true' ? true : DEFAULT_CODE_WORD_WRAP
-
-    const savedFontScale = localStorage.getItem(STORAGE_KEY_FONT_SCALE)
-    const uiFontScale = savedFontScale !== null ? clampFontScale(Number(savedFontScale)) : DEFAULT_UI_FONT_SCALE
-
-    const savedCodeFontScale = localStorage.getItem(STORAGE_KEY_CODE_FONT_SCALE)
-    const codeFontScale =
-      savedCodeFontScale !== null ? clampFontScale(Number(savedCodeFontScale)) : DEFAULT_CODE_FONT_SCALE
-
-    const savedToolCardStyle = localStorage.getItem(STORAGE_KEY_TOOL_CARD_STYLE) as ToolCardStyle | null
-    const toolCardStyle: ToolCardStyle =
-      savedToolCardStyle === 'classic' || savedToolCardStyle === 'compact'
-        ? savedToolCardStyle
-        : DEFAULT_TOOL_CARD_STYLE
-
-    const savedImmersiveMode = localStorage.getItem(STORAGE_KEY_IMMERSIVE_MODE)
-    const immersiveMode = savedImmersiveMode === 'true' ? true : DEFAULT_IMMERSIVE_MODE
-
-    const savedCompactInlinePermission = localStorage.getItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION)
-    const compactInlinePermission =
-      savedCompactInlinePermission === null
-        ? DEFAULT_COMPACT_INLINE_PERMISSION
-        : savedCompactInlinePermission === 'true'
-
-    const savedGlassEffect = localStorage.getItem(STORAGE_KEY_GLASS_EFFECT)
-    const glassEffect = savedGlassEffect === null ? DEFAULT_GLASS_EFFECT : savedGlassEffect === 'true'
-
-    const savedQueueFollowupMessages = localStorage.getItem(STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES)
-    const queueFollowupMessages =
-      savedQueueFollowupMessages === null ? DEFAULT_QUEUE_FOLLOWUP_MESSAGES : savedQueueFollowupMessages === 'true'
-
-    const savedManualTerminalTitles = localStorage.getItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES)
-    const manualTerminalTitles =
-      savedManualTerminalTitles === null ? DEFAULT_MANUAL_TERMINAL_TITLES : savedManualTerminalTitles === 'true'
-
-    const savedExternalFileDropMode = localStorage.getItem(STORAGE_KEY_EXTERNAL_FILE_DROP_MODE)
-    const externalFileDropMode: ExternalFileDropMode =
-      savedExternalFileDropMode === 'mention' ? 'mention' : DEFAULT_EXTERNAL_FILE_DROP_MODE
-
-    const savedOutlineCurrentHighlight = localStorage.getItem(STORAGE_KEY_OUTLINE_CURRENT_HIGHLIGHT)
-    const outlineCurrentHighlight =
-      savedOutlineCurrentHighlight === null
-        ? DEFAULT_OUTLINE_CURRENT_HIGHLIGHT
-        : savedOutlineCurrentHighlight === 'true'
-
-    const savedCodeBlockThemeLight = localStorage.getItem(STORAGE_KEY_CODE_BLOCK_THEME_LIGHT)
-    const codeBlockThemeLight = savedCodeBlockThemeLight || DEFAULT_CODE_BLOCK_THEME_LIGHT
-    const savedCodeBlockThemeDark = localStorage.getItem(STORAGE_KEY_CODE_BLOCK_THEME_DARK)
-    const codeBlockThemeDark = savedCodeBlockThemeDark || DEFAULT_CODE_BLOCK_THEME_DARK
-
-    this.state = {
-      presetId: normalizedPreset,
-      colorMode: savedMode,
-      customCSS: savedCSS,
-      customCSSSnippets,
-      activeCustomCSSSnippetId,
-      collapseUserMessages,
-      renderUserMarkdown,
-      stepFinishDisplay,
-      completedAtFormat,
-      reasoningDisplayMode,
-      wideMode: savedWideMode,
-      diffStyle,
-      descriptiveToolSteps,
-      inlineToolRequests,
-      codeWordWrap,
-      uiFontScale,
-      codeFontScale,
-      toolCardStyle,
-      immersiveMode,
-      compactInlinePermission,
-      glassEffect,
-      queueFollowupMessages,
-      manualTerminalTitles,
-      externalFileDropMode,
-      outlineCurrentHighlight,
-      codeBlockThemeLight,
-      codeBlockThemeDark,
-    }
+    this.state = restoreThemeState()
   }
 
   // ---- Getters ----
 
   getState(): ThemeState {
     return this.state
-  }
-
-  get presetId() {
-    return this.state.presetId
-  }
-  get colorMode() {
-    return this.state.colorMode
-  }
-  get customCSS() {
-    return this.state.customCSS
-  }
-  get customCSSSnippets() {
-    return this.state.customCSSSnippets
-  }
-  get activeCustomCSSSnippetId() {
-    return this.state.activeCustomCSSSnippetId
-  }
-  get collapseUserMessages() {
-    return this.state.collapseUserMessages
-  }
-  get renderUserMarkdown() {
-    return this.state.renderUserMarkdown
-  }
-  get stepFinishDisplay() {
-    return this.state.stepFinishDisplay
-  }
-  get completedAtFormat() {
-    return this.state.completedAtFormat
-  }
-  get reasoningDisplayMode() {
-    return this.state.reasoningDisplayMode
-  }
-  get wideMode() {
-    return this.state.wideMode
-  }
-  get diffStyle() {
-    return this.state.diffStyle
-  }
-  get descriptiveToolSteps() {
-    return this.state.descriptiveToolSteps
-  }
-  get inlineToolRequests() {
-    return this.state.inlineToolRequests
-  }
-  get codeWordWrap() {
-    return this.state.codeWordWrap
-  }
-  get uiFontScale() {
-    return this.state.uiFontScale
-  }
-  get codeFontScale() {
-    return this.state.codeFontScale
-  }
-  get toolCardStyle() {
-    return this.state.toolCardStyle
-  }
-  get immersiveMode() {
-    return this.state.immersiveMode
-  }
-  get compactInlinePermission() {
-    return this.state.compactInlinePermission
-  }
-  get glassEffect() {
-    return this.state.glassEffect
-  }
-  get queueFollowupMessages() {
-    return this.state.queueFollowupMessages
-  }
-  get manualTerminalTitles() {
-    return this.state.manualTerminalTitles
-  }
-  get externalFileDropMode() {
-    return this.state.externalFileDropMode
-  }
-  get outlineCurrentHighlight() {
-    return this.state.outlineCurrentHighlight
-  }
-
-  get codeBlockThemeLight() {
-    return this.state.codeBlockThemeLight
-  }
-
-  get codeBlockThemeDark() {
-    return this.state.codeBlockThemeDark
   }
 
   getWebUIPreferences(): WebUIPreferences {
@@ -413,374 +147,7 @@ class ThemeStore {
     this.emit()
   }
 
-  /** 获取当前主题预设（内置主题返回对象，自定义返回 undefined） */
-  getPreset(): ThemePreset | undefined {
-    return getThemePreset(this.state.presetId)
-  }
-
-  /** 获取所有可用主题列表 */
-  getAvailablePresets(): { id: string; name: string; description: string }[] {
-    return builtinThemes.map(t => ({
-      id: t.id,
-      name: t.name,
-      description: t.description,
-    }))
-  }
-
-  /** 解析实际生效的暗/亮模式 */
-  getResolvedMode(): 'light' | 'dark' {
-    if (this.state.colorMode === 'system') {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-    }
-    return this.state.colorMode
-  }
-
-  get isDark(): boolean {
-    return this.getResolvedMode() === 'dark'
-  }
-
-  // ---- Mutations ----
-
-  setPreset(id: string) {
-    if (this.state.presetId === id) return
-    this.state = { ...this.state, presetId: id }
-    localStorage.setItem(STORAGE_KEY_PRESET, id)
-    this.applyTheme()
-    this.emit()
-  }
-
-  setColorMode(mode: ColorMode) {
-    if (this.state.colorMode === mode) return
-    this.state = { ...this.state, colorMode: mode }
-    localStorage.setItem(STORAGE_KEY_COLOR_MODE, mode)
-    this.applyTheme()
-    this.emit()
-  }
-
-  setCustomCSS(css: string) {
-    this.state = { ...this.state, customCSS: css }
-    localStorage.setItem(STORAGE_KEY_CUSTOM_CSS, css)
-    this.applyCustomCSS()
-    this.emit()
-  }
-
-  saveCustomCSSSnippet(name: string, css: string): CustomCSSSnippet {
-    const now = Date.now()
-    const snippet: CustomCSSSnippet = {
-      id: `css-${now}-${Math.random().toString(36).slice(2, 8)}`,
-      name,
-      css,
-      createdAt: now,
-      updatedAt: now,
-    }
-
-    const customCSSSnippets = [...this.state.customCSSSnippets, snippet]
-    this.state = { ...this.state, customCSSSnippets, activeCustomCSSSnippetId: snippet.id }
-    this.persistCustomCSSSnippets(customCSSSnippets)
-    localStorage.setItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID, snippet.id)
-    this.emit()
-    return snippet
-  }
-
-  updateCustomCSSSnippet(id: string, updates: Partial<Pick<CustomCSSSnippet, 'name' | 'css'>>) {
-    const customCSSSnippets = this.state.customCSSSnippets.map(item =>
-      item.id === id ? { ...item, ...updates, updatedAt: Date.now() } : item,
-    )
-
-    this.state = { ...this.state, customCSSSnippets }
-    this.persistCustomCSSSnippets(customCSSSnippets)
-    this.emit()
-  }
-
-  deleteCustomCSSSnippet(id: string) {
-    const customCSSSnippets = this.state.customCSSSnippets.filter(item => item.id !== id)
-    const activeCustomCSSSnippetId =
-      this.state.activeCustomCSSSnippetId === id ? null : this.state.activeCustomCSSSnippetId
-
-    this.state = { ...this.state, customCSSSnippets, activeCustomCSSSnippetId }
-    this.persistCustomCSSSnippets(customCSSSnippets)
-
-    if (activeCustomCSSSnippetId) {
-      localStorage.setItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID, activeCustomCSSSnippetId)
-    } else {
-      localStorage.removeItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID)
-    }
-
-    this.emit()
-  }
-
-  applyCustomCSSSnippet(id: string) {
-    const snippet = this.state.customCSSSnippets.find(item => item.id === id)
-    if (!snippet) return
-
-    this.state = {
-      ...this.state,
-      customCSS: snippet.css,
-      activeCustomCSSSnippetId: id,
-    }
-
-    localStorage.setItem(STORAGE_KEY_CUSTOM_CSS, snippet.css)
-    localStorage.setItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID, id)
-    this.applyCustomCSS()
-    this.emit()
-  }
-
-  clearActiveCustomCSSSnippet() {
-    if (this.state.activeCustomCSSSnippetId === null) return
-    this.state = { ...this.state, activeCustomCSSSnippetId: null }
-    localStorage.removeItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID)
-    this.emit()
-  }
-
-  setCollapseUserMessages(enabled: boolean) {
-    if (this.state.collapseUserMessages === enabled) return
-    this.state = { ...this.state, collapseUserMessages: enabled }
-    localStorage.setItem(STORAGE_KEY_COLLAPSE_USER_MESSAGES, String(enabled))
-    this.emit()
-  }
-
-  setRenderUserMarkdown(enabled: boolean) {
-    if (this.state.renderUserMarkdown === enabled) return
-    this.state = { ...this.state, renderUserMarkdown: enabled }
-    localStorage.setItem(STORAGE_KEY_RENDER_USER_MARKDOWN, String(enabled))
-    this.emit()
-  }
-
-  setStepFinishDisplay(display: Partial<StepFinishDisplay>) {
-    const next = { ...this.state.stepFinishDisplay, ...display }
-    this.state = { ...this.state, stepFinishDisplay: next }
-    localStorage.setItem(STORAGE_KEY_STEP_FINISH_DISPLAY, JSON.stringify(next))
-    this.emit()
-  }
-
-  setCompletedAtFormat(format: CompletedAtFormat) {
-    if (this.state.completedAtFormat === format) return
-    this.state = { ...this.state, completedAtFormat: format }
-    localStorage.setItem(STORAGE_KEY_COMPLETED_AT_FORMAT, format)
-    this.emit()
-  }
-
-  setReasoningDisplayMode(mode: ReasoningDisplayMode) {
-    if (this.state.reasoningDisplayMode === mode) return
-    this.state = { ...this.state, reasoningDisplayMode: mode }
-    localStorage.setItem(STORAGE_KEY_REASONING_DISPLAY_MODE, mode)
-    this.emit()
-  }
-
-  setWideMode(enabled: boolean) {
-    if (this.state.wideMode === enabled) return
-    this.state = { ...this.state, wideMode: enabled }
-    localStorage.setItem(STORAGE_KEY_WIDE_MODE, String(enabled))
-    this.emit()
-  }
-
-  toggleWideMode() {
-    this.setWideMode(!this.state.wideMode)
-  }
-
-  setDiffStyle(style: DiffStyle) {
-    if (this.state.diffStyle === style) return
-    this.state = { ...this.state, diffStyle: style }
-    localStorage.setItem(STORAGE_KEY_DIFF_STYLE, style)
-    this.emit()
-  }
-
-  setDescriptiveToolSteps(enabled: boolean) {
-    if (this.state.descriptiveToolSteps === enabled) return
-    this.state = { ...this.state, descriptiveToolSteps: enabled }
-    localStorage.setItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS, String(enabled))
-    this.emit()
-  }
-
-  setInlineToolRequests(enabled: boolean) {
-    if (this.state.inlineToolRequests === enabled) return
-    this.state = { ...this.state, inlineToolRequests: enabled }
-    localStorage.setItem(STORAGE_KEY_INLINE_TOOL_REQUESTS, String(enabled))
-    this.emit()
-  }
-
-  setCodeWordWrap(enabled: boolean) {
-    if (this.state.codeWordWrap === enabled) return
-    this.state = { ...this.state, codeWordWrap: enabled }
-    localStorage.setItem(STORAGE_KEY_CODE_WORD_WRAP, String(enabled))
-    this.emit()
-  }
-
-  setUIFontScale(scale: number) {
-    const clamped = clampFontScale(scale)
-    if (this.state.uiFontScale === clamped) return
-    this.state = { ...this.state, uiFontScale: clamped }
-    localStorage.setItem(STORAGE_KEY_FONT_SCALE, String(clamped))
-    this.applyFontScale()
-    this.emit()
-  }
-
-  setCodeFontScale(scale: number) {
-    const clamped = clampFontScale(scale)
-    if (this.state.codeFontScale === clamped) return
-    this.state = { ...this.state, codeFontScale: clamped }
-    localStorage.setItem(STORAGE_KEY_CODE_FONT_SCALE, String(clamped))
-    this.applyFontScale()
-    this.emit()
-  }
-
-  setToolCardStyle(style: ToolCardStyle) {
-    if (this.state.toolCardStyle === style) return
-    this.state = { ...this.state, toolCardStyle: style }
-    localStorage.setItem(STORAGE_KEY_TOOL_CARD_STYLE, style)
-    this.emit()
-  }
-
-  setImmersiveMode(enabled: boolean) {
-    if (this.state.immersiveMode === enabled) return
-    this.state = {
-      ...this.state,
-      immersiveMode: enabled,
-      // 联动四个子功能
-      inlineToolRequests: enabled,
-      descriptiveToolSteps: enabled,
-      toolCardStyle: enabled ? 'compact' : 'classic',
-      compactInlinePermission: enabled,
-    }
-    localStorage.setItem(STORAGE_KEY_IMMERSIVE_MODE, String(enabled))
-    localStorage.setItem(STORAGE_KEY_INLINE_TOOL_REQUESTS, String(enabled))
-    localStorage.setItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS, String(enabled))
-    localStorage.setItem(STORAGE_KEY_TOOL_CARD_STYLE, enabled ? 'compact' : 'classic')
-    localStorage.setItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION, String(enabled))
-    this.emit()
-  }
-
-  setCompactInlinePermission(enabled: boolean) {
-    if (this.state.compactInlinePermission === enabled) return
-    this.state = { ...this.state, compactInlinePermission: enabled }
-    localStorage.setItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION, String(enabled))
-    this.emit()
-  }
-
-  setGlassEffect(enabled: boolean) {
-    if (this.state.glassEffect === enabled) return
-    this.state = { ...this.state, glassEffect: enabled }
-    localStorage.setItem(STORAGE_KEY_GLASS_EFFECT, String(enabled))
-    this.applyGlassClass()
-    this.emit()
-  }
-
-  setQueueFollowupMessages(enabled: boolean) {
-    if (this.state.queueFollowupMessages === enabled) return
-    this.state = { ...this.state, queueFollowupMessages: enabled }
-    localStorage.setItem(STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES, String(enabled))
-    this.emit()
-  }
-
-  setManualTerminalTitles(enabled: boolean) {
-    if (this.state.manualTerminalTitles === enabled) return
-    this.state = { ...this.state, manualTerminalTitles: enabled }
-    localStorage.setItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES, String(enabled))
-    this.emit()
-  }
-
-  setExternalFileDropMode(mode: ExternalFileDropMode) {
-    if (this.state.externalFileDropMode === mode) return
-    this.state = { ...this.state, externalFileDropMode: mode }
-    localStorage.setItem(STORAGE_KEY_EXTERNAL_FILE_DROP_MODE, mode)
-    this.emit()
-  }
-
-  setOutlineCurrentHighlight(enabled: boolean) {
-    if (this.state.outlineCurrentHighlight === enabled) return
-    this.state = { ...this.state, outlineCurrentHighlight: enabled }
-    localStorage.setItem(STORAGE_KEY_OUTLINE_CURRENT_HIGHLIGHT, String(enabled))
-    this.emit()
-  }
-
-  setCodeBlockThemeLight(id: string) {
-    if (this.state.codeBlockThemeLight === id) return
-    this.state = { ...this.state, codeBlockThemeLight: id }
-    localStorage.setItem(STORAGE_KEY_CODE_BLOCK_THEME_LIGHT, id)
-    this.emit()
-  }
-
-  setCodeBlockThemeDark(id: string) {
-    if (this.state.codeBlockThemeDark === id) return
-    this.state = { ...this.state, codeBlockThemeDark: id }
-    localStorage.setItem(STORAGE_KEY_CODE_BLOCK_THEME_DARK, id)
-    this.emit()
-  }
-
-  // ---- Theme Application ----
-
-  /** 初始化：应用当前主题到 DOM */
-  init() {
-    this.applyTheme()
-    this.applyFontScale()
-    this.applyGlassClass()
-
-    // 监听系统主题变化
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    mediaQuery.addEventListener('change', () => {
-      if (this.state.colorMode === 'system') {
-        this.applyTheme()
-        this.emit()
-      }
-    })
-  }
-
-  /** 将主题 CSS 变量注入到 DOM */
-  applyTheme() {
-    const root = document.documentElement
-    const resolvedMode = this.getResolvedMode()
-
-    // 1. 设置 data-mode（驱动 CSS 中日/夜模式相关的非颜色规则，以及 Terminal、Shiki 等联动）
-    if (this.state.colorMode === 'system') {
-      root.removeAttribute('data-mode')
-    } else {
-      root.setAttribute('data-mode', this.state.colorMode)
-    }
-
-    // 2. 注入主题颜色变量
-    const preset = this.getPreset()
-    if (preset) {
-      const colors: ThemeColors = resolvedMode === 'dark' ? preset.dark : preset.light
-      this.injectThemeStyle(colors)
-    }
-
-    // 3. 应用自定义 CSS
-    this.applyCustomCSS()
-
-    // 4. 更新 meta theme-color
-    requestAnimationFrame(() => {
-      const bg = getComputedStyle(root).getPropertyValue('--color-bg-100').trim()
-      if (!bg) return
-
-      // 将计算后的颜色统一转为 HEX 格式，避免不同浏览器/WebView 返回
-      // 不同格式（rgb, oklch, color(srgb ...)）导致 Android 原生端解析失败或色差
-      const hex = computedColorToHex(bg)
-      if (!hex) return
-
-      const meta = document.querySelector('meta[name="theme-color"]')
-      if (meta) meta.setAttribute('content', hex)
-
-      const androidBridge = (
-        window as unknown as { __opencode_android?: { setSystemBars?: (mode: string, bg: string) => void } }
-      ).__opencode_android
-      if (androidBridge?.setSystemBars) {
-        androidBridge.setSystemBars(resolvedMode, hex)
-      }
-    })
-  }
-
-  private injectThemeStyle(colors: ThemeColors) {
-    let el = document.getElementById(STYLE_ID_THEME) as HTMLStyleElement | null
-    if (!el) {
-      el = document.createElement('style')
-      el.id = STYLE_ID_THEME
-      document.head.appendChild(el)
-    }
-
-    // 用高优先级选择器覆盖 :root 中的默认值
-    // 使用 :root:root 提升特异性，确保覆盖 index.css 中的所有定义
-    el.textContent = `:root:root {\n  ${themeColorsToCSSVars(colors)}\n}`
-  }
+  // ---- DOM 样式注入 ----
 
   /**
    * 字号偏移覆盖。
@@ -792,7 +159,7 @@ class ThemeStore {
    *         heading-3=16  heading-2=18  heading-1=20
    *   Code: code=13  code-line-height=24  terminal=13  terminal-line-height=1.4
    */
-  private applyFontScale() {
+  applyFontScale() {
     const { uiFontScale: ui, codeFontScale: code } = this.state
     let el = document.getElementById(STYLE_ID_FONT_SCALE) as HTMLStyleElement | null
 
@@ -840,7 +207,7 @@ class ThemeStore {
     el.textContent = `:root:root {\n  ${vars.join(';\n  ')};\n}`
   }
 
-  private applyCustomCSS() {
+  applyCustomCSS() {
     const css = this.state.customCSS.trim()
     let el = document.getElementById(STYLE_ID_CUSTOM) as HTMLStyleElement | null
 
@@ -858,17 +225,13 @@ class ThemeStore {
   }
 
   /** 毛玻璃开关：data-glass 属性驱动 CSS */
-  private applyGlassClass() {
+  applyGlassClass() {
     const root = document.documentElement
     if (this.state.glassEffect) {
       root.setAttribute('data-glass', '')
     } else {
       root.removeAttribute('data-glass')
     }
-  }
-
-  private persistCustomCSSSnippets(customCSSSnippets: CustomCSSSnippet[]) {
-    localStorage.setItem(STORAGE_KEY_CUSTOM_CSS_SNIPPETS, JSON.stringify(customCSSSnippets))
   }
 
   // ---- Subscription (useSyncExternalStore compatible) ----
@@ -882,10 +245,13 @@ class ThemeStore {
     return this.state
   }
 
-  private emit() {
+  emit() {
     this.listeners.forEach(fn => fn())
   }
 }
+
+Object.defineProperties(ThemeStore.prototype, Object.getOwnPropertyDescriptors(themeMethods))
+Object.defineProperties(ThemeStore.prototype, Object.getOwnPropertyDescriptors(settingsMethods))
 
 // Singleton
 export const themeStore = new ThemeStore()
