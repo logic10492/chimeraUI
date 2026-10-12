@@ -34,10 +34,9 @@ import { SessionNavigationContext } from '../../contexts/SessionNavigationContex
 import { paneLayoutStore } from '../../store/paneLayoutStore'
 import { autoApproveStore } from '../../store/autoApproveStore'
 import { messageStore } from '../../store/messageStore'
-import { useFullAutoHint, useInputBoxHeight, usePaneControllerRegistration, useSessionDropZone, type PaneControllerActions } from './ChatPane.hooks'
+import { useFullAutoHint, useInputBoxHeight, useModelAgentRestore, usePaneControllerRegistration, useSessionDropZone, type PaneControllerActions } from './ChatPane.hooks'
 import { useHiddenModelKeys } from '../../store/modelVisibilityStore'
 import { useSessionState } from '../../store/messageStoreHooks'
-import { restoreModelSelection } from '../../utils/sessionHelpers'
 import { findModelByKey, getModelKey } from '../../utils/modelUtils'
 import { useTheme } from '../../hooks/useTheme'
 import type { Attachment } from '../attachment/types'
@@ -328,85 +327,21 @@ export const ChatPane = memo(function ChatPane({
   }, [agents, selectedAgent, handleAgentChange])
 
   // ============================================
-  // Model Restoration Effect
+  // Model / Agent Restoration
   // --
-  // 只在 session 切换（routeSessionId 变化）或 revert/undo 恢复时执行一次。
-  // 流式输出期间 messages 变化不会触发，避免覆盖用户的模型选择。
+  // 恢复逻辑集中在 useModelAgentRestore（ChatPane.hooks.ts）：
+  // session 切换或 revert/undo 恢复时同步模型与 agent 选择。
   // ============================================
   const inputRestoreContent = revertedContent ?? restoredContent
-
-  // revert/undo 恢复：inputRestoreContent 变化时立即恢复
-  useEffect(() => {
-    if (!inputRestoreContent?.model) return
-    const modelSelection = restoreModelSelection(
-      inputRestoreContent.model,
-      inputRestoreContent.variant ?? null,
-      visibleModels,
-    )
-    if (modelSelection) {
-      restoreFromMessage(inputRestoreContent.model, inputRestoreContent.variant)
-    }
-  }, [inputRestoreContent, visibleModels, restoreFromMessage])
-
-  // session 切换：优先会话自身模型（session.model，由 useModelSelection 解析），
-  // 否则从最后一条 user 消息恢复模型。仅在真正解析成功或确认无可恢复时才置位，
-  // 模型列表迟到时保持未置位以便重试，避免永久卡在全局模型。
-  const restoredSessionRef = useRef<string | null>(null)
-  useEffect(() => {
-    // 没有 session、或者这个 session 已经恢复过了 → 跳过
-    if (!routeSessionId || restoredSessionRef.current === routeSessionId) return
-    // messages 还没加载完 → 等下次
-    if (messages.length === 0) return
-
-    // 会话自身模型优先：模型列表能解析出它即视为恢复完成，不再用 user 消息覆盖
-    if (sessionModel) {
-      const resolvedSessionModel = restoreModelSelection(
-        { providerID: sessionModel.providerID, modelID: sessionModel.modelID },
-        sessionModel.variant ?? null,
-        visibleModels,
-      )
-      if (resolvedSessionModel) {
-        restoredSessionRef.current = routeSessionId
-        return
-      }
-      // 模型列表尚未就绪 → 等 visibleModels 到位后重试
-      if (visibleModels.length === 0) return
-    }
-
-    const lastUserMsg = [...messages].reverse().find(m => m.info.role === 'user')
-    if (lastUserMsg && 'model' in lastUserMsg.info) {
-      const userInfo = lastUserMsg.info as {
-        model?: { providerID: string; modelID: string; variant?: string }
-        variant?: string
-      }
-      // 模型列表未就绪时不要置位，等 visibleModels 变化后重试
-      const resolved = restoreModelSelection(
-        userInfo.model ?? null,
-        userInfo.variant ?? userInfo.model?.variant ?? null,
-        visibleModels,
-      )
-      if (!resolved) return
-      restoreFromMessage(userInfo.model, userInfo.variant ?? userInfo.model?.variant)
-    }
-    restoredSessionRef.current = routeSessionId
-    // 依赖 routeSessionId 和 messages.length（等加载完），不依赖 messages 引用
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeSessionId, messages.length, visibleModels, restoreFromMessage, sessionModel])
-
-  // ============================================
-  // Agent Restoration Effect
-  // ============================================
-  useEffect(() => {
-    if (inputRestoreContent?.agent) {
-      restoreAgentFromMessage(inputRestoreContent.agent)
-      return
-    }
-    if (messages.length === 0) return
-    const lastUserMsg = [...messages].reverse().find(m => m.info.role === 'user')
-    if (lastUserMsg && 'agent' in lastUserMsg.info) {
-      restoreAgentFromMessage((lastUserMsg.info as { agent?: string }).agent)
-    }
-  }, [inputRestoreContent, messages, restoreAgentFromMessage])
+  useModelAgentRestore({
+    inputRestoreContent,
+    visibleModels,
+    restoreFromMessage,
+    routeSessionId,
+    messages,
+    sessionModel,
+    restoreAgentFromMessage,
+  })
 
   // ============================================
   // Focus handling
