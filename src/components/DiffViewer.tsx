@@ -37,20 +37,25 @@ import {
   computeUnifiedLines,
 } from './DiffViewer.utils'
 import type {
-  ViewMode,
   DiffViewerProps,
   DiffViewerData,
-  LineType,
   DiffLine,
-  WordDiffSegment,
   PairedLine,
   UnifiedLine,
   ExpandDirection,
   ExpansionRegion,
   HighlightToken,
 } from './DiffViewer.types'
+import { LineNumberCell } from './DiffViewerLineNumberCell'
+import { DiffMarkerCell } from './DiffViewerDiffMarkerCell'
+import { EmptyContentBuffer } from './DiffViewerEmptyContentBuffer'
+import { CollapsedExpandButton } from './DiffViewerCollapsedExpandButton'
+import { CollapsedLabelOverlay } from './DiffViewerCollapsedLabelOverlay'
+import { CollapsedContinuation } from './DiffViewerCollapsedContinuation'
+import { CollapsedBar } from './DiffViewerCollapsedBar'
+import { MergedWordDiffLine } from './DiffViewerMergedWordDiffLine'
 
-export type { ViewMode, DiffViewerProps, DiffViewerData, LineType }
+export type { ViewMode, DiffViewerProps, DiffViewerData, LineType } from './DiffViewer.types'
 
 function useDiffLineNumberWidth(before: string, after: string): number {
   return useMemo(
@@ -59,174 +64,10 @@ function useDiffLineNumberWidth(before: string, after: string): number {
   )
 }
 
-function LineNumberCell({ lineNo, width, type }: { lineNo?: number; width: number; type?: LineType }) {
-  const toneClass = type === 'add' || type === 'delete' ? 'text-text-300' : 'text-text-400'
-  return (
-    <div
-      className={`shrink-0 pl-4 pr-3 text-right text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none ${toneClass}`}
-      style={{ width }}
-    >
-      {lineNo}
-    </div>
-  )
-}
-
-function DiffMarkerCell({ type }: { type: LineType }) {
-  return (
-    <div className="w-5 shrink-0 text-center text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none">
-      {type === 'add' && <span className="text-success-100">+</span>}
-      {type === 'delete' && <span className="text-danger-100">−</span>}
-    </div>
-  )
-}
-
-function EmptyContentBuffer({ height, yOffset = 0, xOffset = 0 }: { height: number; yOffset?: number; xOffset?: number }) {
-  return <div className="diff-empty-content-buffer min-w-full" style={getEmptyBufferRowStyle(height, yOffset, xOffset)} />
-}
-
 function alignDeleteChangeBars(container: HTMLElement, yOffset: number) {
   for (const bar of container.querySelectorAll<HTMLElement>('.diff-change-bar-delete')) {
     bar.style.backgroundPositionY = `${-yOffset}px`
   }
-}
-
-/** Pierre-like 折叠按钮，放在 gutter 区域 */
-function ExpandIcon({ type }: { type: ExpandDirection }) {
-  if (type === 'both') {
-    return (
-      <svg aria-hidden="true" data-icon="" className="diff-separator-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M11.47 9.47a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 1 1 1.06-1.06L8 12.94zM7.526 1.418a.75.75 0 0 1 1.004.052l4 4a.75.75 0 1 1-1.06 1.06L8 3.06 4.53 6.53a.75.75 0 1 1-1.06-1.06l4-4z" />
-      </svg>
-    )
-  }
-
-  return (
-    <svg
-      aria-hidden="true"
-      data-icon=""
-      className="diff-separator-icon"
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="currentColor"
-    >
-      <path d="M3.47 5.47a.75.75 0 0 1 1.06 0L8 8.94l3.47-3.47a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 0 1 0-1.06" />
-    </svg>
-  )
-}
-
-function CollapsedExpandButton({
-  directions,
-  onExpand,
-  width,
-}: {
-  directions: ExpandDirection[]
-  onExpand?: (direction: ExpandDirection) => void
-  width?: number
-}) {
-  const buttonWidth = width !== undefined && directions.length > 0 ? width / directions.length : undefined
-
-  return (
-    <div data-separator-wrapper="" className="diff-separator-button-group" style={width !== undefined ? { width, flexBasis: width } : undefined}>
-      {directions.map(direction => (
-        <button
-          key={direction}
-          type="button"
-          data-compact=""
-          data-expand-button=""
-          data-expand-up={direction === 'up' ? '' : undefined}
-          data-expand-down={direction === 'down' ? '' : undefined}
-          data-expand-both={direction === 'both' ? '' : undefined}
-          className="diff-separator-button"
-          style={buttonWidth !== undefined ? { width: buttonWidth, minWidth: 0, flexBasis: buttonWidth } : undefined}
-          title={direction === 'up' ? 'Expand upward' : direction === 'down' ? 'Expand downward' : 'Expand hidden lines'}
-          onClick={() => onExpand?.(direction)}
-        >
-          <ExpandIcon type={direction} />
-        </button>
-      ))}
-    </div>
-  )
-}
-
-/** 折叠文案区，放在 content 区域 */
-function CollapsedLabel({
-  count,
-  t,
-  leadingDirections = [],
-  onExpand,
-  height = 24,
-}: {
-  count: number
-  t: (key: string, opts?: Record<string, unknown>) => string
-  leadingDirections?: ExpandDirection[]
-  onExpand?: (direction: ExpandDirection) => void
-  height?: number
-}) {
-  return (
-    <div className="diff-separator-content-row" style={{ height }}>
-      {leadingDirections.length > 0 && <CollapsedExpandButton directions={leadingDirections} onExpand={onExpand} />}
-      <div data-separator-content="" className="diff-separator-content">
-        <button type="button" data-compact="" data-unmodified-lines="" className="diff-separator-text-button" onClick={() => onExpand?.('both')}>
-          {t('diffViewer.linesUnchanged', { count })}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function CollapsedLabelOverlay({
-  count,
-  t,
-  onExpand,
-  height,
-  left,
-}: {
-  count: number
-  t: (key: string, opts?: Record<string, unknown>) => string
-  onExpand?: (direction: ExpandDirection) => void
-  height: number
-  left: number
-}) {
-  return (
-    <div className="diff-separator-label-overlay" style={{ height, left }}>
-      <CollapsedLabel count={count} t={t} onExpand={onExpand} height={height} />
-    </div>
-  )
-}
-
-/** 右侧/续接区域，只显示同一条 separator 的延伸背景 */
-function CollapsedContinuation({ height = 24 }: { height?: number }) {
-  return <div className="diff-separator-continuation" style={{ height }} />
-}
-
-/** Wrapped 模式直接横跨整行 */
-function CollapsedBar({
-  count,
-  t,
-  isFirst,
-  isLast,
-  chunked,
-  onExpand,
-  height = 24,
-  lineNumberAreaWidth,
-}: {
-  count: number
-  t: (key: string, opts?: Record<string, unknown>) => string
-  isFirst?: boolean
-  isLast?: boolean
-  chunked?: boolean
-  onExpand?: (direction: ExpandDirection) => void
-  height?: number
-  lineNumberAreaWidth?: number
-}) {
-  const directions = getSeparatorDirections({ isFirst, isLast, chunked })
-  return (
-    <div data-separator="line-info" data-expand-index="" className="diff-separator-surface" style={{ height }}>
-      <CollapsedExpandButton directions={directions} onExpand={onExpand} width={lineNumberAreaWidth} />
-      <CollapsedLabel count={count} t={t} onExpand={onExpand} height={height} />
-    </div>
-  )
 }
 
 // ============================================
@@ -1382,59 +1223,3 @@ const LineContent = memo(function LineContent({ line, tokens }: { line: DiffLine
   return <span className="text-text-100">{line.content}</span>
 })
 
-/**
- * 合并渲染：syntax token 提供文字颜色，word diff segment 提供背景色。
- *
- * 两者的切分边界不同，需要对齐遍历——
- * 遍历 word diff segment，在每个 segment 内部按 syntax token 切分渲染。
- */
-function MergedWordDiffLine({ segments, lineTokens }: { segments: WordDiffSegment[]; lineTokens: HighlightToken[] }) {
-  const result: React.ReactNode[] = []
-  let tokenIdx = 0
-  let tokenOffset = 0 // 当前 token 内已消费的字符数
-
-  for (let si = 0; si < segments.length; si++) {
-    const seg = segments[si]
-    let remaining = seg.text.length
-    const bgClass = seg.diffType === 'delete' ? 'bg-danger-100/30' : seg.diffType === 'add' ? 'bg-success-100/30' : ''
-    const children: React.ReactNode[] = []
-
-    while (remaining > 0 && tokenIdx < lineTokens.length) {
-      const token = lineTokens[tokenIdx]
-      const available = token.content.length - tokenOffset
-      const take = Math.min(remaining, available)
-      const slice = token.content.substring(tokenOffset, tokenOffset + take)
-
-      children.push(
-        <span key={`${si}-${tokenIdx}-${tokenOffset}`} style={token.color ? { color: token.color } : undefined}>
-          {slice}
-        </span>,
-      )
-
-      remaining -= take
-      tokenOffset += take
-      if (tokenOffset >= token.content.length) {
-        tokenIdx++
-        tokenOffset = 0
-      }
-    }
-
-    // 如果 token 用完了但 segment 还有剩余（不应该发生，但防御性处理）
-    if (remaining > 0) {
-      const extraStart = seg.text.length - remaining
-      children.push(<span key={`${si}-extra`}>{seg.text.substring(extraStart)}</span>)
-    }
-
-    if (bgClass) {
-      result.push(
-        <span key={si} className={bgClass}>
-          {children}
-        </span>,
-      )
-    } else {
-      result.push(...children)
-    }
-  }
-
-  return <>{result}</>
-}
