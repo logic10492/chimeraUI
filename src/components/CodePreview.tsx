@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import type { Extension } from '@codemirror/state'
 import { CodeMirrorReadonly } from './CodeMirrorReadonly'
 import { codeLineHeight, type TargetLineRange } from './codeMirrorReadonlyExtensions'
 import { useSyntaxHighlightRef } from '../hooks/useSyntaxHighlight'
@@ -14,6 +15,8 @@ interface CodePreviewProps {
   targetLine?: number | null
   targetKey?: string
   targetRanges?: readonly TargetLineRange[]
+  /** 追加的 CodeMirror 扩展（如流式光标 streamingCaretExtension） */
+  extraExtensions?: Extension[]
 }
 
 export function CodePreview({
@@ -26,6 +29,7 @@ export function CodePreview({
   targetLine,
   targetKey,
   targetRanges,
+  extraExtensions,
 }: CodePreviewProps) {
   const { codeWordWrap, codeFontScale } = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot)
   const resolvedWordWrap = wordWrap ?? codeWordWrap
@@ -47,6 +51,7 @@ export function CodePreview({
       targetLine={targetLine}
       targetKey={targetKey}
       targetRanges={targetRanges}
+      extraExtensions={extraExtensions}
     />
   )
 }

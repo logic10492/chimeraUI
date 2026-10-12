@@ -8,6 +8,7 @@
  */
 
 import { memo, useState, useMemo, useEffect, useRef, useId, type ReactNode } from 'react'
+import type { Extension } from '@codemirror/state'
 import { useTranslation } from 'react-i18next'
 import { diffLines } from 'diff'
 import { ChevronDownIcon, ChevronRightIcon, MaximizeIcon } from './Icons'
@@ -21,6 +22,10 @@ import { useDelayedRender } from '../hooks/useDelayedRender'
 import { useResponsiveMaxHeight } from '../hooks/useResponsiveMaxHeight'
 import { useFullscreenLayer } from '../contexts'
 import { useUiDisclosureState } from '../utils/uiDisclosureState'
+import { streamingCaretExtension } from './codeMirrorReadonlyExtensions'
+
+/** 稳定引用：流式光标扩展数组（每次渲染新建数组会触发 CodeMirror 视图重建） */
+const STREAMING_CARET_EXTENSIONS: Extension[] = [streamingCaretExtension]
 
 // ============================================
 // Types
@@ -69,6 +74,8 @@ export interface ContentBlockProps {
   isLoading?: boolean
   /** 加载时显示的文字 */
   loadingText?: string
+  /** 流式状态：标签 shimmer + 代码内容末尾渲染闪烁光标 */
+  streaming?: boolean
 }
 
 // ============================================
@@ -95,6 +102,7 @@ export const ContentBlock = memo(function ContentBlock({
   stats,
   isLoading = false,
   loadingText,
+  streaming = false,
 }: ContentBlockProps) {
   const { t } = useTranslation(['components', 'common'])
   const resolvedLoadingText = loadingText ?? t('common:loading')
@@ -190,10 +198,10 @@ export const ContentBlock = memo(function ContentBlock({
       )
     }
     if (content?.trim()) {
-      return <CodePreview code={content} language={lang} />
+      return <CodePreview code={content} language={lang} extraExtensions={streaming ? STREAMING_CARET_EXTENSIONS : undefined} />
     }
     return null
-  }, [content, diffViewerData, fullscreenDiffViewMode, isDiff, lang, resolvedDiff, stateKey])
+  }, [content, diffViewerData, fullscreenDiffViewMode, isDiff, lang, resolvedDiff, stateKey, streaming])
 
   const fullscreenLayer = useMemo(() => {
     if (!fullscreenContent) return null
@@ -283,7 +291,7 @@ export const ContentBlock = memo(function ContentBlock({
           {!hideLabel && (
             <span
               className={`font-medium font-mono leading-4 whitespace-nowrap ${
-                isError ? 'text-danger-100' : 'text-text-300'
+                isError ? 'text-danger-100' : streaming ? 'reasoning-shimmer-text' : 'text-text-300'
               }`}
             >
               {label}
@@ -367,7 +375,7 @@ export const ContentBlock = memo(function ContentBlock({
                   stateKey={stateKey ? `${stateKey}:diff` : undefined}
                 />
               ) : content?.trim() ? (
-                <CodePreview code={content} language={lang} maxHeight={maxHeight} isVisible={showBody} />
+                <CodePreview code={content} language={lang} maxHeight={maxHeight} isVisible={showBody} extraExtensions={streaming ? STREAMING_CARET_EXTENSIONS : undefined} />
               ) : null}
             </div>
           )}

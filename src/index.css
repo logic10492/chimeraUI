@@ -1242,3 +1242,14 @@ body {
     transition: none;
   }
 }
+
+/* 流式预览：CodeMirror 文档末尾的内联闪烁光标 */
+.cm-streaming-caret {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background-color: hsl(var(--accent-main-100));
+  animation: terminal-blink 1s step-end infinite;
+}

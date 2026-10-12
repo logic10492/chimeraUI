@@ -9,6 +9,7 @@ import { splitUnifiedDiffHunks } from '../../../../utils/diffUtils'
 import { getMaterialIconUrl } from '../../../../utils/materialIcons'
 import { themeStore } from '../../../../store/themeStore'
 import type { ToolRendererProps, ExtractedToolData } from '../types'
+import { StreamingPreview } from './StreamingPreview'
 
 // ============================================
 // Default Tool Renderer
@@ -125,37 +126,18 @@ function OutputBlock({
 
   // 2. 工具活跃时（running/pending）：优先渲染流式预览（逐 hunk diff 卡片 + 增长文本），否则 loading — compact 无预览时不显示
   if (isActive) {
-    const preview = data.streamingPreview
-    if (hunks?.length || preview?.text) {
+    if (hunks?.length || data.streamingPreview?.text) {
       return (
-        <div className="flex flex-col gap-2">
-          {hunks?.map((hunk, idx) => (
-            <ContentBlock
-              key={`${hunk.index}-${idx}`}
-              stateKey={`${stateBaseKey}:hunk:${hunk.index ?? idx}`}
-              label={formatHunkLabel(hunk, idx, t)}
-              filePath={hunk.filePath ?? data.filePath}
-              diff={{ before: hunk.before, after: hunk.after }}
-              language={detectLanguage(hunk.filePath ?? data.filePath)}
-              compact={compact}
-              onFullscreenChange={onFullscreenChange}
-              fullscreenId={`${fullscreenBaseId}:hunk:${hunk.index ?? idx}`}
-            />
-          ))}
-          {preview?.text && (
-            <ContentBlock
-              stateKey={`${stateBaseKey}:streaming-preview`}
-              label={t('defaultRenderer.preview')}
-              labelIcon={<StreamingCaret />}
-              content={preview.text}
-              language={preview.language}
-              filePath={preview.filePath}
-              compact={compact}
-              onFullscreenChange={onFullscreenChange}
-              fullscreenId={`${fullscreenBaseId}:streaming-preview`}
-            />
-          )}
-        </div>
+        <StreamingPreview
+          hunks={hunks}
+          previewText={data.streamingPreview?.text}
+          filePath={data.streamingPreview?.filePath ?? data.filePath}
+          language={data.streamingPreview?.language}
+          compact={compact}
+          onFullscreenChange={onFullscreenChange}
+          fullscreenBaseId={fullscreenBaseId}
+          stateBaseKey={stateBaseKey}
+        />
       )
     }
     if (compact) return null
@@ -351,20 +333,3 @@ function formatLabel(name: string, t: (key: string, opts?: Record<string, unknow
   return t('defaultRenderer.nameResult', { name: formatted })
 }
 
-function formatHunkLabel(
-  hunk: StreamingHunk,
-  idx: number,
-  t: (key: string, opts?: Record<string, unknown>) => string,
-): string {
-  const label = t('defaultRenderer.hunk', { index: idx + 1 })
-  return hunk.pos ? `${label} · ${hunk.pos}` : label
-}
-
-/** CSS-only 流式指示：Preview 标签前闪烁的 ▍（复用 terminal-blink keyframes） */
-function StreamingCaret() {
-  return (
-    <span className="leading-none text-accent-main-100" style={{ animation: 'terminal-blink 1s step-end infinite' }}>
-      ▍
-    </span>
-  )
-}

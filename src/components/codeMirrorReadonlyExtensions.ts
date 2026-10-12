@@ -21,6 +21,7 @@ import {
   lineNumbers,
   type DecorationSet,
   type Panel,
+  WidgetType,
 } from '@codemirror/view'
 import type { HighlightTokens } from '../hooks/useSyntaxHighlight'
 
@@ -361,3 +362,33 @@ function createSearchToggle(label: string, title: string) {
   button.setAttribute('aria-pressed', 'false')
   return { button, pressed: () => button.getAttribute('aria-pressed') === 'true', setPressed: (pressed: boolean) => button.setAttribute('aria-pressed', pressed ? 'true' : 'false') }
 }
+
+// ============================================
+// Streaming caret（流式预览：文档末尾的闪烁光标）
+// ============================================
+
+class StreamingCaretWidget extends WidgetType {
+  override eq() {
+    return true
+  }
+
+  override toDOM() {
+    const span = document.createElement('span')
+    span.className = 'cm-streaming-caret'
+    span.setAttribute('aria-hidden', 'true')
+    return span
+  }
+}
+
+function streamingCaretDecorations(state: EditorState): DecorationSet {
+  return Decoration.set([Decoration.widget({ widget: new StreamingCaretWidget(), side: 1 }).range(state.doc.length)])
+}
+
+const streamingCaretField = StateField.define<DecorationSet>({
+  create: streamingCaretDecorations,
+  update: (_value, transaction) => streamingCaretDecorations(transaction.state),
+  provide: field => EditorView.decorations.from(field),
+})
+
+/** 单例扩展：在只读编辑器文档末尾渲染闪烁光标，供流式预览卡片使用。 */
+export const streamingCaretExtension: Extension = streamingCaretField
