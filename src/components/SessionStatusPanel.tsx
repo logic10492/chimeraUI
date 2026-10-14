@@ -12,6 +12,7 @@ import { todoStore, useTodoStats, useTodos } from '../store/todoStore'
 import { getSessionModelSelection, parseModelKey } from '../utils/modelUtils'
 import { formatRelativeTime } from '../utils/dateUtils'
 import { useModels } from '../hooks/useModels'
+import { ChevronDownIcon } from './Icons'
 
 interface SessionStatusPanelProps {
   sessionId?: string | null
@@ -167,12 +168,15 @@ function processOwnerLabel(process: Process, currentSessionId: string | null | u
   return process.agent ? `${owner} · ${process.agent}` : owner
 }
 
-const Section = memo(function Section({ title, children, count }: { title: string; children: React.ReactNode; count?: string | number }) {
+const Section = memo(function Section({ title, children, count, headerRight }: { title: string; children: React.ReactNode; count?: string | number; headerRight?: React.ReactNode }) {
   return (
     <section className="shrink-0 border-b border-border-200/50 bg-bg-100 px-4 py-3">
       <div className="flex items-center justify-between gap-2">
         <div className="text-[length:var(--fs-sm)] font-medium text-text-100">{title}</div>
-        {count !== undefined ? <div className="text-[length:var(--fs-xs)] text-text-500">{count}</div> : null}
+        <div className="flex items-center gap-1">
+          {count !== undefined ? <div className="text-[length:var(--fs-xs)] text-text-500">{count}</div> : null}
+          {headerRight}
+        </div>
       </div>
       {children}
     </section>
@@ -187,6 +191,7 @@ export const SessionStatusPanel = memo(function SessionStatusPanel({ sessionId, 
   const fetchedTodosRef = useRef(new Set<string>())
   const [workBrief, setWorkBrief] = useState<WorkBrief | null>(null)
   const [workBriefLoading, setWorkBriefLoading] = useState(false)
+  const [workBriefExpanded, setWorkBriefExpanded] = useState(false)
   const [balance, setBalance] = useState<ProviderBalanceResult | null>(null)
   const [balanceLoading, setBalanceLoading] = useState(false)
   const [balanceError, setBalanceError] = useState(false)
@@ -218,6 +223,20 @@ export const SessionStatusPanel = memo(function SessionStatusPanel({ sessionId, 
       briefStat(t('sessionStatus.acceptance'), nonEmptyItems(workBrief.acceptanceCriteria).length),
       briefStat(t('sessionStatus.evidence'), nonEmptyItems(workBrief.relevantEvidence).length),
     ].filter((item): item is string => Boolean(item))
+  }, [t, workBrief])
+
+  const workBriefFields = useMemo(() => {
+    if (!workBrief) return []
+    const fields: Array<{ label: string; text?: string; items?: string[] }> = [
+      { label: t('sessionStatus.intent'), text: workBrief.intent?.trim() },
+      { label: t('sessionStatus.decisions'), items: nonEmptyItems(workBrief.confirmedDecisions) },
+      { label: t('sessionStatus.constraints'), items: nonEmptyItems(workBrief.constraints) },
+      { label: t('sessionStatus.acceptance'), items: nonEmptyItems(workBrief.acceptanceCriteria) },
+      { label: t('sessionStatus.openQuestions'), items: nonEmptyItems(workBrief.openQuestions) },
+      { label: t('sessionStatus.evidence'), items: nonEmptyItems(workBrief.relevantEvidence) },
+      { label: t('sessionStatus.closeout'), items: nonEmptyItems(workBrief.closeout) },
+    ]
+    return fields.filter(field => Boolean(field.text) || (field.items?.length ?? 0) > 0)
   }, [t, workBrief])
 
   const balanceSummaryValue = useMemo(() => (balance ? balanceSummary(balance) : undefined), [balance])
@@ -341,7 +360,23 @@ export const SessionStatusPanel = memo(function SessionStatusPanel({ sessionId, 
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-bg-100">
-      <Section title={t('sessionStatus.workBrief')} count={workBriefStats.length > 0 ? workBriefStats.length : undefined}>
+      <Section
+        title={t('sessionStatus.workBrief')}
+        count={workBriefStats.length > 0 ? workBriefStats.length : undefined}
+        headerRight={
+          workBrief ? (
+            <button
+              type="button"
+              onClick={() => setWorkBriefExpanded(prev => !prev)}
+              aria-expanded={workBriefExpanded}
+              aria-label={workBriefExpanded ? t('sessionStatus.collapseWorkBrief') : t('sessionStatus.expandWorkBrief')}
+              className="rounded-md p-1 text-text-400 transition hover:bg-bg-200/50 hover:text-text-200"
+            >
+              <ChevronDownIcon size={14} className={workBriefExpanded ? 'rotate-180' : undefined} />
+            </button>
+          ) : undefined
+        }
+      >
         {workBriefStats.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1">
             {workBriefStats.map(item => (
@@ -351,7 +386,26 @@ export const SessionStatusPanel = memo(function SessionStatusPanel({ sessionId, 
             ))}
           </div>
         ) : null}
-        {workBriefRows.length > 0 ? (
+        {workBriefExpanded && workBriefFields.length > 0 ? (
+          <div className="mt-3 flex flex-col gap-2">
+            {workBriefFields.map(field => (
+              <div key={field.label} className="min-w-0">
+                <div className="text-[length:var(--fs-xs)] text-text-500">{field.label}</div>
+                {field.text ? (
+                  <div className="whitespace-pre-wrap break-words text-[length:var(--fs-sm)] text-text-200">{field.text}</div>
+                ) : (
+                  <div className="mt-0.5 flex flex-col gap-1">
+                    {field.items?.map((item, index) => (
+                      <div key={`${index}:${item}`} className="break-words text-[length:var(--fs-sm)] text-text-200">
+                        · {item}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : workBriefRows.length > 0 ? (
           <div className="mt-3 flex flex-col gap-2">
             {workBriefRows.map(row => (
               <div key={row.label} className="min-w-0">
@@ -367,8 +421,8 @@ export const SessionStatusPanel = memo(function SessionStatusPanel({ sessionId, 
         )}
       </Section>
 
-      <Section title={t('sessionStatus.providerBalance')}>
-        {supportedBalanceProvider(resolvedProviderId) ? (
+      {supportedBalanceProvider(resolvedProviderId) ? (
+        <Section title={t('sessionStatus.providerBalance')}>
           <div className="mt-2 rounded-lg border border-border-200/50 bg-bg-200/40 px-3 py-2">
             <div className="text-[length:var(--fs-sm)] font-medium text-text-100">{providerBalanceName(resolvedProviderId)}</div>
             <div className={`mt-1 truncate text-[length:var(--fs-sm)] ${statusTextClass(balanceSummaryValue?.status)}`}>
@@ -389,10 +443,8 @@ export const SessionStatusPanel = memo(function SessionStatusPanel({ sessionId, 
               </div>
             ) : null}
           </div>
-        ) : (
-          <div className="mt-2 text-[length:var(--fs-sm)] text-text-400">{t('sessionStatus.noBalanceSources')}</div>
-        )}
-      </Section>
+        </Section>
+      ) : null}
 
       <Section title={t('sessionStatus.todo')} count={todoStats.total > 0 ? `${todoStats.completed}/${todoStats.total}` : undefined}>
         {todos.length > 0 ? (

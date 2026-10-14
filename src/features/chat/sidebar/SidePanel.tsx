@@ -4,7 +4,8 @@ import { SessionList } from '../../sessions/SessionList'
 import { FolderRecentList } from './FolderRecentList'
 import { getProjectGroupIdentity } from './projectGrouping'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
-import { ActiveSessionsTab } from './ActiveSessionsTab'
+import { ActiveSessionsSection } from './ActiveSessionsSection'
+import { NotificationsTab } from './NotificationsTab'
 import { SidebarFooter } from './SidebarFooter'
 import { buildActiveSessionTree } from './activeSessionTree'
 import { getParentPath } from './sidebarUtils'
@@ -29,7 +30,7 @@ import { useSessions } from '../../../hooks/useSessions'
 import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useLayoutStore } from '../../../store/layoutStore'
 import { childSessionStore } from '../../../store/childSessionStore'
-import { useBusySessions, useBusyCount } from '../../../store/activeSessionStore'
+import { useBusySessions } from '../../../store/activeSessionStore'
 import { useNotifications, useUnreadNotificationCount } from '../../../store/notificationStore'
 import { pinnedSessionsStore } from '../../../store/pinnedSessionsStore'
 import { updateSession, deleteSession as apiDeleteSession } from '../../../api/session'
@@ -93,7 +94,7 @@ export function SidePanel({
     projectId: null,
   })
   const [projectsExpanded, setProjectsExpanded] = useState(false)
-  const [sidebarTab, setSidebarTab] = useState<'recents' | 'active'>('recents')
+  const [sidebarTab, setSidebarTab] = useState<'recents' | 'notifications'>('recents')
   const [sessionListView, setSessionListView] = useState<'active' | 'archived'>('active')
   const [expandedRecentProjectIds, setExpandedRecentProjectIds] = useState<string[]>([])
 
@@ -132,7 +133,6 @@ export function SidePanel({
 
   // Active sessions
   const busySessions = useBusySessions()
-  const busyCount = useBusyCount()
   useSyncExternalStore(
     childSessionStore.subscribe.bind(childSessionStore),
     childSessionStore.getVersion,
@@ -141,7 +141,6 @@ export function SidePanel({
   // Notification history
   const notifications = useNotifications()
   const unreadNotificationCount = useUnreadNotificationCount()
-  const attentionCount = busyCount + unreadNotificationCount
 
 
   const { sessions, isLoading, isLoadingMore, hasMore, search, setSearch, loadMore, deleteSession, refresh } =
@@ -168,29 +167,38 @@ export function SidePanel({
     currentDirectory,
   })
 
+  const busySessionIds = useMemo(() => new Set(busySessions.map(entry => entry.sessionId)), [busySessions])
+
   const orderedSessions = useMemo(() => {
+    // 非搜索态下 busy 会话由置顶活跃区展示，从最近列表去重；搜索时保持全量结果
+    const isHiddenBusy = (id: string) => !search && busySessionIds.has(id)
     const pinnedSet = new Set(pinnedEntries.map(e => e.sessionId))
     const pinned = pinnedEntries
       .map(entry => sessionLookup.get(entry.sessionId))
       .filter((session): session is ApiSession => Boolean(session))
-    const rest = sessions.filter(s => !pinnedSet.has(s.id))
+      .filter(session => !isHiddenBusy(session.id))
+    const rest = sessions.filter(s => !pinnedSet.has(s.id) && !isHiddenBusy(s.id))
     return [...pinned, ...rest]
-  }, [pinnedEntries, sessionLookup, sessions])
+  }, [pinnedEntries, sessionLookup, sessions, busySessionIds, search])
   const pinnedDividerAfterIds = useMemo(() => {
+    const pinnedSet = new Set(pinnedEntries.map(e => e.sessionId))
     const lastPinned = pinnedEntries
       .map(entry => sessionLookup.get(entry.sessionId))
       .filter((session): session is ApiSession => Boolean(session))
+      .filter(session => search || !busySessionIds.has(session.id))
       .at(-1)
     if (!lastPinned) return undefined
-    const pinnedSet = new Set(pinnedEntries.map(e => e.sessionId))
-    return sessions.some(s => !pinnedSet.has(s.id)) ? new Set([lastPinned.id]) : undefined
-  }, [pinnedEntries, sessionLookup, sessions])
+    return sessions.some(s => !pinnedSet.has(s.id) && (search || !busySessionIds.has(s.id)))
+      ? new Set([lastPinned.id])
+      : undefined
+  }, [pinnedEntries, sessionLookup, sessions, busySessionIds, search])
   const resolvedPinnedSessions = useMemo(
     () =>
       pinnedEntries
         .map(entry => sessionLookup.get(entry.sessionId))
-        .filter((session): session is ApiSession => Boolean(session)),
-    [pinnedEntries, sessionLookup],
+        .filter((session): session is ApiSession => Boolean(session))
+        .filter(session => !busySessionIds.has(session.id)),
+    [pinnedEntries, sessionLookup, busySessionIds],
   )
   const unavailablePinnedEntries = useMemo(
     () =>
@@ -222,7 +230,7 @@ export function SidePanel({
     return undefined
   }, [search, sidebarShowChildSessions, selectedSessionId, rootSessionIds, findParentId])
 
-  // 开关关 → 只挂活跃的 + 选中的子 session
+  // 开关关 → 只挂选中的子 session（busy 子会话由置顶活跃区展示）
   const inlineChildSessions = useMemo(() => {
     if (search) return undefined
     const map = new Map<string, ApiSession[]>()
@@ -235,13 +243,6 @@ export function SidePanel({
       }
       if (!arr.some(s => s.id === session.id)) arr.push(session)
     }
-    for (const entry of busySessions) {
-      const pid = findParentId(entry.sessionId)
-      if (pid && rootSessionIds.has(pid)) {
-        const s = sessionLookup.get(entry.sessionId)
-        if (s) add(pid, s)
-      }
-    }
     if (!sidebarShowChildSessions && selectedSessionId && !rootSessionIds.has(selectedSessionId)) {
       const pid = findParentId(selectedSessionId)
       if (pid && rootSessionIds.has(pid)) {
@@ -252,7 +253,6 @@ export function SidePanel({
     return map.size > 0 ? map : undefined
   }, [
     search,
-    busySessions,
     selectedSessionId,
     sidebarShowChildSessions,
     rootSessionIds,
@@ -505,7 +505,7 @@ export function SidePanel({
     [currentDirectory, addDirectory, onSelectSession, onCloseMobile],
   )
 
-  // Active tab 专用：跨目录的 session 需要确保目录在项目列表中
+  // 活跃会话/通知选中专用：跨目录的 session 需要确保目录在项目列表中
   const handleSelectActive = useCallback(
     (session: ApiSession) => {
       if (session.directory) {
@@ -658,6 +658,7 @@ export function SidePanel({
     onDeleteSession: handleDeleteFolderSession,
     expandedChildSessionIds,
     inlineChildSessions,
+    excludeSessionIds: busySessionIds,
     onSelectChildSession: handleSelectActive,
     isEditMode,
     selectedSessionIds,
@@ -923,7 +924,7 @@ export function SidePanel({
           </div>
         </div>
 
-        {/* Tab Bar: Recents / Active */}
+        {/* Tab Bar: Recents / Notifications */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <div className="flex items-center mx-2 gap-1 shrink-0">
             <button
@@ -962,23 +963,17 @@ export function SidePanel({
             <button
               type="button"
               onClick={() => {
-                setSidebarTab('active')
+                setSidebarTab('notifications')
                 exitEditMode()
               }}
               className={`pl-[6px] pr-2 py-1.5 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider transition-colors duration-150 flex items-center gap-1 ${
-                sidebarTab === 'active' ? 'text-text-100' : 'text-text-500 hover:text-text-300'
+                sidebarTab === 'notifications' ? 'text-text-100' : 'text-text-500 hover:text-text-300'
               }`}
             >
-              <span className="inline-flex h-4 items-center leading-none">{t('sidebar.active')}</span>
-              {attentionCount > 0 && (
-                <span
-                  className={`inline-flex h-[15px] min-w-[15px] shrink-0 items-center justify-center self-center rounded-full px-1 text-[length:var(--fs-xxs)] font-medium leading-none transition-colors ${
-                    attentionCount > busyCount
-                      ? 'bg-accent-main-100/10 text-accent-main-100'
-                      : 'bg-success-100/10 text-success-100'
-                  }`}
-                >
-                  {attentionCount}
+              <span className="inline-flex h-4 items-center leading-none">{t('sidebar.notifications')}</span>
+              {unreadNotificationCount > 0 && (
+                <span className="inline-flex h-[15px] min-w-[15px] shrink-0 items-center justify-center self-center rounded-full px-1 text-[length:var(--fs-xxs)] font-medium leading-none transition-colors bg-accent-main-100/10 text-accent-main-100">
+                  {unreadNotificationCount}
                 </span>
               )}
             </button>
@@ -1033,89 +1028,99 @@ export function SidePanel({
 
           {/* Recents Tab */}
           {sidebarTab === 'recents' && (
-            <div ref={recentsSelectionRootRef} className="flex-1 overflow-hidden">
-              {sessionListView === 'archived' ? (
-                <SessionList
-                  sessions={archivedSessions.sessions}
-                  selectedId={selectedSessionId}
-                  isLoading={archivedSessions.isLoading}
-                  isLoadingMore={archivedSessions.isLoadingMore}
-                  hasMore={archivedSessions.hasMore}
-                  search={archivedSessions.search}
-                  onSearchChange={archivedSessions.setSearch}
-                  onSelect={handleSelect}
-                  onDelete={handleDeleteSession}
-                  onRestore={handleRestoreSession}
-                  onRename={handleRename}
-                  onLoadMore={archivedSessions.loadMore}
-                  onNewChat={onNewSession}
-                  error={archivedSessions.error}
-                  showHeader={false}
-                  grouped={false}
-                  density="compact"
-                  showStats
-                  showDirectory={!currentDirectory}
-                />
-              ) : canShowFolderRecents ? (
-                <FolderRecentList
-                  projects={folderProjects}
-                  {...commonFolderRecentListProps}
-                  onReorderProject={handleReorderProjectGroup}
-                  workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
-                  pinnedSessions={resolvedPinnedSessions}
-                  unavailablePinnedEntries={unavailablePinnedEntries}
-                />
-              ) : shouldRenderWorkspaceTreeOnly ? (
-                <FolderRecentList
-                  projects={currentProjectTreeProjects}
-                  {...commonFolderRecentListProps}
-                  onReorderProject={reorderDirectories}
-                  pinnedSessions={resolvedPinnedSessions}
-                  unavailablePinnedEntries={unavailablePinnedEntries}
-                />
-              ) : shouldWaitForWorkspaceResolution ? (
-                <div className="flex h-full items-center justify-center text-text-400/70">
-                  <SpinnerIcon size={14} className="animate-spin" />
-                </div>
-              ) : (
-                <SessionList
-                  sessions={orderedSessions}
-                  selectedId={selectedSessionId}
-                  isLoading={isLoading}
-                  isLoadingMore={isLoadingMore}
-                  hasMore={hasMore}
-                  search={search}
-                  onSearchChange={setSearch}
-                  onSelect={handleSelect}
-                  onDelete={handleDeleteSession}
-                  onArchive={handleArchiveSession}
-                  onRename={handleRename}
-                  onLoadMore={loadMore}
-                  onNewChat={onNewSession}
-                  showHeader={false}
-                  grouped={false}
-                  density="compact"
-                  showStats
-                  showDirectory={!currentDirectory}
-                  expandedChildSessionIds={expandedChildSessionIds}
-                  inlineChildSessions={inlineChildSessions}
-                  onSelectChildSession={handleSelectActive}
-                  pinnedDividerAfterIds={pinnedDividerAfterIds}
-                  isEditMode={isEditMode}
-                  selectedSessionIds={selectedSessionIds}
-                  onToggleSessionSelection={toggleSessionSelection}
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              {sessionListView === 'active' && !search && (
+                <ActiveSessionsSection
+                  busySessions={busySessions}
+                  activeSessionTree={activeSessionTree}
+                  sessionLookup={sessionLookup}
+                  selectedSessionId={selectedSessionId}
+                  onSelect={handleSelectActive}
+                  folderProjects={folderProjects}
                 />
               )}
+              <div ref={recentsSelectionRootRef} className="flex-1 min-h-0 overflow-hidden">
+                {sessionListView === 'archived' ? (
+                  <SessionList
+                    sessions={archivedSessions.sessions}
+                    selectedId={selectedSessionId}
+                    isLoading={archivedSessions.isLoading}
+                    isLoadingMore={archivedSessions.isLoadingMore}
+                    hasMore={archivedSessions.hasMore}
+                    search={archivedSessions.search}
+                    onSearchChange={archivedSessions.setSearch}
+                    onSelect={handleSelect}
+                    onDelete={handleDeleteSession}
+                    onRestore={handleRestoreSession}
+                    onRename={handleRename}
+                    onLoadMore={archivedSessions.loadMore}
+                    onNewChat={onNewSession}
+                    error={archivedSessions.error}
+                    showHeader={false}
+                    grouped={false}
+                    density="compact"
+                    showStats
+                    showDirectory={!currentDirectory}
+                  />
+                ) : canShowFolderRecents ? (
+                  <FolderRecentList
+                    projects={folderProjects}
+                    {...commonFolderRecentListProps}
+                    onReorderProject={handleReorderProjectGroup}
+                    workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
+                    pinnedSessions={resolvedPinnedSessions}
+                    unavailablePinnedEntries={unavailablePinnedEntries}
+                  />
+                ) : shouldRenderWorkspaceTreeOnly ? (
+                  <FolderRecentList
+                    projects={currentProjectTreeProjects}
+                    {...commonFolderRecentListProps}
+                    onReorderProject={reorderDirectories}
+                    pinnedSessions={resolvedPinnedSessions}
+                    unavailablePinnedEntries={unavailablePinnedEntries}
+                  />
+                ) : shouldWaitForWorkspaceResolution ? (
+                  <div className="flex h-full items-center justify-center text-text-400/70">
+                    <SpinnerIcon size={14} className="animate-spin" />
+                  </div>
+                ) : (
+                  <SessionList
+                    sessions={orderedSessions}
+                    selectedId={selectedSessionId}
+                    isLoading={isLoading}
+                    isLoadingMore={isLoadingMore}
+                    hasMore={hasMore}
+                    search={search}
+                    onSearchChange={setSearch}
+                    onSelect={handleSelect}
+                    onDelete={handleDeleteSession}
+                    onArchive={handleArchiveSession}
+                    onRename={handleRename}
+                    onLoadMore={loadMore}
+                    onNewChat={onNewSession}
+                    showHeader={false}
+                    grouped={false}
+                    density="compact"
+                    showStats
+                    showDirectory={!currentDirectory}
+                    expandedChildSessionIds={expandedChildSessionIds}
+                    inlineChildSessions={inlineChildSessions}
+                    onSelectChildSession={handleSelectActive}
+                    pinnedDividerAfterIds={pinnedDividerAfterIds}
+                    isEditMode={isEditMode}
+                    selectedSessionIds={selectedSessionIds}
+                    onToggleSessionSelection={toggleSessionSelection}
+                  />
+                )}
+              </div>
             </div>
           )}
 
-          {/* Active Sessions Tab */}
-          {sidebarTab === 'active' && (
-            <ActiveSessionsTab
-              busySessions={busySessions}
+          {/* Notifications Tab */}
+          {sidebarTab === 'notifications' && (
+            <NotificationsTab
               notifications={notifications}
               sessionLookup={sessionLookup}
-              activeSessionTree={activeSessionTree}
               selectedSessionId={selectedSessionId}
               onSelect={handleSelectActive}
             />

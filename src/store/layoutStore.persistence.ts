@@ -18,6 +18,7 @@ import {
   STORAGE_KEY_SIDEBAR,
   STORAGE_KEY_SIDEBAR_FOLDER_RECENTS,
   STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF,
+  STORAGE_KEY_SIDEBAR_ACTIVE_SECTION_COLLAPSED,
   STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS,
   STORAGE_KEY_TERMINAL_COPY_ON_SELECT,
   STORAGE_KEY_TERMINAL_LAYOUT,
@@ -137,6 +138,11 @@ export function restoreLayoutState(state: LayoutState): void {
   const savedShowChildSessions = localStorage.getItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS)
   if (savedShowChildSessions !== null) {
     state.sidebarShowChildSessions = savedShowChildSessions === 'true'
+  }
+
+  const savedActiveSectionCollapsed = localStorage.getItem(STORAGE_KEY_SIDEBAR_ACTIVE_SECTION_COLLAPSED)
+  if (savedActiveSectionCollapsed !== null) {
+    state.sidebarActiveSectionCollapsed = savedActiveSectionCollapsed === 'true'
   }
 
   const savedWakeLock = localStorage.getItem(STORAGE_KEY_WAKE_LOCK)

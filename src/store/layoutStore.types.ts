@@ -70,6 +70,7 @@ export interface LayoutState {
   sidebarFolderRecents: boolean
   sidebarFolderRecentsShowDiff: boolean
   sidebarShowChildSessions: boolean
+  sidebarActiveSectionCollapsed: boolean
 
   // 右侧栏
   rightPanelOpen: boolean
@@ -131,6 +132,7 @@ export interface LayoutBackup {
   sidebarFolderRecents: boolean
   sidebarFolderRecentsShowDiff: boolean
   sidebarShowChildSessions: boolean
+  sidebarActiveSectionCollapsed: boolean
   wakeLock: boolean
   rightPanelWidth: number
   bottomPanelHeight: number

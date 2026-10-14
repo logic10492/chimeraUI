@@ -10,6 +10,7 @@ export interface SettingsSlice {
   setSidebarFolderRecents(enabled: boolean): void
   setSidebarFolderRecentsShowDiff(enabled: boolean): void
   setSidebarShowChildSessions(enabled: boolean): void
+  setSidebarActiveSectionCollapsed(collapsed: boolean): void
   setWakeLock(enabled: boolean): void
   setTerminalCopyOnSelect(enabled: boolean): void
   setTerminalRightClickPaste(enabled: boolean): void
@@ -59,6 +60,17 @@ export const settingsMethods: SettingsSlice & ThisType<LayoutStore> = {
     this.state.sidebarShowChildSessions = enabled
     try {
       localStorage.setItem('opencode-sidebar-show-child-sessions', String(enabled))
+    } catch {
+      /* ignore */
+    }
+    this.notify()
+  },
+
+  setSidebarActiveSectionCollapsed(collapsed) {
+    if (this.state.sidebarActiveSectionCollapsed === collapsed) return
+    this.state.sidebarActiveSectionCollapsed = collapsed
+    try {
+      localStorage.setItem('opencode-sidebar-active-section-collapsed', String(collapsed))
     } catch {
       /* ignore */
     }

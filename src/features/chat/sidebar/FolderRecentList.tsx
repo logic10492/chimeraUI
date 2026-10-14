@@ -54,6 +54,8 @@ interface FolderRecentListProps {
   workspaceDirectoriesByProjectId?: Map<string, string[]>
   pinnedSessions?: ApiSession[]
   unavailablePinnedEntries?: PinnedSessionEntry[]
+  /** 不在各文件夹列表中展示的会话（如已由置顶活跃区展示的 busy 会话） */
+  excludeSessionIds?: Set<string>
   // ---- 编辑模式 ----
   isEditMode?: boolean
   selectedSessionIds?: Set<string>
@@ -427,6 +429,7 @@ export function FolderRecentList({
   workspaceDirectoriesByProjectId,
   pinnedSessions = [],
   unavailablePinnedEntries = [],
+  excludeSessionIds,
   isEditMode = false,
   selectedSessionIds,
   selectedProjectIds,
@@ -567,6 +570,7 @@ export function FolderRecentList({
                   onRequestDeleteSession={setPendingDelete}
                   expandedChildSessionIds={expandedChildSessionIds}
                   inlineChildSessions={inlineChildSessions}
+                  excludeSessionIds={excludeSessionIds}
                   onSelectChildSession={onSelectChildSession}
                   workspaceDirectories={workspaceDirectoriesByProjectId?.get(project.id)}
                   workspaceFolderStatusByDirectory={folderStatusByWorkspaceDirectory}
@@ -755,6 +759,7 @@ interface FolderRecentSectionProps {
   onRequestDeleteSession: (pending: PendingDeleteSession) => void
   expandedChildSessionIds?: Set<string>
   inlineChildSessions?: Map<string, ApiSession[]>
+  excludeSessionIds?: Set<string>
   onSelectChildSession?: (session: ApiSession) => void
   workspaceDirectories?: string[]
   workspaceFolderStatusByDirectory?: Map<string, FolderStatus>
@@ -792,6 +797,7 @@ function FolderRecentSection({
   onRequestDeleteSession,
   expandedChildSessionIds,
   inlineChildSessions,
+  excludeSessionIds,
   onSelectChildSession,
   workspaceDirectories = [],
   workspaceFolderStatusByDirectory,
@@ -837,8 +843,8 @@ function FolderRecentSection({
   )
   const visibleSessions = useMemo(() => {
     const pinnedSet = new Set(pinnedEntries.map(entry => entry.sessionId))
-    return sessions.filter(session => !pinnedSet.has(session.id))
-  }, [pinnedEntries, sessions])
+    return sessions.filter(session => !pinnedSet.has(session.id) && !excludeSessionIds?.has(session.id))
+  }, [pinnedEntries, sessions, excludeSessionIds])
 
   const handleRename = useCallback(
     async (sessionId: string, newTitle: string) => {
@@ -969,6 +975,7 @@ function FolderRecentSection({
                   onRequestDeleteSession={onRequestDeleteSession}
                   expandedChildSessionIds={expandedChildSessionIds}
                   inlineChildSessions={inlineChildSessions}
+                  excludeSessionIds={excludeSessionIds}
                   onSelectChildSession={onSelectChildSession}
                   isEditMode={isEditMode}
                   selectedSessionIds={selectedSessionIds}
@@ -1068,6 +1075,7 @@ interface WorkspaceFolderListProps {
   onRequestDeleteSession: (pending: PendingDeleteSession) => void
   expandedChildSessionIds?: Set<string>
   inlineChildSessions?: Map<string, ApiSession[]>
+  excludeSessionIds?: Set<string>
   onSelectChildSession?: (session: ApiSession) => void
   isEditMode?: boolean
   selectedSessionIds?: Set<string>
@@ -1089,6 +1097,7 @@ function WorkspaceFolderList({
   onRequestDeleteSession,
   expandedChildSessionIds,
   inlineChildSessions,
+  excludeSessionIds,
   onSelectChildSession,
   isEditMode = false,
   selectedSessionIds,
@@ -1181,6 +1190,7 @@ function WorkspaceFolderList({
             onRequestDeleteSession={onRequestDeleteSession}
             expandedChildSessionIds={expandedChildSessionIds}
             inlineChildSessions={inlineChildSessions}
+            excludeSessionIds={excludeSessionIds}
             onSelectChildSession={onSelectChildSession}
             workspaceDirectories={[]}
             sectionKind="workspace"

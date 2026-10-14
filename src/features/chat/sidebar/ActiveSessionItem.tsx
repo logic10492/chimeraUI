@@ -7,11 +7,13 @@ interface ActiveSessionItemProps {
   entry: ActiveSessionEntry
   /** 从 sessions 列表或 API 拉取到的完整 session 对象 */
   resolvedSession?: ApiSession
+  /** 所属项目显示名（folderProjects 分组名），缺省时回退目录 basename */
+  projectLabel?: string
   isSelected: boolean
   onSelect: (session: ApiSession) => void
 }
 
-export function ActiveSessionItem({ entry, resolvedSession, isSelected, onSelect }: ActiveSessionItemProps) {
+export function ActiveSessionItem({ entry, resolvedSession, projectLabel, isSelected, onSelect }: ActiveSessionItemProps) {
   const { t } = useTranslation(['chat', 'common'])
   const isRetry = entry.status.type === 'retry'
   const pending = entry.pendingAction
@@ -98,11 +100,14 @@ export function ActiveSessionItem({ entry, resolvedSession, isSelected, onSelect
               </span>
             </>
           )}
-          {directory && (
+          {(directory || projectLabel) && (
             <>
               <span className="opacity-30 shrink-0">·</span>
-              <span className="truncate min-w-0 flex-1 opacity-50" title={directory}>
-                {directory.replace(/\\/g, '/').split('/').filter(Boolean).pop()}
+              <span
+                className="rounded bg-bg-200/60 px-1.5 py-px text-[length:var(--fs-xxs)] text-text-400 max-w-[40%] truncate"
+                title={directory}
+              >
+                {projectLabel || directory?.replace(/\\/g, '/').split('/').filter(Boolean).pop()}
               </span>
             </>
           )}

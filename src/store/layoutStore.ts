@@ -20,6 +20,7 @@ import {
   STORAGE_KEY_SIDEBAR,
   STORAGE_KEY_SIDEBAR_FOLDER_RECENTS,
   STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF,
+  STORAGE_KEY_SIDEBAR_ACTIVE_SECTION_COLLAPSED,
   STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS,
   STORAGE_KEY_TERMINAL_LAYOUT,
   STORAGE_KEY_VIEWPORT_SIDEBAR_WIDTH,
@@ -69,6 +70,7 @@ export class LayoutStore {
     sidebarFolderRecents: false,
     sidebarFolderRecentsShowDiff: true,
     sidebarShowChildSessions: false,
+    sidebarActiveSectionCollapsed: false,
     rightPanelOpen: false,
     rightPanelWidth: 450,
     bottomPanelOpen: false,
@@ -138,6 +140,7 @@ export function exportLayoutBackup(): LayoutBackup {
     sidebarFolderRecents: state.sidebarFolderRecents,
     sidebarFolderRecentsShowDiff: state.sidebarFolderRecentsShowDiff,
     sidebarShowChildSessions: state.sidebarShowChildSessions,
+    sidebarActiveSectionCollapsed: state.sidebarActiveSectionCollapsed,
     wakeLock: state.wakeLock,
     rightPanelWidth: state.rightPanelWidth,
     bottomPanelHeight: state.bottomPanelHeight,
@@ -172,6 +175,10 @@ export function importLayoutBackup(raw: unknown): void {
     String(parsed?.sidebarFolderRecentsShowDiff !== false),
   )
   localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS, String(parsed?.sidebarShowChildSessions === true))
+  localStorage.setItem(
+    STORAGE_KEY_SIDEBAR_ACTIVE_SECTION_COLLAPSED,
+    String(parsed?.sidebarActiveSectionCollapsed === true),
+  )
   localStorage.setItem(STORAGE_KEY_WAKE_LOCK, String(parsed?.wakeLock === true))
   localStorage.setItem(STORAGE_KEY_RIGHT_PANEL_WIDTH, String(rightPanelWidth))
   localStorage.setItem(STORAGE_KEY_BOTTOM_PANEL_HEIGHT, String(bottomPanelHeight))
