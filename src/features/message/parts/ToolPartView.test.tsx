@@ -1,10 +1,11 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToolPartView } from './ToolPartView'
-import type { ToolPart } from '../../../types/message'
+import type { FilePart, ToolPart } from '../../../types/message'
 
-const { getActiveCalibratedNowMock } = vi.hoisted(() => ({
+const { getActiveCalibratedNowMock, getPartOutputMock } = vi.hoisted(() => ({
   getActiveCalibratedNowMock: vi.fn<() => number | undefined>(() => undefined),
+  getPartOutputMock: vi.fn<() => Promise<{ output?: string; attachments?: unknown } | null>>(async () => null),
 }))
 
 vi.mock('react-i18next', () => ({
@@ -42,6 +43,20 @@ vi.mock('../../../store/serverStore', () => ({
     getActiveServerId: () => 'local',
     onServerChange: () => () => {},
   },
+}))
+
+vi.mock('../../../api/message', () => ({
+  getPartOutput: getPartOutputMock,
+}))
+
+vi.mock('../../../store/messageStore', () => ({
+  messageStore: {
+    getSessionDirectory: () => undefined,
+  },
+}))
+
+vi.mock('../../attachment/AttachmentDetailModal', () => ({
+  AttachmentDetailModal: () => null,
 }))
 
 vi.mock('../../chat/InlineToolRequestContext', () => ({
@@ -143,5 +158,109 @@ describe('ToolPartView running duration', () => {
     render(<ToolPartView part={createRunningToolPart()} />)
 
     expect(screen.getByText('123ms')).toBeInTheDocument()
+  })
+})
+
+function createFileAttachment(overrides: Partial<FilePart> = {}): FilePart {
+  return {
+    id: 'file-1',
+    sessionID: 'session-1',
+    messageID: 'msg-att',
+    type: 'file',
+    mime: 'image/png',
+    url: 'data:image/png;base64,AAAA',
+    ...overrides,
+  }
+}
+
+function createCompletedToolPart(id: string, attachments?: FilePart[], stateOverrides: Record<string, unknown> = {}): ToolPart {
+  return {
+    id,
+    sessionID: 'session-1',
+    messageID: 'msg-att',
+    type: 'tool',
+    callID: `call-${id}`,
+    tool: 'browser_screenshot',
+    state: {
+      status: 'completed',
+      input: {},
+      output: 'done',
+      title: 'Screenshot',
+      metadata: {},
+      time: { start: 1_000, end: 2_000 },
+      attachments,
+      ...stateOverrides,
+    },
+  }
+}
+
+function expandBody(title = 'Screenshot') {
+  fireEvent.click(screen.getByText(title))
+}
+
+describe('ToolPartView attachments', () => {
+  beforeEach(() => {
+    getPartOutputMock.mockReset()
+    getPartOutputMock.mockResolvedValue(null)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('renders an img thumbnail for image attachments', () => {
+    render(<ToolPartView part={createCompletedToolPart('tool-att-img', [createFileAttachment()])} />)
+
+    expandBody()
+
+    const img = screen.getByRole('img')
+    expect(img).toHaveAttribute('src', 'data:image/png;base64,AAAA')
+    expect(screen.getByTestId('tool-attachments')).toBeInTheDocument()
+  })
+
+  it('renders a file chip with filename and mime for non-image attachments', () => {
+    render(
+      <ToolPartView
+        part={createCompletedToolPart('tool-att-file', [
+          createFileAttachment({ id: 'file-2', mime: 'application/pdf', url: 'https://example.com/report.pdf', filename: 'report.pdf' }),
+        ])}
+      />,
+    )
+
+    expandBody()
+
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(screen.getByText('report.pdf')).toBeInTheDocument()
+    expect(screen.getByText('application/pdf')).toBeInTheDocument()
+  })
+
+  it('does not render the attachment section when there are no attachments', () => {
+    render(<ToolPartView part={createCompletedToolPart('tool-att-none')} />)
+
+    expandBody()
+
+    expect(screen.queryByTestId('tool-attachments')).not.toBeInTheDocument()
+  })
+
+  it('renders lazily loaded attachments after fetching truncated output', async () => {
+    getPartOutputMock.mockResolvedValue({
+      output: 'full output',
+      attachments: [createFileAttachment({ id: 'file-lazy', url: 'data:image/png;base64,LAZY' })],
+    })
+    render(
+      <ToolPartView
+        part={createCompletedToolPart('tool-att-lazy', undefined, { outputTruncated: true, outputSize: 2048 })}
+      />,
+    )
+
+    expandBody()
+    expect(screen.queryByTestId('tool-attachments')).not.toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(screen.getByText(/^Show output/))
+    })
+
+    const img = await screen.findByRole('img')
+    expect(img).toHaveAttribute('src', 'data:image/png;base64,LAZY')
   })
 })

@@ -24,6 +24,7 @@ import { TodoRenderer } from '../tools/renderers/TodoRenderer'
 import { TaskRenderer } from '../tools/renderers/TaskRenderer'
 import { SwarmRenderer } from '../tools/renderers/SwarmRenderer'
 import { hasTodos } from '../tools/renderers/todoUtils'
+import { ToolAttachments } from './ToolAttachments'
 
 // ============================================
 // ToolPartView - 单个工具调用
@@ -230,6 +231,7 @@ export const ToolPartView = memo(function ToolPartView({
             </button>
           )}
           <ToolBody part={effectivePart} data={toolData} onFullscreenChange={handleFullscreenChange} />
+          <ToolAttachments attachments={effectiveState.attachments} />
         </>
       )}
       {displayPermission && (
