@@ -91,6 +91,7 @@ const {
     updateStatus: vi.fn(),
     getSnapshot: vi.fn(() => ({ statusMap: {} })),
     getSessionIdsForScope: vi.fn(() => [] as string[]),
+    reconcileChildSessions: vi.fn(),
   },
   autoApproveStoreMock: {
     fullAutoMode: 'off' as 'off' | 'session' | 'global',

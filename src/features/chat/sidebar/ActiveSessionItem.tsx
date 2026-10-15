@@ -22,7 +22,7 @@ export function ActiveSessionItem({ entry, resolvedSession, projectLabel, isSele
   // 目录优先从 resolvedSession 取
   const directory = resolvedSession?.directory || entry.directory
 
-  // 状态显示：permission > question > retry > working
+  // 状态显示：permission > question > retry > backgroundBusy > awaitingReview > working
   const statusConfig =
     pending?.type === 'permission'
       ? {
@@ -35,7 +35,21 @@ export function ActiveSessionItem({ entry, resolvedSession, projectLabel, isSele
         ? { label: t('activeSession.awaitingAnswer'), color: 'text-info-100', dotColor: 'bg-info-100', pulse: false }
         : isRetry
           ? { label: t('activeSession.retrying'), color: 'text-warning-100', dotColor: 'bg-warning-100', pulse: false }
-          : { label: t('activeSession.working'), color: 'text-success-100', dotColor: 'bg-success-100', pulse: true }
+          : entry.backgroundBusy
+            ? {
+                label: t('activeSession.backgroundWorking'),
+                color: 'text-success-100',
+                dotColor: 'bg-success-100',
+                pulse: true,
+              }
+            : entry.status.type === 'idle'
+              ? {
+                  label: t('activeSession.awaitingReview'),
+                  color: 'text-accent-main-100',
+                  dotColor: 'bg-accent-main-100',
+                  pulse: false,
+                }
+              : { label: t('activeSession.working'), color: 'text-success-100', dotColor: 'bg-success-100', pulse: true }
 
   const handleClick = () => {
     if (resolvedSession) {
@@ -47,7 +61,7 @@ export function ActiveSessionItem({ entry, resolvedSession, projectLabel, isSele
 
   // 拖拽到主信息流进行分屏 / 替换会话
   const isDraggable = !!resolvedSession
-  const handlePointerDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handlePointerDragStart = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (!isDraggable) return
     startInternalDrag(
       e,
@@ -59,60 +73,61 @@ export function ActiveSessionItem({ entry, resolvedSession, projectLabel, isSele
     )
   }
 
+  // 状态 label 的 title：pending 描述 + 重试次数（单行放不下长文本，收进 tooltip）
+  const statusTitle = [
+    pending?.description,
+    isRetry && entry.status.type === 'retry'
+      ? t('activeSession.attempt', { count: entry.status.attempt })
+      : undefined,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
   return (
     <div
-      onPointerDown={handlePointerDragStart}
-      onClick={handleClick}
-      className={`group relative flex items-start pl-[6px] pr-3 py-2 rounded-lg cursor-default select-none transition-all duration-200 border border-transparent ${
-        isSelected ? 'bg-bg-000 shadow-sm ring-1 ring-border-200/50' : 'hover:bg-bg-200/50'
-      } ${!resolvedSession ? 'opacity-50 cursor-default' : ''}`}
+      className={`group relative flex items-center gap-2 px-2 py-1.5 rounded-md cursor-default transition-colors duration-150 select-none ${
+        isSelected ? 'bg-bg-200/80 text-text-100' : 'text-text-300 hover:bg-bg-200/40 hover:text-text-200'
+      } ${!resolvedSession ? 'opacity-50' : ''}`}
     >
-      {/* Content */}
-      <div className="flex-1 min-w-0 pr-1">
-        <p
-          className={`text-[length:var(--fs-md)] truncate font-medium ${
-            isSelected ? 'text-text-100' : 'text-text-200 group-hover:text-text-100'
-          }`}
-          title={displayTitle}
-        >
-          {displayTitle}
-        </p>
-        <div className="mt-1 flex h-4 min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-[length:var(--fs-xxs)] text-text-400">
-          <span className="relative shrink-0 flex h-3 w-3 items-center justify-center">
-            <span className={`absolute h-1.5 w-1.5 rounded-full ${statusConfig.dotColor}`} />
-            {statusConfig.pulse && (
-              <span className={`absolute h-1.5 w-1.5 rounded-full ${statusConfig.dotColor} animate-ping opacity-50`} />
-            )}
+      {/* 活跃状态圆点 */}
+      <span className="relative shrink-0 flex items-center justify-center size-5" title={statusConfig.label}>
+        <span className={`absolute w-1.5 h-1.5 rounded-full ${statusConfig.dotColor}`} />
+        {statusConfig.pulse && (
+          <span className={`absolute w-1.5 h-1.5 rounded-full ${statusConfig.dotColor} animate-ping opacity-50`} />
+        )}
+      </span>
+
+      <button
+        type="button"
+        onPointerDown={handlePointerDragStart}
+        onClick={handleClick}
+        className="peer flex min-w-0 flex-1 items-center gap-1.5 bg-transparent border-none p-0 text-left select-none"
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {/* 标题 */}
+          <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]" title={displayTitle}>
+            {displayTitle}
           </span>
-          <span className="opacity-30 shrink-0">·</span>
-          <span className={`shrink-0 whitespace-nowrap ${statusConfig.color}`}>{statusConfig.label}</span>
-          {pending?.description && (
-            <>
-              <span className="opacity-30 shrink-0">·</span>
-              <span className="truncate min-w-0 flex-1 opacity-60">{pending.description}</span>
-            </>
-          )}
-          {isRetry && entry.status.type === 'retry' && (
-            <>
-              <span className="opacity-30 shrink-0">·</span>
-              <span className="text-text-400 opacity-60 shrink-0 whitespace-nowrap">
-                {t('activeSession.attempt', { count: entry.status.attempt })}
-              </span>
-            </>
-          )}
-          {(directory || projectLabel) && (
-            <>
-              <span className="opacity-30 shrink-0">·</span>
+
+          {/* 右侧 meta */}
+          <div className="shrink-0 flex items-center gap-1.5 text-[length:var(--fs-xxs)] text-text-500">
+            <span
+              className={`shrink-0 whitespace-nowrap ${statusConfig.color}`}
+              title={statusTitle || undefined}
+            >
+              {statusConfig.label}
+            </span>
+            {projectLabel && (
               <span
-                className="rounded bg-bg-200/60 px-1.5 py-px text-[length:var(--fs-xxs)] text-text-400 max-w-[40%] truncate"
+                className="shrink-0 max-w-24 truncate rounded bg-bg-200/60 px-1 py-px text-[length:var(--fs-xxs)] text-text-400"
                 title={directory}
               >
-                {projectLabel || directory?.replace(/\\/g, '/').split('/').filter(Boolean).pop()}
+                {projectLabel}
               </span>
-            </>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      </button>
     </div>
   )
 }

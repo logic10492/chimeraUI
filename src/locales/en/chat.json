@@ -165,6 +165,8 @@
     "awaitingAnswer": "Awaiting Answer",
     "retrying": "Retrying",
     "working": "Working",
+    "backgroundWorking": "Background work running",
+    "awaitingReview": "Awaiting review",
     "attempt": "attempt {{count}}"
   },
   "notification": {

@@ -13,6 +13,7 @@ import { serverStore } from './store/serverStore'
 import { preferenceStore } from './store/preferenceStore'
 import { messageStore } from './store/messageStore'
 import { childSessionStore } from './store/childSessionStore'
+import { activeSessionStore } from './store/activeSessionStore'
 import { todoStore } from './store/todoStore'
 import { autoApproveStore } from './store/autoApproveStore'
 import { serviceStore } from './store/serviceStore'
@@ -81,6 +82,7 @@ serverStore.onServerChange((serverID, reason) => {
   // 1. 清空内存中的 session/消息数据
   messageStore.clearAll()
   childSessionStore.clearAll()
+  activeSessionStore.reconcileChildSessions()
   todoStore.clearAll()
 
   // 2. 重置路径模式缓存（不同服务器可能是不同操作系统）

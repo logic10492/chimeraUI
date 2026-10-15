@@ -14,6 +14,7 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import type { SessionStatus, SessionStatusMap } from '../types/api/session'
 import { serverStore } from './serverStore'
+import { childSessionStore } from './childSessionStore'
 
 // ============================================
 // Types
@@ -38,6 +39,10 @@ export interface ActiveSessionEntry {
     type: 'permission' | 'question'
     description?: string
   }
+  /** 合成的祖先条目专用：自身 idle 但存在 running 的后代子会话（后台工作中） */
+  backgroundBusy?: boolean
+  /** 待查看留存 entry 专用：busy→idle 后用户是否已点开查看（isSame 比较忽略此字段） */
+  retainedViewed?: boolean
 }
 
 export interface SessionMetaEntry {
@@ -68,6 +73,7 @@ function isSameBusySessions(a: ActiveSessionEntry[], b: ActiveSessionEntry[]): b
     if (left.pendingAction?.type !== right.pendingAction?.type) return false
     if (left.pendingAction?.description !== right.pendingAction?.description) return false
     if (left.status.type !== right.status.type) return false
+    if (left.backgroundBusy !== right.backgroundBusy) return false
     if (left.status.type === 'retry' && right.status.type === 'retry') {
       if (
         left.status.attempt !== right.status.attempt ||
@@ -101,9 +107,16 @@ class ActiveSessionStore {
   // 服务端已报告 idle，但因有未回复请求而暂缓移出的 session
   private deferredIdleSessions = new Set<string>()
 
+  // 待查看留存：本次客户端观察到 busy→idle 的 session，留在活跃区直到用户点开并离开（纯内存，不持久化）
+  private retained = new Map<string, { viewed: boolean }>()
+
+  // busy→idle 时仍有 running 后代子会话的 session：暂缓进入留存，等最后一个后代 idle 后补入
+  private waitRetain = new Set<string>()
+
   // 派生数据缓存
   private cachedBusySessions: ActiveSessionEntry[] = []
   private cachedBusyCount: number = 0
+  private cachedRetainedSessions: ActiveSessionEntry[] = []
 
   subscribe = (callback: Subscriber): (() => void) => {
     this.subscribers.add(callback)
@@ -135,11 +148,79 @@ class ActiveSessionStore {
           pendingAction: pending ? { type: pending.type, description: pending.description } : undefined,
         } as ActiveSessionEntry
       })
+
+    // waitRetain 收口：最后一个 running 后代 idle 后，把暂缓的 session 补入待查看留存
+    for (const sessionId of [...this.waitRetain]) {
+      if (this.state.statusMap[sessionId] || this.hasRunningDescendants(sessionId)) continue
+      this.waitRetain.delete(sessionId)
+      this.captureRetained(sessionId)
+    }
+
+    const metaOf = (sessionId: string) => this.sessionMeta.get(sessionId)?.get(activeServerID)
+    const included = new Set(entries.map(entry => entry.sessionId))
+
+    // running 子会话补录：childSessionStore 标记 running 但 statusMap 缺失（子会话 status 事件缺失的防御）
+    for (const info of childSessionStore.getChildSessionsByStatus('running')) {
+      if (included.has(info.id)) continue
+      included.add(info.id)
+      const meta = metaOf(info.id)
+      entries.push({
+        sessionId: info.id,
+        status: { type: 'busy' },
+        title: meta?.title ?? info.title,
+        directory: meta?.directory,
+        serverID: meta?.serverID,
+        workspaceID: meta?.workspaceID,
+        pendingAction: undefined,
+      } as ActiveSessionEntry)
+    }
+
+    // 祖先合成：活跃会话的 idle 祖先仍在等待后台后代，合成 backgroundBusy 条目留在活跃区
+    for (const sessionId of [...included]) {
+      let parentId = childSessionStore.getSessionInfo(sessionId)?.parentID
+      while (parentId && !included.has(parentId)) {
+        if (this.state.statusMap[parentId] || this.retained.has(parentId)) break
+        included.add(parentId)
+        const meta = metaOf(parentId)
+        entries.push({
+          sessionId: parentId,
+          status: { type: 'idle' },
+          title: meta?.title,
+          directory: meta?.directory,
+          serverID: meta?.serverID,
+          workspaceID: meta?.workspaceID,
+          pendingAction: undefined,
+          backgroundBusy: true,
+        } as ActiveSessionEntry)
+        parentId = childSessionStore.getSessionInfo(parentId)?.parentID
+      }
+    }
+
     // 内容不变时复用旧数组引用，避免 useBusySessions 订阅方因引用抖动重渲染
     if (!isSameBusySessions(this.cachedBusySessions, entries)) {
       this.cachedBusySessions = entries
     }
     this.cachedBusyCount = entries.length
+
+    // 待查看留存 entry：已回到 statusMap 的 session 不再出现在留存列表
+    const retainedEntries = [...this.retained.keys()]
+      .filter(sessionId => !this.state.statusMap[sessionId])
+      .map(sessionId => {
+        const meta = this.sessionMeta.get(sessionId)?.get(activeServerID)
+        return {
+          sessionId,
+          status: { type: 'idle' },
+          title: meta?.title,
+          directory: meta?.directory,
+          serverID: meta?.serverID,
+          workspaceID: meta?.workspaceID,
+          pendingAction: undefined,
+          retainedViewed: this.retained.get(sessionId)?.viewed,
+        } as ActiveSessionEntry
+      })
+    if (!isSameBusySessions(this.cachedRetainedSessions, retainedEntries)) {
+      this.cachedRetainedSessions = retainedEntries
+    }
   }
 
   private findPendingForSession(sessionId: string): PendingRequest | undefined {
@@ -159,16 +240,60 @@ class ActiveSessionStore {
   getSnapshot = (): ActiveSessionState => this.state
   getBusySessionsSnapshot = (): ActiveSessionEntry[] => this.cachedBusySessions
   getBusyCountSnapshot = (): number => this.cachedBusyCount
+  getRetainedSessionsSnapshot = (): ActiveSessionEntry[] => this.cachedRetainedSessions
+
+  // busy→idle 转换捕获：只有转换前在 statusMap 中（本次客户端观察到过活跃）的 session 才进入留存；
+  // 仍有 running 后代子会话时暂缓（waitRetain），由 recomputeDerived 在后代全部 idle 后补入
+  private captureRetained(sessionId: string) {
+    if (this.hasRunningDescendants(sessionId)) {
+      this.retained.delete(sessionId)
+      this.waitRetain.add(sessionId)
+      return
+    }
+    this.waitRetain.delete(sessionId)
+    if (!this.retained.has(sessionId)) this.retained.set(sessionId, { viewed: false })
+  }
+
+  /** 递归检查是否存在 status==='running' 的后代子会话（'idle'/'error' 不算） */
+  private hasRunningDescendants(sessionId: string): boolean {
+    return childSessionStore.getChildSessionIds(sessionId).some(childId => {
+      if (childSessionStore.getSessionInfo(childId)?.status === 'running') return true
+      return this.hasRunningDescendants(childId)
+    })
+  }
+
+  /** childSessionStore 关系/状态变化后的对账入口：重算派生快照并通知订阅方 */
+  reconcileChildSessions() {
+    this.notify()
+  }
+
+  /** 标记留存 session 已被用户点开；不触发渲染，effect 直接从快照 entry 对象读 retainedViewed */
+  markRetainedViewed(sessionId: string) {
+    const retained = this.retained.get(sessionId)
+    if (!retained || retained.viewed) return
+    retained.viewed = true
+    const cached = this.cachedRetainedSessions.find(entry => entry.sessionId === sessionId)
+    if (cached) cached.retainedViewed = true
+  }
+
+  /** 用户离开已查看的留存 session → 移出活跃区，回归最近列表 */
+  releaseRetained(sessionId: string) {
+    if (!this.retained.delete(sessionId)) return
+    this.notify()
+  }
 
   private applyStatusSnapshot(statusMap: SessionStatusMap, baseMap: SessionStatusMap): SessionStatusMap {
     const nextMap = { ...baseMap }
 
     for (const [sessionId, status] of Object.entries(statusMap)) {
       if (status.type === 'idle') {
+        if (baseMap[sessionId]) this.captureRetained(sessionId)
         delete nextMap[sessionId]
         continue
       }
 
+      this.retained.delete(sessionId)
+      this.waitRetain.delete(sessionId)
       nextMap[sessionId] = status.type === 'retry' ? { ...status } : { type: 'busy' }
     }
 
@@ -241,6 +366,8 @@ class ActiveSessionStore {
       if (!newMap[p.sessionID] || newMap[p.sessionID].type === 'idle') {
         newMap[p.sessionID] = { type: 'busy' }
         deferredIdleSessions.add(p.sessionID)
+        this.retained.delete(p.sessionID)
+        this.waitRetain.delete(p.sessionID)
         changed = true
       }
     }
@@ -256,6 +383,8 @@ class ActiveSessionStore {
       if (!newMap[q.sessionID] || newMap[q.sessionID].type === 'idle') {
         newMap[q.sessionID] = { type: 'busy' }
         deferredIdleSessions.add(q.sessionID)
+        this.retained.delete(q.sessionID)
+        this.waitRetain.delete(q.sessionID)
         changed = true
       }
     }
@@ -275,6 +404,9 @@ class ActiveSessionStore {
 
   addPendingRequest(requestId: string, sessionId: string, type: 'permission' | 'question', description?: string) {
     this.pendingRequests.set(requestId, { requestId, sessionId, type, description })
+    // 留存中的 session 收到 pending request → 清除留存，恢复 busy 显示
+    this.retained.delete(sessionId)
+    this.waitRetain.delete(sessionId)
     // 确保 session 在 busy 列表
     if (!this.state.statusMap[sessionId] || this.state.statusMap[sessionId].type === 'idle') {
       const newMap = { ...this.state.statusMap, [sessionId]: { type: 'busy' as const } }
@@ -298,6 +430,7 @@ class ActiveSessionStore {
       this.deferredIdleSessions.delete(req.sessionId)
       const newMap = { ...this.state.statusMap }
       delete newMap[req.sessionId]
+      this.captureRetained(req.sessionId)
       this.state = { ...this.state, statusMap: newMap }
     }
     this.notify()
@@ -315,13 +448,18 @@ class ActiveSessionStore {
         this.deferredIdleSessions.add(sessionId)
       } else {
         this.deferredIdleSessions.delete(sessionId)
+        if (this.state.statusMap[sessionId]) this.captureRetained(sessionId)
         delete newMap[sessionId]
       }
     } else if (status.type === 'retry') {
       this.deferredIdleSessions.delete(sessionId)
+      this.retained.delete(sessionId)
+      this.waitRetain.delete(sessionId)
       newMap[sessionId] = { ...status }
     } else {
       this.deferredIdleSessions.delete(sessionId)
+      this.retained.delete(sessionId)
+      this.waitRetain.delete(sessionId)
       newMap[sessionId] = { type: 'busy' }
     }
 
@@ -346,6 +484,8 @@ class ActiveSessionStore {
     }
 
     if (this.deferredIdleSessions.delete(sessionId)) changed = true
+    if (this.retained.delete(sessionId)) changed = true
+    if (this.waitRetain.delete(sessionId)) changed = true
     const metadataByServer = this.sessionMeta.get(sessionId)
     if (metadataByServer?.delete(serverID)) {
       if (metadataByServer.size === 0) this.sessionMeta.delete(sessionId)
@@ -361,6 +501,8 @@ class ActiveSessionStore {
     this.state = { statusMap: {}, initialized: false }
     this.pendingRequests.clear()
     this.deferredIdleSessions.clear()
+    this.retained.clear()
+    this.waitRetain.clear()
     this.notify()
   }
 
@@ -470,6 +612,10 @@ export function useActiveSessionStore() {
 
 export function useBusySessions(): ActiveSessionEntry[] {
   return useSyncExternalStore(activeSessionStore.subscribe, activeSessionStore.getBusySessionsSnapshot)
+}
+
+export function useRetainedSessions(): ActiveSessionEntry[] {
+  return useSyncExternalStore(activeSessionStore.subscribe, activeSessionStore.getRetainedSessionsSnapshot)
 }
 
 export function useBusyCount(): number {

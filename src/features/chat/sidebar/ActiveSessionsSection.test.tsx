@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ActiveSessionsSection } from './ActiveSessionsSection'
 import { layoutStore } from '../../../store/layoutStore'
 import type { ActiveSessionEntry } from '../../../store/activeSessionStore'
+import type { ActiveSessionTree } from './activeSessionTree'
 import type { Session as ApiSession } from '../../../types/api/session'
 import i18n from '../../../i18n'
 
@@ -15,18 +16,21 @@ function session(id: string, title: string, directory?: string): ApiSession {
 }
 
 function renderSection(overrides: {
-  busySessions?: ActiveSessionEntry[]
+  activeEntries?: ActiveSessionEntry[]
+  activeSessionTree?: ActiveSessionTree
   sessionLookup?: Map<string, ApiSession>
   selectedSessionId?: string | null
   onSelect?: (s: ApiSession) => void
 } = {}) {
   const root = busy('root-1', '/workspace/root-project')
   const child = busy('child-1')
-  const busySessions = overrides.busySessions ?? [root, child]
+  const activeEntries = overrides.activeEntries ?? [root, child]
   return render(
     <ActiveSessionsSection
-      busySessions={busySessions}
-      activeSessionTree={{ rootEntries: [root], childrenByParent: new Map([['root-1', [child]]]) }}
+      activeEntries={activeEntries}
+      activeSessionTree={
+        overrides.activeSessionTree ?? { rootEntries: [root], childrenByParent: new Map([['root-1', [child]]]) }
+      }
       sessionLookup={
         overrides.sessionLookup ??
         new Map([
@@ -47,8 +51,8 @@ describe('ActiveSessionsSection (批次A)', () => {
     layoutStore.setSidebarActiveSectionCollapsed(false)
   })
 
-  it('renders nothing when there are no busy sessions', () => {
-    const { container } = renderSection({ busySessions: [] })
+  it('renders nothing when there are no active entries', () => {
+    const { container } = renderSection({ activeEntries: [] })
 
     expect(container.firstChild).toBeNull()
   })
@@ -58,6 +62,45 @@ describe('ActiveSessionsSection (批次A)', () => {
 
     expect(screen.getByText('Root Session')).toBeInTheDocument()
     expect(screen.getByText('Child Session')).toBeInTheDocument()
+    expect(screen.getByText('2')).toBeInTheDocument()
+  })
+
+  it('renders idle awaiting-review entries and counts them in the badge', () => {
+    const root = busy('root-1', '/workspace/root-project')
+    const idle: ActiveSessionEntry = { sessionId: 'idle-1', status: { type: 'idle' } }
+    renderSection({
+      activeEntries: [root, idle],
+      activeSessionTree: { rootEntries: [root, idle], childrenByParent: new Map() },
+      sessionLookup: new Map([
+        ['root-1', session('root-1', 'Root Session', '/workspace/root-project')],
+        ['idle-1', session('idle-1', 'Idle Session')],
+      ]),
+    })
+
+    expect(screen.getByText('Idle Session')).toBeInTheDocument()
+    expect(screen.getByText('2')).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('activeSession.awaitingReview', { ns: 'chat' }))).toBeInTheDocument()
+  })
+
+  it('renders background-busy ancestor entries with the backgroundWorking label and counts them in the badge', () => {
+    const root: ActiveSessionEntry = {
+      sessionId: 'root-1',
+      status: { type: 'idle' },
+      backgroundBusy: true,
+      directory: '/workspace/root-project',
+    }
+    const child = busy('child-1')
+    renderSection({
+      activeEntries: [root, child],
+      activeSessionTree: { rootEntries: [root], childrenByParent: new Map([['root-1', [child]]]) },
+      sessionLookup: new Map([
+        ['root-1', session('root-1', 'Root Session', '/workspace/root-project')],
+        ['child-1', session('child-1', 'Child Session')],
+      ]),
+    })
+
+    expect(screen.getByText('Root Session')).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('activeSession.backgroundWorking', { ns: 'chat' }))).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
   })
 

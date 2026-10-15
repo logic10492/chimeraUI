@@ -18,7 +18,7 @@ import { ActiveSessionItem } from './ActiveSessionItem'
 import type { ActiveSessionTree } from './activeSessionTree'
 
 interface ActiveSessionsSectionProps {
-  busySessions: ActiveSessionEntry[]
+  activeEntries: ActiveSessionEntry[]
   activeSessionTree: ActiveSessionTree
   sessionLookup: Map<string, ApiSession>
   selectedSessionId: string | null
@@ -27,7 +27,7 @@ interface ActiveSessionsSectionProps {
 }
 
 export function ActiveSessionsSection({
-  busySessions,
+  activeEntries,
   activeSessionTree,
   sessionLookup,
   selectedSessionId,
@@ -37,9 +37,9 @@ export function ActiveSessionsSection({
   const { t } = useTranslation(['chat', 'common'])
   const { sidebarActiveSectionCollapsed } = useLayoutStore()
 
-  if (busySessions.length === 0) return null
+  if (activeEntries.length === 0) return null
 
-  const needsAttention = busySessions.some(
+  const needsAttention = activeEntries.some(
     entry =>
       entry.pendingAction?.type === 'permission' ||
       entry.pendingAction?.type === 'question' ||
@@ -53,7 +53,7 @@ export function ActiveSessionsSection({
     return findProjectGroupForDirectory(folderProjects, normalized)?.name || getDirectoryName(normalized)
   }
 
-  // Busy sessions — 子 session 挂在父下面
+  // 活跃会话（busy/retry + 待查看留存）— 子 session 挂在父下面
   const renderActiveSessionNode = (entry: ActiveSessionEntry, level = 0): React.ReactNode => {
     const resolvedSession = sessionLookup.get(entry.sessionId)
     const childEntries = activeSessionTree.childrenByParent.get(entry.sessionId) ?? []
@@ -81,25 +81,27 @@ export function ActiveSessionsSection({
         aria-label={
           sidebarActiveSectionCollapsed ? t('sidebar.expandActiveSection') : t('sidebar.collapseActiveSection')
         }
-        className="w-full flex items-center gap-1 pl-[6px] pr-2 py-1.5 text-text-500 hover:text-text-300 transition-colors duration-150"
+        className="w-full flex items-center gap-2 pl-2 pr-2 py-1.5 rounded-md text-left transition-colors duration-150 text-text-300 hover:bg-bg-200/40 hover:text-text-200"
       >
-        <ChevronDownIcon
-          size={14}
-          className={`shrink-0 text-text-400 transition-transform duration-200 ${sidebarActiveSectionCollapsed ? '-rotate-90' : ''}`}
-        />
-        <span className="text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider">
+        <span className="size-5 shrink-0 flex items-center justify-center">
+          <ChevronDownIcon
+            size={15}
+            className={`transition-transform duration-200 text-text-400 ${sidebarActiveSectionCollapsed ? '-rotate-90' : ''}`}
+          />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)] font-medium">
           {t('sidebar.active')}
         </span>
         <span
-          className={`inline-flex h-[15px] min-w-[15px] shrink-0 items-center justify-center rounded-full px-1 text-[length:var(--fs-xxs)] font-medium leading-none transition-colors ${
+          className={`inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[length:var(--fs-xxs)] font-medium leading-none ${
             needsAttention ? 'bg-warning-100/10 text-warning-100' : 'bg-success-100/10 text-success-100'
           }`}
         >
-          {busySessions.length}
+          {activeEntries.length}
         </span>
       </button>
       {!sidebarActiveSectionCollapsed && (
-        <div className="max-h-[35vh] overflow-y-auto custom-scrollbar px-2">
+        <div className="max-h-[35vh] overflow-y-auto custom-scrollbar px-1.5">
           {activeSessionTree.rootEntries.map(entry => renderActiveSessionNode(entry))}
         </div>
       )}

@@ -30,7 +30,7 @@ import { useSessions } from '../../../hooks/useSessions'
 import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useLayoutStore } from '../../../store/layoutStore'
 import { childSessionStore } from '../../../store/childSessionStore'
-import { useBusySessions } from '../../../store/activeSessionStore'
+import { activeSessionStore, useBusySessions, useRetainedSessions } from '../../../store/activeSessionStore'
 import { useNotifications, useUnreadNotificationCount } from '../../../store/notificationStore'
 import { pinnedSessionsStore } from '../../../store/pinnedSessionsStore'
 import { updateSession, deleteSession as apiDeleteSession } from '../../../api/session'
@@ -131,8 +131,13 @@ export function SidePanel({
     }
   }, [projectsExpanded, showLabels])
 
-  // Active sessions
+  // Active sessions：busy/retry + 待查看留存（busy→idle 后留在活跃区，直到用户点开并离开）
   const busySessions = useBusySessions()
+  const retainedSessions = useRetainedSessions()
+  const activeEntries = useMemo(
+    () => (retainedSessions.length === 0 ? busySessions : [...busySessions, ...retainedSessions]),
+    [busySessions, retainedSessions],
+  )
   useSyncExternalStore(
     childSessionStore.subscribe.bind(childSessionStore),
     childSessionStore.getVersion,
@@ -160,45 +165,45 @@ export function SidePanel({
   )
   const { unavailablePinnedSessionIds, sessionLookup } = useMissingSessions({
     sessions,
-    busySessions,
+    busySessions: activeEntries,
     notifications,
     pinnedEntries,
     selectedSessionId,
     currentDirectory,
   })
 
-  const busySessionIds = useMemo(() => new Set(busySessions.map(entry => entry.sessionId)), [busySessions])
+  const activeAreaSessionIds = useMemo(() => new Set(activeEntries.map(entry => entry.sessionId)), [activeEntries])
 
   const orderedSessions = useMemo(() => {
-    // 非搜索态下 busy 会话由置顶活跃区展示，从最近列表去重；搜索时保持全量结果
-    const isHiddenBusy = (id: string) => !search && busySessionIds.has(id)
+    // 非搜索态下活跃/待查看会话由置顶活跃区展示，从最近列表去重；搜索时保持全量结果
+    const isHiddenActive = (id: string) => !search && activeAreaSessionIds.has(id)
     const pinnedSet = new Set(pinnedEntries.map(e => e.sessionId))
     const pinned = pinnedEntries
       .map(entry => sessionLookup.get(entry.sessionId))
       .filter((session): session is ApiSession => Boolean(session))
-      .filter(session => !isHiddenBusy(session.id))
-    const rest = sessions.filter(s => !pinnedSet.has(s.id) && !isHiddenBusy(s.id))
+      .filter(session => !isHiddenActive(session.id))
+    const rest = sessions.filter(s => !pinnedSet.has(s.id) && !isHiddenActive(s.id))
     return [...pinned, ...rest]
-  }, [pinnedEntries, sessionLookup, sessions, busySessionIds, search])
+  }, [pinnedEntries, sessionLookup, sessions, activeAreaSessionIds, search])
   const pinnedDividerAfterIds = useMemo(() => {
     const pinnedSet = new Set(pinnedEntries.map(e => e.sessionId))
     const lastPinned = pinnedEntries
       .map(entry => sessionLookup.get(entry.sessionId))
       .filter((session): session is ApiSession => Boolean(session))
-      .filter(session => search || !busySessionIds.has(session.id))
+      .filter(session => search || !activeAreaSessionIds.has(session.id))
       .at(-1)
     if (!lastPinned) return undefined
-    return sessions.some(s => !pinnedSet.has(s.id) && (search || !busySessionIds.has(s.id)))
+    return sessions.some(s => !pinnedSet.has(s.id) && (search || !activeAreaSessionIds.has(s.id)))
       ? new Set([lastPinned.id])
       : undefined
-  }, [pinnedEntries, sessionLookup, sessions, busySessionIds, search])
+  }, [pinnedEntries, sessionLookup, sessions, activeAreaSessionIds, search])
   const resolvedPinnedSessions = useMemo(
     () =>
       pinnedEntries
         .map(entry => sessionLookup.get(entry.sessionId))
         .filter((session): session is ApiSession => Boolean(session))
-        .filter(session => !busySessionIds.has(session.id)),
-    [pinnedEntries, sessionLookup, busySessionIds],
+        .filter(session => !activeAreaSessionIds.has(session.id)),
+    [pinnedEntries, sessionLookup, activeAreaSessionIds],
   )
   const unavailablePinnedEntries = useMemo(
     () =>
@@ -262,9 +267,19 @@ export function SidePanel({
   ])
 
   const activeSessionTree = useMemo(
-    () => buildActiveSessionTree(busySessions, findParentId),
-    [busySessions, findParentId],
+    () => buildActiveSessionTree(activeEntries, findParentId),
+    [activeEntries, findParentId],
   )
+
+  // 待查看留存生命周期：选中即标记已读，离开已读 session 时移出活跃区（重新 busy/收到 pending 时由 store 清除留存）
+  useEffect(() => {
+    const toMark = retainedSessions.filter(entry => !entry.retainedViewed && entry.sessionId === selectedSessionId)
+    const toRelease = retainedSessions.filter(entry => entry.retainedViewed && entry.sessionId !== selectedSessionId)
+    if (toMark.length === 0 && toRelease.length === 0) return
+    // markRetainedViewed 不触发渲染，直接改快照 entry 对象上的 retainedViewed 标志
+    for (const entry of toMark) activeSessionStore.markRetainedViewed(entry.sessionId)
+    for (const entry of toRelease) activeSessionStore.releaseRetained(entry.sessionId)
+  }, [retainedSessions, selectedSessionId])
 
   const buildProjectGroups = useCallback(
     (directories: typeof savedDirectories): ProjectItem[] => {
@@ -658,7 +673,7 @@ export function SidePanel({
     onDeleteSession: handleDeleteFolderSession,
     expandedChildSessionIds,
     inlineChildSessions,
-    excludeSessionIds: busySessionIds,
+    excludeSessionIds: activeAreaSessionIds,
     onSelectChildSession: handleSelectActive,
     isEditMode,
     selectedSessionIds,
@@ -1031,7 +1046,7 @@ export function SidePanel({
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
               {sessionListView === 'active' && !search && (
                 <ActiveSessionsSection
-                  busySessions={busySessions}
+                  activeEntries={activeEntries}
                   activeSessionTree={activeSessionTree}
                   sessionLookup={sessionLookup}
                   selectedSessionId={selectedSessionId}

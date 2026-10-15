@@ -165,6 +165,8 @@
     "awaitingAnswer": "等待回答",
     "retrying": "重试中",
     "working": "工作中",
+    "backgroundWorking": "后台工作中",
+    "awaitingReview": "待查看",
     "attempt": "第 {{count}} 次"
   },
   "notification": {

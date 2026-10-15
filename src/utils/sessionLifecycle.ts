@@ -15,4 +15,6 @@ export function clearSessionRuntimeState(sessionId: string, serverID?: string) {
   }
 
   childSessionStore.removeSession(sessionId)
+  // 子会话关系移除后对账活跃区（running 后代消失时补入待查看留存）
+  activeSessionStore.reconcileChildSessions()
 }

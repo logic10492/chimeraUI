@@ -130,6 +130,13 @@ class ChildSessionStore {
   }
 
   /**
+   * 获取所有指定状态的子 session 信息（activeSessionStore 合成活跃条目用）
+   */
+  getChildSessionsByStatus(status: ChildSessionInfo['status']): ChildSessionInfo[] {
+    return [...this.sessionInfo.values()].filter(info => info.status === status)
+  }
+
+  /**
    * 获取子 session 信息
    */
   getSessionInfo(sessionId: string): ChildSessionInfo | undefined {

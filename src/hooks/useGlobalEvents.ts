@@ -596,6 +596,8 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
           childSessionStore.registerChildSession(session)
           // session.created 失效事件：追加进已拉取的 children 缓存，保持热数据新鲜（W3①）
           childSessionStore.appendCachedChildSession(session)
+          // 子会话关系变化 → 活跃区对账（合成 backgroundBusy 祖先条目）
+          activeSessionStore.reconcileChildSessions()
 
           if (belongsToCurrentSession(session.id)) {
             for (const req of drainPending(pendingPermissions, session.id)) {
@@ -623,6 +625,8 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
         if (!isActiveScope(scope)) return
         messageStore.handleSessionIdle(data.sessionID)
         childSessionStore.markIdle(data.sessionID)
+        // 子会话 idle → 活跃区对账（祖先 backgroundBusy 消失 / waitRetain 补入留存）
+        activeSessionStore.reconcileChildSessions()
         const dispatched = dispatchToConsumers(data.sessionID, cb => cb.onSessionIdle?.(data.sessionID))
         if (dispatched) {
           sendSystemNotification('completed', data.sessionID, 'Session completed', 'Session completed', scope)
@@ -656,6 +660,7 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
 
         messageStore.handleSessionError(error.sessionID)
         childSessionStore.markError(error.sessionID)
+        activeSessionStore.reconcileChildSessions()
         if (!isAbort) {
           activeSessionStore.updateStatus(error.sessionID, { type: 'idle' })
           const meta = activeSessionStore.getSessionMeta(error.sessionID, scope.serverID)
@@ -692,6 +697,7 @@ export function useGlobalEvents(directories?: string[], options?: { pinnedDirect
           childSessionStore.registerChildSession(session)
           // session.updated 涉及子 session：原位修补已拉取的 children 缓存（W3① 失效事件）
           childSessionStore.patchCachedChildSession(session)
+          activeSessionStore.reconcileChildSessions()
         }
 
         if (session.title && messageStore.getSessionState(session.id)) {
