@@ -142,3 +142,24 @@ describe('childSessionStore fetched children cache', () => {
     expect(childSessionStore.getCachedChildSessions('parent-1', '/workspace/demo')).toBe(forced)
   })
 })
+
+describe('childSessionStore 重复注册保留状态（完工假复活回归）', () => {
+  beforeEach(() => {
+    childSessionStore.clearAll()
+  })
+
+  it('重复注册保留 idle 状态并更新标题（session.updated 不得复活 running）', () => {
+    childSessionStore.registerChildSession(makeChildSession('child-1', 'parent-1'))
+    childSessionStore.markIdle('child-1')
+
+    childSessionStore.registerChildSession({ ...makeChildSession('child-1', 'parent-1'), title: 'Renamed' })
+
+    expect(childSessionStore.getSessionInfo('child-1')?.status).toBe('idle')
+    expect(childSessionStore.getSessionInfo('child-1')?.title).toBe('Renamed')
+  })
+
+  it('新注册仍默认 running', () => {
+    childSessionStore.registerChildSession(makeChildSession('child-2', 'parent-1'))
+    expect(childSessionStore.getSessionInfo('child-2')?.status).toBe('running')
+  })
+})

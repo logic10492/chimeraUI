@@ -405,3 +405,179 @@ describe('activeSessionStore 后台子会话活跃合成 (backgroundBusy)', () =
     expect(activeSessionStore.getBusySessions()).toEqual([])
   })
 })
+
+describe('activeSessionStore initialize 全量快照清扫 stale running 子会话', () => {
+  const makeChild = (id: string, parentID: string): ApiSession =>
+    ({ id, parentID, title: id, time: { created: Date.now() } }) as unknown as ApiSession
+
+  const busyIds = () => activeSessionStore.getBusySessions().map(entry => entry.sessionId)
+
+  beforeEach(() => {
+    childSessionStore.clearAll()
+    activeSessionStore.resetRuntimeState()
+    activeSessionStore.initializePendingRequests([], [])
+  })
+
+  it('sweeps historically restored running children to idle on initialize({})', () => {
+    // 模拟恢复路径污染：registerChildSession 无条件标 running，但服务端早已 idle
+    childSessionStore.registerChildSession(makeChild('child', 'root'))
+    activeSessionStore.reconcileChildSessions()
+    expect(busyIds().sort()).toEqual(['child', 'root'])
+
+    activeSessionStore.initialize({})
+
+    expect(childSessionStore.getSessionInfo('child')?.status).toBe('idle')
+    expect(activeSessionStore.getBusySessions()).toEqual([])
+  })
+
+  it('keeps a running child that the full snapshot still reports busy', () => {
+    childSessionStore.registerChildSession(makeChild('child', 'root'))
+
+    activeSessionStore.initialize({ child: { type: 'busy' } })
+
+    expect(childSessionStore.getSessionInfo('child')?.status).toBe('running')
+    expect(busyIds().sort()).toEqual(['child', 'root'])
+  })
+
+  it('keeps a running child with a pending request even when absent from the snapshot', () => {
+    childSessionStore.registerChildSession(makeChild('child', 'root'))
+    activeSessionStore.addPendingRequest('req-child', 'child', 'question', 'Continue?')
+
+    activeSessionStore.initialize({})
+
+    expect(childSessionStore.getSessionInfo('child')?.status).toBe('running')
+    expect(busyIds()).toContain('child')
+  })
+
+  it('does not sweep on mergeStatusRefresh (scoped refresh: absence != idle)', () => {
+    activeSessionStore.initialize({})
+    childSessionStore.registerChildSession(makeChild('child', 'root'))
+    activeSessionStore.reconcileChildSessions()
+
+    activeSessionStore.mergeStatusRefresh({})
+
+    expect(childSessionStore.getSessionInfo('child')?.status).toBe('running')
+    expect(busyIds().sort()).toEqual(['child', 'root'])
+  })
+})
+
+describe('activeSessionStore 子会话留存语义（留存只服务根会话）', () => {
+  const makeChild = (id: string, parentID: string): ApiSession =>
+    ({ id, parentID, title: id, time: { created: Date.now() } }) as unknown as ApiSession
+
+  const busyIds = () => activeSessionStore.getBusySessions().map(entry => entry.sessionId)
+  const retainedIds = () => activeSessionStore.getRetainedSessionsSnapshot().map(entry => entry.sessionId)
+
+  beforeEach(() => {
+    childSessionStore.clearAll()
+    activeSessionStore.resetRuntimeState()
+  })
+
+  it('child session busy→idle does not enter retention and disappears from the active zone', () => {
+    activeSessionStore.initialize({ child: { type: 'busy' } })
+    childSessionStore.registerChildSession(makeChild('child', 'root'))
+    activeSessionStore.reconcileChildSessions()
+    expect(busyIds().sort()).toEqual(['child', 'root'])
+
+    childSessionStore.markIdle('child')
+    activeSessionStore.updateStatus('child', { type: 'idle' })
+
+    // 子会话不进留存，backgroundBusy 祖先合成也随后消失 → 从两个列表都消失
+    expect(busyIds()).toEqual([])
+    expect(retainedIds()).toEqual([])
+  })
+
+  it('root session busy→idle still enters retention as usual (regression guard)', () => {
+    activeSessionStore.initialize({ root: { type: 'busy' } })
+    activeSessionStore.updateStatus('root', { type: 'idle' })
+
+    expect(retainedIds()).toEqual(['root'])
+    expect(activeSessionStore.getRetainedSessionsSnapshot()[0]).toMatchObject({
+      status: { type: 'idle' },
+      retainedViewed: false,
+    })
+  })
+
+  it('retained child session re-reported as running is backfilled once as busy and dropped from retention', () => {
+    // 模拟修复前存量：'task' 先以根会话身份进入留存，随后被注册为子会话并再次 running
+    activeSessionStore.initialize({ task: { type: 'busy' } })
+    activeSessionStore.updateStatus('task', { type: 'idle' })
+    expect(retainedIds()).toEqual(['task'])
+
+    childSessionStore.registerChildSession(makeChild('task', 'root'))
+    activeSessionStore.reconcileChildSessions()
+
+    // running 补录判定它活跃 → 只占一行「工作中」，留存被同步清除
+    const taskEntries = activeSessionStore.getBusySessions().filter(entry => entry.sessionId === 'task')
+    expect(taskEntries).toHaveLength(1)
+    expect(taskEntries[0]?.status).toEqual({ type: 'busy' })
+    expect(retainedIds()).toEqual([])
+  })
+
+  it('legacy retained child sessions are not rendered while root retention is unaffected', () => {
+    // 构造存量：两个会话都以根身份进入留存，随后 'sub' 被识别为子会话（idle，不触发 running 补录）
+    activeSessionStore.initialize({ root: { type: 'busy' }, sub: { type: 'busy' } })
+    activeSessionStore.updateStatus('root', { type: 'idle' })
+    activeSessionStore.updateStatus('sub', { type: 'idle' })
+    expect(retainedIds().sort()).toEqual(['root', 'sub'])
+
+    childSessionStore.registerChildSession(makeChild('sub', 'root'))
+    childSessionStore.markIdle('sub')
+    activeSessionStore.reconcileChildSessions()
+
+    // 防御过滤：存量子会话不进渲染，根会话留存不受影响
+    expect(retainedIds()).toEqual(['root'])
+  })
+
+  it('root waitRetain regression: deferred root is captured after children idle, child never retained', () => {
+    activeSessionStore.initialize({ root: { type: 'busy' }, child: { type: 'busy' } })
+    childSessionStore.registerChildSession(makeChild('child', 'root'))
+    activeSessionStore.reconcileChildSessions()
+
+    // root 自身 idle 但仍有 running 后代 → 暂缓，不进留存
+    activeSessionStore.updateStatus('root', { type: 'idle' })
+    expect(retainedIds()).toEqual([])
+
+    // 子会话 idle：自身不进留存；root 无 running 后代后由 waitRetain 收口补入留存
+    childSessionStore.markIdle('child')
+    activeSessionStore.updateStatus('child', { type: 'idle' })
+
+    expect(busyIds()).toEqual([])
+    expect(retainedIds()).toEqual(['root'])
+  })
+})
+
+
+
+describe('activeSessionStore 子会话完工假复活回归（session.updated 重复注册）', () => {
+  const makeChild = (id: string, parentID: string): ApiSession =>
+    ({ id, parentID, title: id, time: { created: Date.now() } }) as unknown as ApiSession
+
+  const busyIds = () => activeSessionStore.getBusySessions().map(entry => entry.sessionId)
+  const retainedIds = () => activeSessionStore.getRetainedSessionsSnapshot().map(entry => entry.sessionId)
+
+  beforeEach(() => {
+    childSessionStore.clearAll()
+    activeSessionStore.resetRuntimeState()
+    activeSessionStore.initializePendingRequests([], [])
+  })
+
+  it('完工后的重复注册（session.updated 如标题生成）不得把子会话翻回工作中', () => {
+    // 实时事件序列（SSE 捕获实证）：created → busy → idle → updated
+    childSessionStore.registerChildSession(makeChild('child', 'root'))
+    activeSessionStore.reconcileChildSessions()
+    activeSessionStore.updateStatus('child', { type: 'busy' })
+    activeSessionStore.updateStatus('child', { type: 'idle' })
+    childSessionStore.markIdle('child')
+    activeSessionStore.reconcileChildSessions()
+    expect(busyIds()).toEqual([])
+
+    childSessionStore.registerChildSession({ ...makeChild('child', 'root'), title: '完工后标题' })
+    activeSessionStore.reconcileChildSessions()
+
+    expect(childSessionStore.getSessionInfo('child')?.status).toBe('idle')
+    expect(busyIds()).toEqual([])
+    // 子会话不进留存（留存只服务根会话）
+    expect(retainedIds()).toEqual([])
+  })
+})

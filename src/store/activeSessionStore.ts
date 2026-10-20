@@ -163,6 +163,9 @@ class ActiveSessionStore {
     for (const info of childSessionStore.getChildSessionsByStatus('running')) {
       if (included.has(info.id)) continue
       included.add(info.id)
+      // 门判定它活跃 → 任何留存都是陈旧的，一并清除（防止同一子会话同时占「工作中」+「待查看」两行）
+      this.retained.delete(info.id)
+      this.waitRetain.delete(info.id)
       const meta = metaOf(info.id)
       entries.push({
         sessionId: info.id,
@@ -202,9 +205,13 @@ class ActiveSessionStore {
     }
     this.cachedBusyCount = entries.length
 
-    // 待查看留存 entry：已回到 statusMap 的 session 不再出现在留存列表
+    // 待查看留存 entry：已回到 statusMap / 已在 busy 集合（running 补录、祖先合成）的 session 不再出现在留存列表；
+    // 留存语义只服务根会话——修复前存量进入 retained 的子会话同样不渲染（不进渲染即视觉消失，map 残留由后续事件自然清理）
     const retainedEntries = [...this.retained.keys()]
-      .filter(sessionId => !this.state.statusMap[sessionId])
+      .filter(
+        sessionId =>
+          !this.state.statusMap[sessionId] && !included.has(sessionId) && !childSessionStore.getSessionInfo(sessionId),
+      )
       .map(sessionId => {
         const meta = this.sessionMeta.get(sessionId)?.get(activeServerID)
         return {
@@ -230,7 +237,7 @@ class ActiveSessionStore {
     return undefined
   }
 
-  private hasPendingForSession(sessionId: string): boolean {
+  hasPendingForSession(sessionId: string): boolean {
     for (const req of this.pendingRequests.values()) {
       if (req.sessionId === sessionId) return true
     }
@@ -245,6 +252,12 @@ class ActiveSessionStore {
   // busy→idle 转换捕获：只有转换前在 statusMap 中（本次客户端观察到过活跃）的 session 才进入留存；
   // 仍有 running 后代子会话时暂缓（waitRetain），由 recomputeDerived 在后代全部 idle 后补入
   private captureRetained(sessionId: string) {
+    // 留存语义只服务根会话：子会话 busy→idle 直接从活跃区消失，不进「待查看」留存（用户不会点开子会话消费留存）
+    if (childSessionStore.getSessionInfo(sessionId)) {
+      this.retained.delete(sessionId)
+      this.waitRetain.delete(sessionId)
+      return
+    }
     if (this.hasRunningDescendants(sessionId)) {
       this.retained.delete(sessionId)
       this.waitRetain.add(sessionId)
@@ -308,6 +321,12 @@ class ActiveSessionStore {
     this.state = {
       statusMap: this.applyStatusSnapshot(statusMap, {}),
       initialized: true,
+    }
+    // 全量快照对账：历史恢复/事件缺失导致的 stale running 子会话，缺席=服务端认定 idle
+    for (const info of childSessionStore.getChildSessionsByStatus('running')) {
+      if (!this.state.statusMap[info.id] && !this.hasPendingForSession(info.id)) {
+        childSessionStore.markIdle(info.id)
+      }
     }
     this.notify()
   }

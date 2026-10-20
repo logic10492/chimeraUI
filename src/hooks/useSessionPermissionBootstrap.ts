@@ -62,6 +62,12 @@ export function useSessionPermissionBootstrap({
           // 注册所有子 session 到 store
           for (const child of children) {
             childSessionStore.registerChildSession(child)
+            // 历史恢复的子会话按服务端真相校正：store 已初始化且 statusMap 无非 idle 条目
+            // 且无 pending 请求 → 实际已 idle，避免被活跃门补录成「工作中」
+            const state = activeSessionStore.getSnapshot()
+            if (state.initialized && !state.statusMap[child.id] && !activeSessionStore.hasPendingForSession(child.id)) {
+              childSessionStore.markIdle(child.id)
+            }
           }
         } catch {
           // 获取子 session 失败不影响主流程

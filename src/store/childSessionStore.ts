@@ -72,12 +72,14 @@ class ChildSessionStore {
     }
     children.add(session.id)
 
-    // 存储 session 信息
+    // 存储 session 信息；重复注册（如 session.updated 触发）保留现有状态——完工后的 title
+    // 更新若把 idle 重置回 running，会被活跃门的 running 补录当成「工作中」假复活
+    const existing = this.sessionInfo.get(session.id)
     this.sessionInfo.set(session.id, {
       id: session.id,
       parentID: session.parentID,
-      title: session.title || i18n.t('chat:permissionDialog.subtaskFallback'),
-      status: 'running',
+      title: session.title || existing?.title || i18n.t('chat:permissionDialog.subtaskFallback'),
+      status: existing?.status ?? 'running',
       createdAt: session.time.created,
     })
 
