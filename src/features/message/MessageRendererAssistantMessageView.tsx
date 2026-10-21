@@ -115,7 +115,9 @@ export const AssistantMessageView = memo(function AssistantMessageView({
             const isLastStepFinish =
               idx ===
               renderItems.findLastIndex(it =>
-                it.type === 'tool-group' ? !!it.stepFinish : it.part.type === 'step-finish',
+                it.type === 'tool-group'
+                  ? !!it.stepFinish
+                  : it.type === 'single' && it.part.type === 'step-finish',
               )
 
             if (item.type === 'tool-group') {
@@ -130,6 +132,18 @@ export const AssistantMessageView = memo(function AssistantMessageView({
                   agent={agent}
                   modelLabel={modelLabel}
                   completedAt={isLastStepFinish ? completed : undefined}
+                />
+              )
+            }
+
+            if (item.type === 'reasoning-group') {
+              const latest = item.parts[item.parts.length - 1]
+              return (
+                <ReasoningPartView
+                  key={latest.id}
+                  part={latest}
+                  isStreaming={isStreaming && !endedReasoningIds.has(latest.id)}
+                  groupedParts={item.parts}
                 />
               )
             }

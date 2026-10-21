@@ -12,20 +12,47 @@ import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 // italic 默认不显示前导图标；如果后续要恢复，只改这里。
 const ITALIC_SHOW_LEADING_GLYPH = false
 
+// 仅 curated summary（OpenAI Responses / Copilot summary）保留文本标题；其余按原始 CoT 处理。
+function isReasoningSummary(part: ReasoningPart) {
+  const chimera = part.metadata?.chimera
+  if (!chimera || typeof chimera !== 'object') return false
+  return (chimera as Record<string, unknown>).reasoning === 'summary'
+}
+
+// 单行预览用：去掉常见行内 markdown 标记；正文仍由 MarkdownRenderer 渲染完整 markdown。
+function stripInlineMarkdown(text: string) {
+  return text
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\*\*([^*\n]+?)\*\*/g, '$1')
+    .replace(/(?<![A-Za-z0-9_])__([^_\n]+?)__(?![A-Za-z0-9_])/g, '$1')
+    .replace(/~~([^~\n]+?)~~/g, '$1')
+    .replace(/`([^`\n]+)`/g, '$1')
+    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '$1')
+    .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+}
+
 interface ReasoningPartViewProps {
   part: ReasoningPart
+  groupedParts?: ReasoningPart[]
   isStreaming?: boolean
 }
 
-export const ReasoningPartView = memo(function ReasoningPartView({ part, isStreaming }: ReasoningPartViewProps) {
+export const ReasoningPartView = memo(function ReasoningPartView({
+  part,
+  groupedParts = [part],
+  isStreaming,
+}: ReasoningPartViewProps) {
   const { t } = useTranslation('message')
   const { reasoningDisplayMode } = useTheme()
   const rawText = part.text || ''
+  const fullText = groupedParts.map(item => item.text).filter(Boolean).join('\n')
+  const displayText = rawText
+  const expandedText = fullText || rawText
 
   const isPartStreaming = isStreaming && !part.time?.end
-  const hasContent = !!rawText.trim()
-
-  const displayText = rawText
+  const hasContent = !!expandedText.trim()
   const [expanded, setExpanded] = useUiDisclosureState(`message:${part.messageID}:reasoning:${part.id}`, false)
   const shouldRenderBody = useDelayedRender(expanded)
   const { rootRef, headerRef, withScrollLock } = useDisclosureScrollLock()
@@ -37,19 +64,22 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
     withScrollLock(() => setExpanded(!expanded))
   }, [expanded, setExpanded, withScrollLock])
 
-  const collapsedPreview = useMemo(() => (displayText || '').replace(/\s+/g, ' ').trim(), [displayText])
+  const collapsedPreview = useMemo(
+    () => stripInlineMarkdown(displayText || '').replace(/\s+/g, ' ').trim(),
+    [displayText],
+  )
   const thoughtDurationLabel = useMemo(() => {
-    const start = part.time?.start
+    const start = groupedParts[0]?.time?.start
     const end = part.time?.end
     if (!start || !end || end <= start) return null
     const durationMs = end - start
     if (durationMs < 1000) return `${Math.max(1, Math.round(durationMs))}ms`
     if (durationMs < 10000) return `${(durationMs / 1000).toFixed(1)}s`
     return `${Math.round(durationMs / 1000)}s`
-  }, [part.time?.start, part.time?.end])
-  const summaryText = collapsedPreview || (isPartStreaming ? t('reasoning.thinking') : '')
-  const hasLineBreak = /[\r\n]/.test(rawText)
-
+  }, [groupedParts, part.time?.end])
+  // 流式期间：summary 保留最新摘要文本；原始 CoT 只展示 shimmer 标签，避免整段思考闪烁。
+  const summaryText = isPartStreaming && !isReasoningSummary(part) ? t('reasoning.thinking') : collapsedPreview
+  const hasLineBreak = /[\r\n]/.test(expandedText) || groupedParts.length > 1
   const measureSummaryOverflow = useCallback(() => {
     if (reasoningDisplayMode !== 'italic' && reasoningDisplayMode !== 'markdown') return
     const containerEl = summaryContainerRef.current
@@ -112,7 +142,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
     const isMarkdownMode = reasoningDisplayMode === 'markdown'
     const shouldUseToggle = isPartStreaming || hasLineBreak || summaryOverflow
     const expandedMetaText = isPartStreaming
-      ? t('reasoning.thinking')
+      ? summaryText
       : thoughtDurationLabel
         ? t('reasoning.thoughtFor', { duration: thoughtDurationLabel })
         : t('reasoning.thoughtProcess')
@@ -167,11 +197,11 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
             {shouldRenderBody &&
               (isMarkdownMode ? (
                 <div className="text-[length:var(--fs-sm)]">
-                  <MarkdownRenderer content={displayText} variant="reasoning" isStreaming={isPartStreaming} />
+                  <MarkdownRenderer content={expandedText} variant="reasoning" isStreaming={isPartStreaming} />
                 </div>
               ) : (
                 <div className="text-[length:var(--fs-sm)] leading-6 italic whitespace-pre-wrap break-words overflow-x-hidden text-text-300">
-                  {displayText}
+                  {expandedText}
                 </div>
               ))}
           </div>

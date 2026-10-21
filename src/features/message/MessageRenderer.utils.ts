@@ -229,8 +229,15 @@ export function hasMoreToolsAhead(parts: Part[], from: number): boolean {
 
 export function groupPartsForRender(parts: Part[]): RenderItem[] {
   const result: RenderItem[] = []
+  let reasoningGroup: Extract<Part, { type: 'reasoning' }>[] = []
   let toolGroup: ToolPart[] = []
   let stepFinish: StepFinishPart | undefined
+
+  const flushReasoningGroup = () => {
+    if (reasoningGroup.length === 0) return
+    result.push({ type: 'reasoning-group', parts: reasoningGroup })
+    reasoningGroup = []
+  }
 
   const flushToolGroup = (sf?: StepFinishPart) => {
     if (toolGroup.length === 0) return
@@ -247,6 +254,13 @@ export function groupPartsForRender(parts: Part[]): RenderItem[] {
     if (part.type === 'text' && !isVisibleTextPart(part)) continue
     if (part.type === 'reasoning' && !isVisibleReasoningPart(part)) continue
 
+    if (part.type === 'reasoning') {
+      flushToolGroup(stepFinish)
+      reasoningGroup.push(part)
+      continue
+    }
+
+    flushReasoningGroup()
     if (isToolPart(part)) {
       toolGroup.push(part)
     } else if (part.type === 'step-finish') {
@@ -265,6 +279,7 @@ export function groupPartsForRender(parts: Part[]): RenderItem[] {
     }
   }
 
+  flushReasoningGroup()
   flushToolGroup(stepFinish)
   return result
 }

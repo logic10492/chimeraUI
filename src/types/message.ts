@@ -137,6 +137,7 @@ export interface ReasoningPart extends PartBase {
   type: 'reasoning'
   text: string
   time: { start: number; end?: number }
+  metadata?: Record<string, unknown>
 }
 
 // ToolState - 按状态细分的联合类型

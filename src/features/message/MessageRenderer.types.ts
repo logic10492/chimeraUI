@@ -61,4 +61,5 @@ export interface SummarySegment {
 
 export type RenderItem =
   | { type: 'single'; part: Part }
+  | { type: 'reasoning-group'; parts: Extract<Part, { type: 'reasoning' }>[] }
   | { type: 'tool-group'; parts: ToolPart[]; stepFinish?: StepFinishPart }
