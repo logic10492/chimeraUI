@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRightIcon, ExternalLinkIcon, StopIcon } from '../../../../components/Icons'
 import { useSessionNavigation } from '../../../../contexts/SessionNavigationContext'
@@ -7,6 +7,7 @@ import { childSessionStore } from '../../../../store/childSessionStore'
 import { messageStore } from '../../../../store/messageStore'
 import { useInlineToolRequests } from '../../../chat/InlineToolRequestContext'
 import { InteractionCard } from '../../../chat/InteractionCard'
+import { useServerCapabilities } from '../../../../hooks/useServerCapabilities'
 import type { PermissionRequest as ApiPermissionRequest, QuestionRequest as ApiQuestionRequest } from '../../../../types/api/permission'
 import type { ToolRendererProps } from '../types'
 import { SubSessionView } from './TaskRenderer'
@@ -26,6 +27,7 @@ export function getSwarmChildRuns(
   metadata: Record<string, unknown> | undefined,
   parentStatus?: string,
 ): SwarmChildRun[] {
+  const background = metadata?.background === true
   const normalize = (run: Record<string, unknown>, position: number): SwarmChildRun => {
     const sessionId = typeof run.sessionId === 'string' ? run.sessionId : undefined
     return {
@@ -37,7 +39,7 @@ export function getSwarmChildRuns(
           : typeof run.subagent_type === 'string'
             ? run.subagent_type
             : 'general',
-      status: normalizeSwarmChildStatus(run.status, parentStatus, sessionId),
+      status: normalizeSwarmChildStatus(run.status, parentStatus, sessionId, background),
       sessionId,
       error: typeof run.error === 'string' ? run.error : undefined,
     }
@@ -86,31 +88,55 @@ export function findRequestForChild<T extends ApiPermissionRequest | ApiQuestion
 
 export const SwarmRenderer = memo(function SwarmRenderer({ part }: ToolRendererProps) {
   const metadata = part.state.metadata as Record<string, unknown> | undefined
+  const background = metadata?.background === true
   const childRuns = useMemo(() => getSwarmChildRuns(metadata, part.state.status), [metadata, part.state.status])
 
   if (childRuns.length === 0) {
+    // A background receipt is terminal: the completed part will never grow
+    // childRuns, so do not promise subagents that cannot appear.
+    if (background && (part.state.status === 'completed' || part.state.status === 'error')) return null
     return <div className="text-[length:var(--fs-sm)] text-text-500 italic py-2">Waiting for subagents...</div>
   }
 
   return (
     <div className="space-y-2">
+      {background && <SwarmBackgroundBadge />}
       {childRuns.map(run => (
-        <SwarmChild key={`${run.index}:${run.sessionId ?? run.title}`} run={run} />
+        <SwarmChild key={`${run.index}:${run.sessionId ?? run.title}`} run={run} background={background} />
       ))}
     </div>
   )
 })
 
-const SwarmChild = memo(function SwarmChild({ run }: { run: SwarmChildRun }) {
+// F4 background dispatch: same capabilities gate as TaskRenderer. Mounted only
+// for background parts so non-background swarms never probe capabilities.
+const SwarmBackgroundBadge = memo(function SwarmBackgroundBadge() {
+  const { t } = useTranslation('message')
+  const capabilities = useServerCapabilities()
+  if (!capabilities.backgroundSubagents) return null
+  return (
+    <span className="inline-flex px-1.5 py-0.5 text-[length:var(--fs-xxs)] font-medium rounded-xs bg-bg-300 text-text-400">
+      {t('task.background')}
+    </span>
+  )
+})
+
+const SwarmChild = memo(function SwarmChild({ run, background }: { run: SwarmChildRun; background: boolean }) {
   const { t } = useTranslation('message')
   const { currentSessionId, currentDirectory, navigateToSession } = useSessionNavigation()
-  const [expanded, setExpanded] = useState(run.status === 'queued' || run.status === 'running')
+  const status = useLiveChildStatus(run, background)
+  const [expanded, setExpanded] = useState(status === 'queued' || status === 'running')
   const { pendingPermissions, pendingQuestions, onPermissionReply, onQuestionReply, onQuestionReject, isReplying } =
     useInlineToolRequests()
   const permissionRequest = findRequestForChild(pendingPermissions, run.sessionId)
   const questionRequest = findRequestForChild(pendingQuestions, run.sessionId)
-  const isRunning = run.status === 'running'
+  const isRunning = status === 'running'
 
+  // Background children keep expanding as their derived status advances; frozen
+  // non-background runs keep the original mount-time expansion only.
+  useEffect(() => {
+    if (background && (status === 'running' || status === 'queued')) setExpanded(true)
+  }, [background, status])
   const getDirectory = useCallback(() => {
     const childInfo = run.sessionId ? childSessionStore.getSessionInfo(run.sessionId) : undefined
     const parentSessionId = childInfo?.parentID || currentSessionId || null
@@ -148,8 +174,8 @@ const SwarmChild = memo(function SwarmChild({ run }: { run: SwarmChildRun }) {
             <ChevronRightIcon size={12} />
           </span>
           <span className="text-[length:var(--fs-xxs)] font-mono text-text-500 tabular-nums">#{run.index}</span>
-          <span className={`px-1.5 py-0.5 text-[length:var(--fs-xxs)] font-medium rounded-xs ${statusClass(run.status)}`}>
-            {run.status}
+          <span className={`px-1.5 py-0.5 text-[length:var(--fs-xxs)] font-medium rounded-xs ${statusClass(status)}`}>
+            {status}
           </span>
           <span className="px-1.5 py-0.5 text-[length:var(--fs-xxs)] font-medium rounded-xs bg-bg-300 text-text-300">
             {run.subagentType}
@@ -216,10 +242,18 @@ const SwarmChild = memo(function SwarmChild({ run }: { run: SwarmChildRun }) {
   )
 })
 
-function normalizeSwarmChildStatus(status: unknown, parentStatus: string | undefined, sessionId: string | undefined): SwarmChildStatus {
+function normalizeSwarmChildStatus(
+  status: unknown,
+  parentStatus: string | undefined,
+  sessionId: string | undefined,
+  background = false,
+): SwarmChildStatus {
   if (status === 'success') return 'completed'
   if (status === 'failure') return 'error'
   if (isSwarmChildStatus(status)) return status
+  // Background receipts freeze childRuns forever, so an unknown status is not
+  // evidence of completion: only ever fall back to queued/running there.
+  if (background) return sessionId ? 'running' : 'queued'
   if (parentStatus === 'running') return sessionId ? 'running' : 'queued'
   if (parentStatus === 'error') return 'error'
   return 'completed'
@@ -235,4 +269,36 @@ function statusClass(status: SwarmChildStatus): string {
   if (status === 'error') return 'bg-danger-100/20 text-danger-100'
   if (status === 'cancelled') return 'bg-warning-100/20 text-warning-100'
   return 'bg-bg-300 text-text-400'
+}
+
+// Background parts freeze childRuns at the launch receipt, so live progress must
+// come from the child session stores. Frozen status is only the initial placeholder.
+function useLiveChildStatus(run: SwarmChildRun, background: boolean): SwarmChildStatus {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      if (!background) return () => {}
+      const unsubscribeChildren = childSessionStore.subscribe(onChange)
+      const unsubscribeMessages = messageStore.subscribe(onChange)
+      return () => {
+        unsubscribeChildren()
+        unsubscribeMessages()
+      }
+    },
+    [background],
+  )
+  const getSnapshot = useCallback(
+    () => (background ? deriveBackgroundChildStatus(run.sessionId, run.status) : run.status),
+    [background, run.sessionId, run.status],
+  )
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+function deriveBackgroundChildStatus(sessionId: string | undefined, frozen: SwarmChildStatus): SwarmChildStatus {
+  if (!sessionId) return 'queued'
+  const info = childSessionStore.getSessionInfo(sessionId)
+  if (info?.status === 'error') return 'error'
+  if (info?.status === 'idle') return 'completed'
+  if (info?.status === 'running') return 'running'
+  if (messageStore.getSessionState(sessionId)?.isStreaming) return 'running'
+  return frozen
 }

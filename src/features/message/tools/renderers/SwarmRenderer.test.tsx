@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ToolPart } from '../../../../types/message'
 import { SwarmRenderer, getSwarmChildRuns } from './SwarmRenderer'
 
-const { abortSessionMock, inlineRequestsMock, navigateToSessionMock } = vi.hoisted(() => ({
+const { abortSessionMock, inlineRequestsMock, navigateToSessionMock, getSessionInfoMock, capabilitiesMock } = vi.hoisted(() => ({
   abortSessionMock: vi.fn(),
   inlineRequestsMock: vi.fn(),
   navigateToSessionMock: vi.fn(),
+  getSessionInfoMock: vi.fn(),
+  capabilitiesMock: vi.fn(),
 }))
 
 vi.mock('react-i18next', () => ({
@@ -33,14 +35,20 @@ vi.mock('../../../../api/session', () => ({
 
 vi.mock('../../../../store/childSessionStore', () => ({
   childSessionStore: {
-    getSessionInfo: () => ({ parentID: 'parent' }),
+    getSessionInfo: getSessionInfoMock,
     isChildOf: () => false,
+    subscribe: () => () => {},
   },
 }))
 vi.mock('../../../../store/messageStore', () => ({
   messageStore: {
     getSessionState: () => ({ directory: '/repo' }),
+    subscribe: () => () => {},
   },
+}))
+
+vi.mock('../../../../hooks/useServerCapabilities', () => ({
+  useServerCapabilities: () => capabilitiesMock(),
 }))
 
 vi.mock('../../../chat/InlineToolRequestContext', () => ({
@@ -58,6 +66,8 @@ vi.mock('./TaskRenderer', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  getSessionInfoMock.mockReturnValue({ parentID: 'parent' })
+  capabilitiesMock.mockReturnValue({ backgroundSubagents: true })
   inlineRequestsMock.mockReturnValue({
     pendingPermissions: [],
     pendingQuestions: [],
@@ -171,5 +181,79 @@ describe('SwarmRenderer child request routing', () => {
 
     fireEvent.click(screen.getAllByLabelText('task.openSession')[1])
     expect(navigateToSessionMock).toHaveBeenCalledWith('child-2', '/repo')
+  })
+})
+
+function createBackgroundPart(childRuns: Record<string, unknown>[]): ToolPart {
+  const part = createPart()
+  return {
+    ...part,
+    state: { ...part.state, status: 'completed', metadata: { background: true, childRuns } },
+  }
+}
+
+describe('SwarmRenderer background swarm', () => {
+  it('derives live child status from the child session store instead of the frozen receipt', () => {
+    getSessionInfoMock.mockImplementation((sessionId: string) =>
+      sessionId === 'child-1'
+        ? { parentID: 'parent', status: 'idle' }
+        : { parentID: 'parent', status: 'running' },
+    )
+
+    render(
+      <SwarmRenderer
+        part={createBackgroundPart([
+          { index: 1, title: 'Frozen running', subagentType: 'general', status: 'running', sessionId: 'child-1' },
+          { index: 2, title: 'Still running', subagentType: 'general', status: 'running', sessionId: 'child-2' },
+        ])}
+        data={{}}
+      />,
+    )
+
+    const first = document.querySelector('[data-child-index="1"]') as HTMLElement
+    const second = document.querySelector('[data-child-index="2"]') as HTMLElement
+    expect(within(first).getByText('completed')).toBeInTheDocument()
+    expect(within(first).queryByText('running')).not.toBeInTheDocument()
+    expect(within(first).queryByLabelText('task.stop')).not.toBeInTheDocument()
+    expect(within(second).getByText('running')).toBeInTheDocument()
+    expect(within(second).getByLabelText('task.stop')).toBeInTheDocument()
+  })
+
+  it('shows queued for background children without a session id', () => {
+    render(
+      <SwarmRenderer
+        part={createBackgroundPart([
+          { index: 1, title: 'Queued', subagentType: 'general', status: 'running' },
+        ])}
+        data={{}}
+      />,
+    )
+
+    const child = document.querySelector('[data-child-index="1"]') as HTMLElement
+    expect(within(child).getByText('queued')).toBeInTheDocument()
+    expect(within(child).queryByText('running')).not.toBeInTheDocument()
+  })
+
+  it('renders the background badge for background receipts', () => {
+    render(
+      <SwarmRenderer
+        part={createBackgroundPart([
+          { index: 1, title: 'Child', subagentType: 'general', status: 'running', sessionId: 'child-1' },
+        ])}
+        data={{}}
+      />,
+    )
+
+    expect(screen.getByText('task.background')).toBeInTheDocument()
+  })
+
+  it('never normalizes an unknown background status to completed', () => {
+    expect(getSwarmChildRuns({ background: true, childRuns: [{ index: 1, title: 'No session' }] })[0]?.status).toBe(
+      'queued',
+    )
+    expect(
+      getSwarmChildRuns({ background: true, childRuns: [{ index: 1, title: 'Has session', sessionId: 'session-1' }] })[0]
+        ?.status,
+    ).toBe('running')
   })
 })
