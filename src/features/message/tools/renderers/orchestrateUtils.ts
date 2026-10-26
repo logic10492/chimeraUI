@@ -22,6 +22,16 @@ export interface OrchestrateRun {
   output?: string
   error?: string
   agents: OrchestrateAgentRun[]
+  logs: string[]
+}
+
+export interface OrchestrateStage {
+  /** 1-based position in first-appearance order. */
+  index: number
+  name: string
+  status: OrchestrateAgentStatus
+  stats: OrchestrateStats
+  agents: OrchestrateAgentRun[]
 }
 
 export interface OrchestrateStats {
@@ -80,6 +90,13 @@ export function getOrchestrateAgents(metadata: unknown): OrchestrateAgentRun[] {
   })
 }
 
+/** Program log lines published alongside agents; older runs have no logs field. */
+export function getOrchestrateLogs(metadata: unknown): string[] {
+  const rawLogs = asRecord(metadata)?.logs
+  if (!Array.isArray(rawLogs)) return []
+  return rawLogs.filter((line): line is string => typeof line === 'string')
+}
+
 export function getOrchestrateRuns(messages: Message[]): OrchestrateRun[] {
   return messages.flatMap(message =>
     message.parts.flatMap((part): OrchestrateRun[] => {
@@ -111,6 +128,7 @@ export function getOrchestrateRuns(messages: Message[]): OrchestrateRun[] {
                 ? metadata.error
                 : undefined,
           agents: getOrchestrateAgents(toolPart.state.metadata),
+          logs: getOrchestrateLogs(toolPart.state.metadata),
         },
       ]
     }),
@@ -157,4 +175,42 @@ export function getOrchestrateSessionIds(runs: OrchestrateRun[]): string[] {
     }
   }
   return Array.from(ids)
+}
+
+/** Stage prefix is everything before the first `:`; labels without one form their own stage. */
+export function orchestrateStageName(label: string): string {
+  const separator = label.indexOf(':')
+  const name = separator === -1 ? label : label.slice(0, separator)
+  return name.trim() || label
+}
+
+function aggregateStageStatus(agents: OrchestrateAgentRun[]): OrchestrateAgentStatus {
+  if (agents.some(agent => agent.status === 'running')) return 'running'
+  if (agents.some(agent => agent.status === 'error' || agent.status === 'cancelled')) return 'error'
+  if (agents.length > 0 && agents.every(agent => agent.status === 'completed')) return 'completed'
+  return 'queued'
+}
+
+/** Group agents by stage prefix, preserving first-appearance order. */
+export function groupAgentsByStage(agents: OrchestrateAgentRun[]): OrchestrateStage[] {
+  const groups = new Map<string, OrchestrateAgentRun[]>()
+  for (const agent of agents) {
+    const name = orchestrateStageName(agent.label)
+    const group = groups.get(name)
+    if (group) group.push(agent)
+    else groups.set(name, [agent])
+  }
+  return Array.from(groups, ([name, stageAgents], position) => ({
+    index: position + 1,
+    name,
+    status: aggregateStageStatus(stageAgents),
+    stats: getOrchestrateStats(stageAgents),
+    agents: stageAgents,
+  }))
+}
+
+/** Current stage = first stage with a running agent, else the last stage seen. */
+export function getCurrentStageIndex(stages: OrchestrateStage[]): number {
+  const running = stages.findIndex(stage => stage.status === 'running')
+  return running === -1 ? stages.length - 1 : running
 }

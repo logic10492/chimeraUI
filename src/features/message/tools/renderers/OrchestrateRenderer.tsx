@@ -4,9 +4,12 @@ import { ChevronDownIcon, ChevronRightIcon } from '../../../../components/Icons'
 import { layoutStore } from '../../../../store/layoutStore'
 import type { ToolRendererProps } from '../types'
 import {
+  getCurrentStageIndex,
   getOrchestrateAgents,
   getOrchestrateStats,
+  groupAgentsByStage,
   resolveOrchestrateAgentStatus,
+  type OrchestrateAgentStatus,
   type OrchestrateRunStatus,
 } from './orchestrateUtils'
 
@@ -15,9 +18,15 @@ function readInputString(input: Record<string, unknown> | undefined, key: string
   return typeof value === 'string' ? value : undefined
 }
 
+function statusLabelKey(status: OrchestrateAgentStatus | OrchestrateRunStatus): string {
+  if (status === 'error') return 'orchestrate.status.failed'
+  return `orchestrate.status.${status}`
+}
+
 /**
- * Compact message-stream card for the orchestrate tool. Long code/output stay
- * behind an explicit disclosure; the full run view lives in the OrchestratePanel.
+ * Compact message-stream card for the orchestrate tool: run title, current
+ * stage, and stage/agent progress. Program code and output stay behind an
+ * explicit disclosure; the full process view lives in the OrchestratePanel.
  */
 export const OrchestrateRenderer = memo(function OrchestrateRenderer({ part }: ToolRendererProps) {
   const { t } = useTranslation('message')
@@ -33,7 +42,11 @@ export const OrchestrateRenderer = memo(function OrchestrateRenderer({ part }: T
       })),
     [part.state.metadata, runStatus],
   )
+  const stages = useMemo(() => groupAgentsByStage(agents), [agents])
   const stats = useMemo(() => getOrchestrateStats(agents), [agents])
+  const currentStage = getCurrentStageIndex(stages)
+  const stage = stages[currentStage]
+  const stageStatus = stage?.status ?? runStatus
 
   const input = part.state.input as Record<string, unknown> | undefined
   const title =
@@ -48,24 +61,34 @@ export const OrchestrateRenderer = memo(function OrchestrateRenderer({ part }: T
     <div data-testid="orchestrate-card" className="rounded-md border border-border-200/40 bg-bg-000/40 px-2.5 py-2">
       <div className="flex min-w-0 items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)] font-medium text-text-200">{title}</span>
-        <span className="shrink-0 rounded-xs bg-bg-300 px-1.5 py-0.5 text-[length:var(--fs-xxs)] tabular-nums text-text-300">
-          {t('orchestrate.agents', { count: stats.total })}
+        {stage && (
+          <span className="shrink-0 truncate rounded-xs bg-bg-300 px-1.5 py-0.5 text-[length:var(--fs-xxs)] text-text-300">
+            {stage.name}
+          </span>
+        )}
+        <span className="shrink-0 text-[length:var(--fs-xxs)] tabular-nums text-text-500">
+          {stages.length > 0
+            ? t('orchestrate.progress', {
+                stage: currentStage + 1,
+                stages: stages.length,
+                completed: stats.completed,
+                total: stats.total,
+              })
+            : t('orchestrate.agents', { count: stats.total })}
         </span>
-        {stats.running > 0 && (
-          <span className="shrink-0 rounded-xs bg-accent-main-100/20 px-1.5 py-0.5 text-[length:var(--fs-xxs)] tabular-nums text-accent-main-100">
-            {t('orchestrate.running', { count: stats.running })}
-          </span>
-        )}
-        {stats.completed > 0 && (
-          <span className="shrink-0 rounded-xs bg-accent-secondary-100/20 px-1.5 py-0.5 text-[length:var(--fs-xxs)] tabular-nums text-accent-secondary-100">
-            {t('orchestrate.completed', { count: stats.completed })}
-          </span>
-        )}
-        {stats.failed > 0 && (
-          <span className="shrink-0 rounded-xs bg-danger-100/20 px-1.5 py-0.5 text-[length:var(--fs-xxs)] tabular-nums text-danger-100">
-            {t('orchestrate.failed', { count: stats.failed })}
-          </span>
-        )}
+        <span
+          className={`shrink-0 rounded-xs px-1.5 py-0.5 text-[length:var(--fs-xxs)] ${
+            stageStatus === 'running'
+              ? 'bg-accent-main-100/20 text-accent-main-100'
+              : stageStatus === 'completed'
+                ? 'bg-accent-secondary-100/20 text-accent-secondary-100'
+                : stageStatus === 'error' || stageStatus === 'cancelled'
+                  ? 'bg-danger-100/20 text-danger-100'
+                  : 'bg-bg-300 text-text-400'
+          }`}
+        >
+          {t(statusLabelKey(stageStatus))}
+        </span>
         <button
           type="button"
           onClick={() => layoutStore.addOrchestrateTab('right')}
@@ -86,7 +109,7 @@ export const OrchestrateRenderer = memo(function OrchestrateRenderer({ part }: T
             className="flex items-center gap-1 border-none bg-transparent p-0 text-[length:var(--fs-xxs)] text-text-400 transition-colors hover:text-text-200"
           >
             {expanded ? <ChevronDownIcon size={10} /> : <ChevronRightIcon size={10} />}
-            {t('orchestrate.details')}
+            {t('orchestrate.viewProgram')}
           </button>
           <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
             <div className="overflow-hidden">

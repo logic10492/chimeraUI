@@ -299,21 +299,22 @@ describe('ToolPartView orchestrate card', () => {
     fireEvent.click(screen.getByText('Review batch'))
 
     expect(screen.getByTestId('orchestrate-card')).toBeInTheDocument()
-    expect(screen.getByText('orchestrate.agents')).toBeInTheDocument()
-    expect(screen.getByText('orchestrate.completed')).toBeInTheDocument()
+    expect(screen.getByText('Child A')).toBeInTheDocument()
+    expect(screen.getByText('orchestrate.progress')).toBeInTheDocument()
+    expect(screen.getByText('orchestrate.status.completed')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('orchestrate.openPanel'))
     expect(addOrchestrateTab).toHaveBeenCalledWith('right')
   })
 
-  it('keeps code and long output collapsed until details are requested', () => {
+  it('keeps code and long output collapsed until the program is requested', () => {
     render(<ToolPartView part={createOrchestrateToolPart('details')} />)
 
     fireEvent.click(screen.getByText('Review batch'))
     expect(screen.queryByTestId('orchestrate-code')).not.toBeInTheDocument()
     expect(screen.queryByTestId('orchestrate-output')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('orchestrate.details'))
+    fireEvent.click(screen.getByText('orchestrate.viewProgram'))
 
     expect(screen.getByTestId('orchestrate-code')).toBeInTheDocument()
     expect(screen.getByTestId('orchestrate-output')).toBeInTheDocument()

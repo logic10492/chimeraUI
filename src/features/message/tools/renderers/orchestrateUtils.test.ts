@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { Message, ToolPart } from '../../../../types/message'
 import {
+  getCurrentStageIndex,
   getOrchestrateAgents,
+  getOrchestrateLogs,
   getOrchestrateRuns,
   getOrchestrateSessionIds,
   getOrchestrateStats,
+  groupAgentsByStage,
   normalizeOrchestrateAgentStatus,
   resolveOrchestrateAgentStatus,
 } from './orchestrateUtils'
@@ -176,5 +179,52 @@ describe('getOrchestrateStats and session ids', () => {
       'child-2',
       'child-3',
     ])
+  })
+})
+
+describe('groupAgentsByStage', () => {
+  const agents = getOrchestrateAgents({
+    agents: [
+      { label: 'loc-struct:codex', sessionId: 'child-1', status: 'completed' },
+      { label: 'loc-struct:codex#2', sessionId: 'child-2', status: 'running' },
+      { label: 'synthesis', sessionId: 'child-3', status: 'completed' },
+      { label: 'analyze:codex#3', sessionId: 'child-4', status: 'failed' },
+      { label: 'analyze:codex#4', sessionId: 'child-5', status: 'completed' },
+    ],
+  })
+
+  it('groups by the first colon prefix in first-appearance order and aggregates status', () => {
+    const stages = groupAgentsByStage(agents)
+
+    expect(stages.map(stage => stage.name)).toEqual(['loc-struct', 'synthesis', 'analyze'])
+    expect(stages.map(stage => stage.status)).toEqual(['running', 'completed', 'error'])
+    expect(stages.map(stage => stage.index)).toEqual([1, 2, 3])
+    expect(stages[0]?.stats).toMatchObject({ total: 2, running: 1, completed: 1 })
+    expect(getCurrentStageIndex(stages)).toBe(0)
+  })
+
+  it('falls back to the last stage when no stage is running', () => {
+    const done = agents.map(agent => ({ ...agent, status: 'completed' as const }))
+    const stages = groupAgentsByStage(done)
+
+    expect(stages.every(stage => stage.status === 'completed')).toBe(true)
+    expect(getCurrentStageIndex(stages)).toBe(stages.length - 1)
+  })
+
+  it('treats cancelled agents as a failed stage and returns no current stage for an empty run', () => {
+    const stages = groupAgentsByStage([{ ...agents[0]!, status: 'cancelled' }])
+
+    expect(stages[0]?.status).toBe('error')
+    expect(groupAgentsByStage([])).toEqual([])
+    expect(getCurrentStageIndex([])).toBe(-1)
+  })
+})
+
+describe('getOrchestrateLogs', () => {
+  it('keeps string lines and tolerates missing or malformed logs', () => {
+    expect(getOrchestrateLogs({ logs: ['one', 2, null, 'two'] })).toEqual(['one', 'two'])
+    expect(getOrchestrateLogs({})).toEqual([])
+    expect(getOrchestrateLogs(undefined)).toEqual([])
+    expect(getOrchestrateLogs({ logs: 'nope' })).toEqual([])
   })
 })

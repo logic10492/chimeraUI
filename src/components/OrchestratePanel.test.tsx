@@ -16,7 +16,13 @@ vi.mock('react-i18next', () => ({
 }))
 
 vi.mock('./Icons', () => ({
+  CheckIcon: () => <span />,
+  ChevronDownIcon: () => <span />,
+  ChevronRightIcon: () => <span />,
+  CircleIcon: () => <span />,
+  CloseIcon: () => <span />,
   ExternalLinkIcon: () => <span />,
+  SpinnerIcon: () => <span />,
   StopIcon: () => <span />,
 }))
 
@@ -78,7 +84,11 @@ beforeEach(() => {
   })
 })
 
-function createOrchestrateMessage(agents: Record<string, unknown>[], status: 'running' | 'completed' | 'error' = 'running') {
+function createOrchestrateMessage(
+  agents: Record<string, unknown>[],
+  status: 'running' | 'completed' | 'error' = 'running',
+  metadata: Record<string, unknown> = {},
+) {
   return {
     info: { id: 'message-1' } as Message['info'],
     parts: [
@@ -94,7 +104,7 @@ function createOrchestrateMessage(agents: Record<string, unknown>[], status: 'ru
           input: { code: 'await orche.parallel([])' },
           title: 'Review batch',
           output: '## Result\nall good',
-          metadata: { agents },
+          metadata: { agents, ...metadata },
         },
       },
     ],
@@ -156,7 +166,7 @@ describe('OrchestratePanel', () => {
 
     render(<OrchestratePanel sessionId="parent" directory="/repo" active />)
 
-    fireEvent.click(screen.getByText('Review child'))
+    fireEvent.click(document.querySelector('[data-agent-index="1"] button') as HTMLElement)
     expect(navigateToSessionMock).toHaveBeenCalledWith('child-1', '/repo')
   })
 
@@ -180,5 +190,50 @@ describe('OrchestratePanel', () => {
     render(<OrchestratePanel sessionId="parent" directory="/repo" active />)
 
     expect(screen.getByText('orchestratePanel.onlyLoadedHistory')).toBeInTheDocument()
+  })
+
+  it('groups agents into stages and auto-expands only the current stage', () => {
+    stateMock.messages = [
+      createOrchestrateMessage([
+        { label: 'loc-struct:codex', agent: 'explore', sessionId: 'child-1', status: 'running' },
+        { label: 'loc-struct:codex#2', agent: 'explore', sessionId: 'child-2', status: 'completed' },
+        { label: 'analyze:codex#3', agent: 'general', sessionId: 'child-3', status: 'completed' },
+      ]),
+    ]
+
+    render(<OrchestratePanel sessionId="parent" directory="/repo" active />)
+
+    expect(screen.getByText('loc-struct')).toBeInTheDocument()
+    expect(screen.getByText('analyze')).toBeInTheDocument()
+    expect(document.querySelector('[data-stage-index="1"]')?.getAttribute('data-status')).toBe('running')
+    expect(document.querySelector('[data-stage-index="2"]')?.getAttribute('data-status')).toBe('completed')
+
+    // Current stage rows are visible; a completed stage stays collapsed until clicked.
+    expect(document.querySelector('[data-agent-index="1"]')).not.toBeNull()
+    expect(document.querySelector('[data-agent-index="3"]')).toBeNull()
+
+    fireEvent.click(screen.getByText('analyze'))
+    expect(document.querySelector('[data-agent-index="3"]')).not.toBeNull()
+  })
+
+  it('streams published logs and tolerates older runs without a logs field', () => {
+    stateMock.messages = [
+      createOrchestrateMessage(
+        [{ label: 'Review child', agent: 'reviewer', sessionId: 'child-1', status: 'running' }],
+        'running',
+        { logs: ['fanout complete 2'] },
+      ),
+    ]
+
+    const { unmount } = render(<OrchestratePanel sessionId="parent" directory="/repo" active />)
+
+    expect(screen.getByTestId('orchestrate-logs')).toHaveTextContent('fanout complete 2')
+
+    unmount()
+    stateMock.messages = [
+      createOrchestrateMessage([{ label: 'Review child', agent: 'reviewer', sessionId: 'child-1', status: 'running' }]),
+    ]
+    render(<OrchestratePanel sessionId="parent" directory="/repo" active />)
+    expect(screen.queryByTestId('orchestrate-logs')).not.toBeInTheDocument()
   })
 })

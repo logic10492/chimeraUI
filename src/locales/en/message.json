@@ -46,7 +46,16 @@
     "openPanel": "Open panel",
     "details": "Details",
     "code": "Code",
-    "output": "Output"
+    "output": "Output",
+    "progress": "Stage {{stage}}/{{stages}} · {{completed}}/{{total}} agents",
+    "viewProgram": "View program",
+    "status": {
+      "queued": "queued",
+      "running": "running",
+      "completed": "completed",
+      "failed": "failed",
+      "cancelled": "cancelled"
+    }
   },
   "toolSteps": {
     "separator": ", ",
