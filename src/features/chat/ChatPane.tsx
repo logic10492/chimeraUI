@@ -21,6 +21,7 @@ import { useChatSession } from '../../hooks/useChatSession'
 import { useModels } from '../../hooks/useModels'
 import { useModelSelection } from '../../hooks/useModelSelection'
 import { useServerStore } from '../../hooks/useServerStore'
+import { useConnectionState } from '../../hooks/useConnectionState'
 import { useCancelHint } from '../../hooks/useCancelHint'
 import {
   findUnmatchedInlineToolRequests,
@@ -83,6 +84,7 @@ export const ChatPane = memo(function ChatPane({
   const { models, isLoading: modelsLoading, error: modelsError, refetch: refetchModels } = useModels()
   const { activeServer, getHealth } = useServerStore()
   const activeServerHealth = activeServer ? getHealth(activeServer.id) : null
+  const sseConnectionState = useConnectionState()
   const hiddenModelKeys = useHiddenModelKeys()
   const visibleModels = useMemo(
     () => models.filter(model => !hiddenModelKeys.includes(getModelKey(model))),
@@ -220,6 +222,10 @@ export const ChatPane = memo(function ChatPane({
       }
     }
 
+    // SSE event stream is live: the server is demonstrably reachable, so a failed
+    // health probe is a transient false positive — don't show the blocking banner.
+    if (sseConnectionState === 'connected') return undefined
+
     if (!activeServerHealth || activeServerHealth.status === 'checking' || activeServerHealth.status === 'online') {
       return undefined
     }
@@ -250,7 +256,7 @@ export const ChatPane = memo(function ChatPane({
         responseBody,
       },
     }
-  }, [activeServer, activeServerHealth])
+  }, [activeServer, activeServerHealth, sseConnectionState])
 
   const navigationCtx = useMemo(
     () => ({ navigateToSession, currentSessionId: routeSessionId, currentDirectory: effectiveDirectory }),

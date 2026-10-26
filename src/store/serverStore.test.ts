@@ -186,6 +186,7 @@ describe('serverStore health check', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -257,6 +258,65 @@ describe('serverStore health check', () => {
 
     expect(staleHealth.status).toBe('error')
     expect(serverStore.getHealth('local')?.status).toBe('online')
+  })
+
+  it('retries a transient offline result for the active server', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetch)
+      .mockRejectedValueOnce(new Error('fetch failed'))
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: '1.16.0' }))
+    const { serverStore } = await import('./serverStore')
+
+    const health = await serverStore.checkHealth('local')
+    expect(health.status).toBe('offline')
+
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(serverStore.getHealth('local')?.status).toBe('online')
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry unauthorized servers', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ name: 'Unauthorized' }, { status: 401 }))
+    const { serverStore } = await import('./serverStore')
+
+    const health = await serverStore.checkHealth('local')
+    expect(health.status).toBe('unauthorized')
+
+    await vi.advanceTimersByTimeAsync(60000)
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets a manual check supersede a pending retry', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetch)
+      .mockRejectedValueOnce(new Error('fetch failed'))
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: '1.16.0' }))
+    const { serverStore } = await import('./serverStore')
+
+    expect((await serverStore.checkHealth('local')).status).toBe('offline')
+    expect((await serverStore.checkHealth('local')).status).toBe('online')
+
+    await vi.advanceTimersByTimeAsync(60000)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops retrying after switching to another server', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetch).mockRejectedValueOnce(new Error('fetch failed'))
+    const { serverStore } = await import('./serverStore')
+
+    expect((await serverStore.checkHealth('local')).status).toBe('offline')
+
+    const remote = serverStore.addServer({ name: 'Remote', url: 'http://remote.test' })
+    serverStore.setActiveServer(remote.id)
+
+    await vi.advanceTimersByTimeAsync(60000)
+
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 })
 

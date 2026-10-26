@@ -54,6 +54,7 @@ export type ServerChangeReason = 'server-switch' | 'local-runtime-url'
 const STORAGE_KEY = 'opencode-servers'
 const ACTIVE_SERVER_KEY = 'opencode-active-server'
 export const LOCAL_SERVER_ID = 'local'
+const HEALTH_RETRY_DELAYS = [2000, 5000, 10000, 30000]
 
 /**
  * Server Store
@@ -67,6 +68,8 @@ class ServerStore {
   private clockCalibrationMap = new Map<string, ServerClockCalibration>()
   private listeners: Set<Listener> = new Set()
   private localServerUrlOverride: string | null = null
+  private healthRetryTimer: ReturnType<typeof setTimeout> | null = null
+  private healthRetryAttempt = 0
 
   // server 切换监听器（用于触发 SSE 重连等副作用，避免循环依赖）
   private serverChangeListeners: Set<(newServerId: string, reason: ServerChangeReason) => void> = new Set()
@@ -360,6 +363,7 @@ class ServerStore {
     this.healthMap.delete(id)
     this.healthCheckSeqMap.delete(id)
     this.clockCalibrationMap.delete(id)
+    this.clearHealthRetry()
 
     if (wasActive) {
       this.activeServerId = this.servers[0]?.id ?? null
@@ -386,6 +390,7 @@ class ServerStore {
     this.notify()
 
     if (changed) {
+      this.clearHealthRetry()
       this.notifyServerChange(id, 'server-switch')
     }
 
@@ -411,10 +416,15 @@ class ServerStore {
   /**
    * 检查服务器健康状态
    */
-  async checkHealth(serverId: string): Promise<ServerHealth> {
+  async checkHealth(serverId: string, options?: { background?: boolean }): Promise<ServerHealth> {
     const storedServer = this.servers.find(s => s.id === serverId)
     if (!storedServer) {
       return { status: 'error', error: 'Server not found' }
+    }
+    // A fresh foreground check supersedes any pending retry. Background retries keep
+    // their attempt counter so the backoff can keep escalating.
+    if (serverId === this.activeServerId && options?.background !== true) {
+      this.clearHealthRetry()
     }
     const server = this.withRuntimeServerUrl(storedServer)
     const checkSeq = (this.healthCheckSeqMap.get(serverId) ?? 0) + 1
@@ -424,15 +434,46 @@ class ServerStore {
       if (this.healthCheckSeqMap.get(serverId) === checkSeq) {
         this.healthMap.set(serverId, health)
         this.notify()
+        if (serverId === this.activeServerId) {
+          if (health.status === 'offline' || health.status === 'error') {
+            this.scheduleHealthRetry(serverId)
+          } else if (health.status === 'online' || health.status === 'unauthorized') {
+            this.clearHealthRetry()
+          }
+        }
       }
       return health
     }
 
-    // 标记为检查中
-    this.healthMap.set(serverId, { status: 'checking' })
-    this.notify()
+    // 标记为检查中（后台重试不写 checking，避免横幅闪烁）
+    if (options?.background !== true) {
+      this.healthMap.set(serverId, { status: 'checking' })
+      this.notify()
+    }
 
     return commitHealth(await checkCandidateServerHealth({ serverUrl: server.url, auth: server.auth }))
+  }
+
+  private scheduleHealthRetry(serverId: string): void {
+    const attempt = this.healthRetryAttempt
+    this.clearHealthRetry()
+    const delay = HEALTH_RETRY_DELAYS[Math.min(attempt, HEALTH_RETRY_DELAYS.length - 1)]
+    this.healthRetryAttempt = attempt + 1
+    this.healthRetryTimer = setTimeout(() => {
+      this.healthRetryTimer = null
+      if (this.activeServerId !== serverId) return
+      const status = this.healthMap.get(serverId)?.status
+      if (status === 'online' || status === 'unauthorized') return
+      void this.checkHealth(serverId, { background: true }).catch(() => {})
+    }, delay)
+  }
+
+  private clearHealthRetry(): void {
+    if (this.healthRetryTimer) {
+      clearTimeout(this.healthRetryTimer)
+      this.healthRetryTimer = null
+    }
+    this.healthRetryAttempt = 0
   }
 
   /**
