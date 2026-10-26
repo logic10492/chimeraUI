@@ -52,7 +52,29 @@
     "renameTerminal": "Rename Terminal",
     "moveToRight": "Move to Right Panel",
     "moveToBottom": "Move to Bottom Panel",
-    "mcpServers": "MCP Servers"
+    "mcpServers": "MCP Servers",
+    "orchestrate": "Orchestrate"
+  },
+  "orchestratePanel": {
+    "empty": "No orchestrate runs in this session yet.",
+    "noSession": "No active session",
+    "onlyLoadedHistory": "Showing loaded history only.",
+    "untitled": "Orchestrate run",
+    "agentCount_one": "{{count}} agent",
+    "agentCount_other": "{{count}} agents",
+    "noAgents": "Waiting for subagents...",
+    "stop": "Stop agent",
+    "openSession": "Open session",
+    "details": "Details",
+    "code": "Code",
+    "result": "Result",
+    "status": {
+      "queued": "queued",
+      "running": "running",
+      "completed": "completed",
+      "failed": "failed",
+      "cancelled": "cancelled"
+    }
   },
   "graphPanel": {
     "title": "Graph & Language Services",

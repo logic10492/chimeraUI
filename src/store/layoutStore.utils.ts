@@ -40,6 +40,7 @@ export const PERSISTED_PANEL_TAB_TYPES: PersistedPanelTabType[] = [
   'skill',
   'worktree',
   'graph',
+  'orchestrate',
 ]
 
 // ============================================

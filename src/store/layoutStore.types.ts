@@ -6,7 +6,16 @@
 export type PanelPosition = 'bottom' | 'right'
 
 // 面板内容类型
-export type PanelTabType = 'status' | 'terminal' | 'files' | 'changes' | 'mcp' | 'skill' | 'worktree' | 'graph'
+export type PanelTabType =
+  | 'status'
+  | 'terminal'
+  | 'files'
+  | 'changes'
+  | 'mcp'
+  | 'skill'
+  | 'worktree'
+  | 'graph'
+  | 'orchestrate'
 export type PersistedPanelTabType = Exclude<PanelTabType, 'terminal'>
 
 // 文件预览的文件信息

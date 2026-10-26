@@ -23,6 +23,7 @@ import { DefaultRenderer } from '../tools/renderers/DefaultRenderer'
 import { TodoRenderer } from '../tools/renderers/TodoRenderer'
 import { TaskRenderer } from '../tools/renderers/TaskRenderer'
 import { SwarmRenderer } from '../tools/renderers/SwarmRenderer'
+import { OrchestrateRenderer } from '../tools/renderers/OrchestrateRenderer'
 import { hasTodos } from '../tools/renderers/todoUtils'
 import { ToolAttachments } from './ToolAttachments'
 
@@ -582,6 +583,10 @@ const ToolBody = memo(function ToolBody({
 
   if (lowerTool === 'task') {
     return <TaskRenderer part={part} data={data} onFullscreenChange={onFullscreenChange} />
+  }
+
+  if (lowerTool === 'orchestrate') {
+    return <OrchestrateRenderer part={part} data={data} onFullscreenChange={onFullscreenChange} />
   }
 
   if (lowerTool === 'chimera_swarm') {

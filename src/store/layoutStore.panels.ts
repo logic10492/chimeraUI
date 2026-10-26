@@ -21,6 +21,7 @@ export interface PanelSlice {
   addSkillTab(position: PanelPosition): string
   addWorktreeTab(position: PanelPosition): string
   addGraphTab(position: PanelPosition): string
+  addOrchestrateTab(position: PanelPosition): string
   removeTab(tabId: string): void
   updateTab(tabId: string, updates: Partial<Omit<PanelTab, 'id' | 'type'>>): void
   moveTab(tabId: string, toPosition: PanelPosition): void
@@ -140,6 +141,19 @@ export const panelMethods: PanelSlice & ThisType<LayoutStore> = {
   addGraphTab(position) {
     const existing = this.state.panelTabs.find(tab => tab.type === 'graph')
     if (!existing) return this.addTab({ id: 'graph', type: 'graph', position })
+    if (existing.position !== position) {
+      this.moveTab(existing.id, position)
+      return existing.id
+    }
+    this.state.activeTabId[position] = existing.id
+    this.setPanelOpen(position, true)
+    this.notify()
+    return existing.id
+  },
+
+  addOrchestrateTab(position) {
+    const existing = this.state.panelTabs.find(tab => tab.type === 'orchestrate')
+    if (!existing) return this.addTab({ id: 'orchestrate', type: 'orchestrate', position })
     if (existing.position !== position) {
       this.moveTab(existing.id, position)
       return existing.id
@@ -277,6 +291,9 @@ export const panelMethods: PanelSlice & ThisType<LayoutStore> = {
 
   openStatusPanel(options) {
     if (options?.automatic && this.rightPanelAutoOpenDismissed) return false
+    // Focusing a session auto-opens status, but it must not steal the panel
+    // away from a dedicated tab the user opened on purpose.
+    if (options?.automatic && this.getActiveTab('right')?.type === 'orchestrate') return false
     this.ensureStatusTab('right')
     this.state.activeTabId.right =
       this.state.panelTabs.find(tab => tab.type === 'status' && tab.position === 'right')?.id ?? null

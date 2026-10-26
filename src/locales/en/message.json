@@ -33,6 +33,21 @@
     "running": "Running",
     "failed": "Failed"
   },
+  "orchestrate": {
+    "title": "Orchestrate",
+    "agents_one": "{{count}} agent",
+    "agents_other": "{{count}} agents",
+    "running_one": "{{count}} running",
+    "running_other": "{{count}} running",
+    "completed_one": "{{count}} completed",
+    "completed_other": "{{count}} completed",
+    "failed_one": "{{count}} failed",
+    "failed_other": "{{count}} failed",
+    "openPanel": "Open panel",
+    "details": "Details",
+    "code": "Code",
+    "output": "Output"
+  },
   "toolSteps": {
     "separator": ", ",
     "executeDone_one": "Ran {{count}} command",

@@ -24,6 +24,9 @@ const SessionStatusPanel = lazy(() =>
   import('./SessionStatusPanel').then(module => ({ default: module.SessionStatusPanel })),
 )
 const GraphPanel = lazy(() => import('./GraphPanel').then(module => ({ default: module.GraphPanel })))
+const OrchestratePanel = lazy(() =>
+  import('./OrchestratePanel').then(module => ({ default: module.OrchestratePanel })),
+)
 
 interface BottomPanelProps {
   directory?: string
@@ -236,6 +239,16 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
           {activeTab.type === 'graph' ? (
             <Suspense fallback={<PanelFallback />}>
               <GraphPanel apiScope={getTerminalScope()} isResizing={isPanelResizing} />
+            </Suspense>
+          ) : null}
+
+          {activeTab.type === 'orchestrate' ? (
+            <Suspense fallback={<PanelFallback />}>
+              <OrchestratePanel
+                sessionId={sessionId}
+                directory={normalizedDirectory}
+                active={activeTab.type === 'orchestrate'}
+              />
             </Suspense>
           ) : null}
         </>

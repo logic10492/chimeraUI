@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToolPartView } from './ToolPartView'
 import type { FilePart, ToolPart } from '../../../types/message'
+import { layoutStore } from '../../../store/layoutStore'
 
 const { getActiveCalibratedNowMock, getPartOutputMock } = vi.hoisted(() => ({
   getActiveCalibratedNowMock: vi.fn<() => number | undefined>(() => undefined),
@@ -262,5 +263,59 @@ describe('ToolPartView attachments', () => {
 
     const img = await screen.findByRole('img')
     expect(img).toHaveAttribute('src', 'data:image/png;base64,LAZY')
+  })
+})
+
+function createOrchestrateToolPart(suffix = 'one'): ToolPart {
+  return {
+    id: `orchestrate-tool-${suffix}`,
+    sessionID: 'session-1',
+    messageID: `message-orchestrate-${suffix}`,
+    type: 'tool',
+    callID: 'call-orchestrate',
+    tool: 'orchestrate',
+    state: {
+      status: 'completed',
+      input: { code: 'await orche.parallel([])', description: 'Review batch' },
+      output: '## Result\nall good',
+      title: 'Review batch',
+      metadata: {
+        agents: [{ label: 'Child A', agent: 'reviewer', sessionId: 'child-1', status: 'completed' }],
+      },
+      time: { start: 1_000, end: 2_000 },
+    },
+  }
+}
+
+describe('ToolPartView orchestrate card', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('renders the compact orchestrate card and opens the panel from it', () => {
+    const addOrchestrateTab = vi.spyOn(layoutStore, 'addOrchestrateTab').mockReturnValue('orchestrate')
+    render(<ToolPartView part={createOrchestrateToolPart('open')} />)
+
+    fireEvent.click(screen.getByText('Review batch'))
+
+    expect(screen.getByTestId('orchestrate-card')).toBeInTheDocument()
+    expect(screen.getByText('orchestrate.agents')).toBeInTheDocument()
+    expect(screen.getByText('orchestrate.completed')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('orchestrate.openPanel'))
+    expect(addOrchestrateTab).toHaveBeenCalledWith('right')
+  })
+
+  it('keeps code and long output collapsed until details are requested', () => {
+    render(<ToolPartView part={createOrchestrateToolPart('details')} />)
+
+    fireEvent.click(screen.getByText('Review batch'))
+    expect(screen.queryByTestId('orchestrate-code')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('orchestrate-output')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('orchestrate.details'))
+
+    expect(screen.getByTestId('orchestrate-code')).toBeInTheDocument()
+    expect(screen.getByTestId('orchestrate-output')).toBeInTheDocument()
   })
 })

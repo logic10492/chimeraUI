@@ -33,6 +33,17 @@
     "running": "运行中",
     "failed": "失败"
   },
+  "orchestrate": {
+    "title": "Orchestrate",
+    "agents": "{{count}} 个子代理",
+    "running": "{{count}} 个运行中",
+    "completed": "{{count}} 个已完成",
+    "failed": "{{count}} 个失败",
+    "openPanel": "打开面板",
+    "details": "详情",
+    "code": "代码",
+    "output": "输出"
+  },
   "toolSteps": {
     "separator": "，",
     "executeDone": "执行了 {{count}} 条命令",

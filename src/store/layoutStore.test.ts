@@ -87,6 +87,36 @@ describe('LayoutStore panel and terminal layout', () => {
     },
   )
 
+  it('persists one orchestrate tab and moves it between panels instead of duplicating it', () => {
+    const store = new LayoutStore()
+
+    expect(store.addOrchestrateTab('right')).toBe('orchestrate')
+    expect(store.addOrchestrateTab('bottom')).toBe('orchestrate')
+
+    const orchestrateTabs = store.getState().panelTabs.filter(tab => tab.type === 'orchestrate')
+    expect(orchestrateTabs).toEqual([expect.objectContaining({ id: 'orchestrate', position: 'bottom' })])
+    expect(store.getState().activeTabId.bottom).toBe('orchestrate')
+
+    const restored = new LayoutStore().getState()
+    expect(restored.panelTabs.filter(tab => tab.type === 'orchestrate')).toEqual([
+      expect.objectContaining({ id: 'orchestrate', position: 'bottom' }),
+    ])
+  })
+
+  it('does not let automatic status focus steal the right panel from an orchestrate tab', () => {
+    const store = new LayoutStore()
+
+    store.addOrchestrateTab('right')
+
+    expect(store.openStatusPanel({ automatic: true })).toBe(false)
+    expect(store.getActiveTab('right')?.type).toBe('orchestrate')
+    expect(store.getState().activeTabId.right).toBe('orchestrate')
+
+    // Explicit user action still switches to status.
+    expect(store.openStatusPanel()).toBe(true)
+    expect(store.getActiveTab('right')?.type).toBe('status')
+  })
+
   it('keeps bottom and right panels open when syncing a directory with no terminal sessions', () => {
     const store = new LayoutStore()
 
