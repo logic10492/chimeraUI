@@ -162,18 +162,8 @@ export function useChatMessageSender({
         // 记录发送前的消息数量，作为判断 SSE 是否推送新消息的基线
         const msgCountBeforeSend = messageStore.getSessionState(sessionId)?.messages.length ?? 0
 
-        await sendMessageAsync({
-          sessionId,
-          text: input.content,
-          attachments: input.attachments,
-          model: input.model,
-          agent: input.options?.agent,
-          variant: input.options?.variant,
-          directory: input.directory,
-        })
-
-        // 兜底：等待短暂时间后检查 SSE 是否已推送用户消息，
-        // 若未收到则主动拉取补齐，避免 SSE 断流导致用户消息不显示
+        // 兜底在请求尚未返回时就启动：prompt_async 可能等实例初始化数秒，
+        // 若放在 await 之后，首次发送必然再额外慢一个初始化周期。
         const pullSessionId = sessionId
         const pullDir = input.directory
         setTimeout(() => {
@@ -201,6 +191,16 @@ export function useChatMessageSender({
               // 拉取失败不影响主流程，SSE 重连后仍可补齐
             })
         }, 1500)
+
+        await sendMessageAsync({
+          sessionId,
+          text: input.content,
+          attachments: input.attachments,
+          model: input.model,
+          agent: input.options?.agent,
+          variant: input.options?.variant,
+          directory: input.directory,
+        })
 
         return true
       } catch (error) {

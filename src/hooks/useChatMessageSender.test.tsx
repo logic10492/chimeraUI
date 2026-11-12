@@ -2,10 +2,11 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChatMessageSender } from './useChatMessageSender'
 
-const { getSessionStateMock, getSessionMessagesMock, handleMessageUpdatedMock } = vi.hoisted(() => ({
+const { getSessionStateMock, getSessionMessagesMock, handleMessageUpdatedMock, sendMessageAsyncMock } = vi.hoisted(() => ({
   getSessionStateMock: vi.fn(),
   getSessionMessagesMock: vi.fn(),
   handleMessageUpdatedMock: vi.fn(),
+  sendMessageAsyncMock: vi.fn(),
 }))
 
 vi.mock('../store/messageStore', () => ({
@@ -39,7 +40,7 @@ vi.mock('../store/serverStore', () => ({
 }))
 
 vi.mock('../api/message', () => ({
-  sendMessageAsync: vi.fn(() => Promise.resolve()),
+  sendMessageAsync: sendMessageAsyncMock,
   getSessionMessages: getSessionMessagesMock,
 }))
 
@@ -55,6 +56,7 @@ describe('useChatMessageSender fallback reconciliation', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    sendMessageAsyncMock.mockResolvedValue(undefined)
     getSessionStateMock.mockReturnValue(undefined)
     getSessionMessagesMock.mockResolvedValue([
       {
@@ -85,9 +87,13 @@ describe('useChatMessageSender fallback reconciliation', () => {
       }),
     )
 
-    await act(async () => {
-      expect(await result.current.handleSend('hello', [])).toBe(true)
+    let resolveSend!: () => void
+    sendMessageAsyncMock.mockImplementation(() => {
+      const { promise, resolve } = Promise.withResolvers<void>()
+      resolveSend = resolve
+      return promise
     })
+    const sendPromise = result.current.handleSend('hello', [])
     expect(getSessionMessagesMock).not.toHaveBeenCalled()
 
     await act(async () => {
@@ -96,5 +102,9 @@ describe('useChatMessageSender fallback reconciliation', () => {
 
     expect(getSessionMessagesMock).toHaveBeenCalledWith('ses_new', 5, '/repo')
     expect(handleMessageUpdatedMock).toHaveBeenCalledWith(expect.objectContaining({ id: 'msg_user', role: 'user' }))
+    await act(async () => {
+      resolveSend()
+      expect(await sendPromise).toBe(true)
+    })
   })
 })
