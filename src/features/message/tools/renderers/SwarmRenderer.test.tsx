@@ -21,6 +21,10 @@ vi.mock('../../../../components/Icons', () => ({
   StopIcon: () => <span />,
 }))
 
+vi.mock('../../../../components/ContentBlock', () => ({
+  ContentBlock: ({ content, label }: { content: string; label: string }) => <div role="alert" aria-label={label}>{content}</div>,
+}))
+
 vi.mock('../../../../contexts/SessionNavigationContext', () => ({
   useSessionNavigation: () => ({
     currentSessionId: 'parent',
@@ -256,4 +260,22 @@ describe('SwarmRenderer background swarm', () => {
         ?.status,
     ).toBe('running')
   })
+})
+
+describe('SwarmRenderer parent errors', () => {
+  for (const background of [true, false]) {
+    it(`shows the real parent error with no children (background=${background})`, () => {
+      const part = createPart()
+      part.state = {
+        status: 'error',
+        input: { description: 'missing template', items: ['a.ts'], background },
+        error: 'Provide prompt_template or choose a preset.',
+        metadata: { background },
+      }
+      render(<SwarmRenderer part={part} data={{}} />)
+
+      expect(screen.getByRole('alert').textContent).toContain('Provide prompt_template or choose a preset.')
+      expect(screen.queryByText('Waiting for subagents...')).not.toBeInTheDocument()
+    })
+  }
 })

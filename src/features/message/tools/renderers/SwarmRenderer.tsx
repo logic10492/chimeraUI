@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ContentBlock } from '../../../../components/ContentBlock'
 import { ChevronRightIcon, ExternalLinkIcon, StopIcon } from '../../../../components/Icons'
 import { useSessionNavigation } from '../../../../contexts/SessionNavigationContext'
 import { abortSession } from '../../../../api/session'
@@ -87,11 +88,22 @@ export function findRequestForChild<T extends ApiPermissionRequest | ApiQuestion
 }
 
 export const SwarmRenderer = memo(function SwarmRenderer({ part }: ToolRendererProps) {
+  const { t } = useTranslation('message')
   const metadata = part.state.metadata as Record<string, unknown> | undefined
   const background = metadata?.background === true
   const childRuns = useMemo(() => getSwarmChildRuns(metadata, part.state.status), [metadata, part.state.status])
+  const errorBlock =
+    part.state.status === 'error' && part.state.error !== undefined ? (
+      <ContentBlock
+        label={t('task.error')}
+        stateKey={`message:${part.messageID}:tool:${part.id}:swarm-error`}
+        content={typeof part.state.error === 'string' ? part.state.error : JSON.stringify(part.state.error)}
+        variant="error"
+      />
+    ) : null
 
   if (childRuns.length === 0) {
+    if (errorBlock) return errorBlock
     // A background receipt is terminal: the completed part will never grow
     // childRuns, so do not promise subagents that cannot appear.
     if (background && (part.state.status === 'completed' || part.state.status === 'error')) return null
@@ -100,6 +112,7 @@ export const SwarmRenderer = memo(function SwarmRenderer({ part }: ToolRendererP
 
   return (
     <div className="space-y-2">
+      {errorBlock}
       {background && <SwarmBackgroundBadge />}
       {childRuns.map(run => (
         <SwarmChild key={`${run.index}:${run.sessionId ?? run.title}`} run={run} background={background} />
