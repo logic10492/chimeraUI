@@ -2,11 +2,12 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChatMessageSender } from './useChatMessageSender'
 
-const { getSessionStateMock, getSessionMessagesMock, handleMessageUpdatedMock, sendMessageAsyncMock } = vi.hoisted(() => ({
+const { getSessionStateMock, getSessionMessagesMock, handleMessageUpdatedMock, sendMessageAsyncMock, upsertLocalMessageMock } = vi.hoisted(() => ({
   getSessionStateMock: vi.fn(),
   getSessionMessagesMock: vi.fn(),
   handleMessageUpdatedMock: vi.fn(),
   sendMessageAsyncMock: vi.fn(),
+  upsertLocalMessageMock: vi.fn(),
 }))
 
 vi.mock('../store/messageStore', () => ({
@@ -19,7 +20,7 @@ vi.mock('../store/messageStore', () => ({
     handleMessageUpdated: handleMessageUpdatedMock,
     handlePartUpdated: vi.fn(),
     removeMessage: vi.fn(),
-    upsertLocalMessage: vi.fn(),
+    upsertLocalMessage: upsertLocalMessageMock,
   },
 }))
 
@@ -94,6 +95,9 @@ describe('useChatMessageSender fallback reconciliation', () => {
       return promise
     })
     const sendPromise = result.current.handleSend('hello', [])
+    expect(upsertLocalMessageMock).toHaveBeenCalledWith(
+      expect.objectContaining({ info: expect.objectContaining({ id: expect.stringMatching(/^optimistic_/) }) }),
+    )
     expect(getSessionMessagesMock).not.toHaveBeenCalled()
 
     await act(async () => {

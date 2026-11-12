@@ -146,6 +146,7 @@ export function useChatMessageSender({
       let rollbackSnapshot = sessionId ? messageStore.createSendRollbackSnapshot(sessionId) : null
 
       let sendFailed = false
+      let optimisticId: string | undefined
       try {
         if (!sessionId) {
           if (!input.allowCreateSession) return false
@@ -158,6 +159,18 @@ export function useChatMessageSender({
           messageStore.truncateAfterRevert(sessionId)
         }
 
+        optimisticId = `optimistic_${crypto.randomUUID()}`
+        messageStore.upsertLocalMessage(
+          buildLocalQueuedMessage({
+            sessionId,
+            messageId: optimisticId,
+            text: input.content,
+            attachments: input.attachments,
+            agent: input.options?.agent,
+            model: { providerID: input.model.providerID, modelID: input.model.modelID, variant: input.options?.variant },
+            createdAt: Date.now(),
+          }),
+        )
         messageStore.setStreaming(sessionId, true)
 
         // 记录发送前的消息数量，作为判断 SSE 是否推送新消息的基线
@@ -213,6 +226,7 @@ export function useChatMessageSender({
       } catch (error) {
         sendFailed = true
         handleError('send message', error)
+        if (optimisticId && sessionId) messageStore.removeMessage(sessionId, optimisticId)
         if (sessionId) {
           if (rollbackSnapshot) {
             messageStore.restoreSendRollback(sessionId, rollbackSnapshot)

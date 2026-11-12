@@ -586,6 +586,19 @@ class MessageStore {
 
   handleMessageUpdated(apiMsg: ApiMessage) {
     const state = this.ensureSession(apiMsg.sessionID)
+    if (apiMsg.role === 'user') {
+      const optimisticIndex = state.messages.findIndex(m => m.info.id.startsWith('optimistic_'))
+      if (optimisticIndex >= 0) {
+        const optimistic = state.messages[optimisticIndex]
+        state.messages = [
+          ...state.messages.slice(0, optimisticIndex),
+          { ...optimistic, info: toUIMessageInfo(apiMsg), isStreaming: false },
+          ...state.messages.slice(optimisticIndex + 1),
+        ]
+        this.notify([apiMsg.sessionID])
+        return
+      }
+    }
     const existingIndex = state.messages.findIndex(m => m.info.id === apiMsg.id)
 
     if (existingIndex >= 0) {

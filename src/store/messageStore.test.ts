@@ -59,6 +59,21 @@ describe('messageStore', () => {
     messageStore.clearAll()
   })
 
+  it('replaces an optimistic user message with the server message in place', () => {
+    messageStore.upsertLocalMessage({
+      info: { id: 'optimistic_1', sessionID: 'session-1', role: 'user', time: { created: 1 } },
+      parts: [{ id: 'local-text', type: 'text', text: 'hello', sessionID: 'session-1', messageID: 'optimistic_1' }],
+      isStreaming: false,
+    })
+
+    messageStore.handleMessageUpdated({ ...createAssistantMessage('server-user'), role: 'user' })
+
+    const state = messageStore.getSessionState('session-1')
+    expect(state?.messages).toHaveLength(1)
+    expect(state?.messages[0].info.id).toBe('server-user')
+    expect(state?.messages[0].parts[0]).toMatchObject({ id: 'local-text', text: 'hello' })
+  })
+
   it('applies a part update when the message already exists', () => {
     messageStore.handleMessageUpdated(createAssistantMessage('message-1'))
     messageStore.handlePartUpdated(createTextPart('part-1', 'message-1', 'hello'))
