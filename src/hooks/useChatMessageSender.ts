@@ -178,9 +178,9 @@ export function useChatMessageSender({
         const pullDir = input.directory
         setTimeout(() => {
           const state = messageStore.getSessionState(pullSessionId)
-          if (!state) return
-          // 消息数量增加了，说明 SSE 已正常推送
-          if (state.messages.length > msgCountBeforeSend) return
+          // 消息数量增加了，说明 SSE 已正常推送；新 session 尚无 state 时也必须拉取，
+          // 否则首次发送只能等实例初始化或手动刷新才能看到。
+          if (state && state.messages.length > msgCountBeforeSend) return
 
           getSessionMessages(pullSessionId, 5, pullDir)
             .then(apiMessages => {
