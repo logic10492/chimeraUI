@@ -145,6 +145,7 @@ export function useChatMessageSender({
 
       let rollbackSnapshot = sessionId ? messageStore.createSendRollbackSnapshot(sessionId) : null
 
+      let sendFailed = false
       try {
         if (!sessionId) {
           if (!input.allowCreateSession) return false
@@ -163,15 +164,17 @@ export function useChatMessageSender({
         const msgCountBeforeSend = messageStore.getSessionState(sessionId)?.messages.length ?? 0
 
         // 兜底在请求尚未返回时就启动：prompt_async 可能等实例初始化数秒，
-        // 若放在 await 之后，首次发送必然再额外慢一个初始化周期。
+        // 若放在 await 之后，首次发送必然再额外慢一个初始化周期。单次拉取也可能
+        // 早于用户消息落库，因此有界重试直到 SSE/拉取出现新消息或发送失败。
         const pullSessionId = sessionId
         const pullDir = input.directory
-        setTimeout(() => {
+        let attempts = 0
+        const reconcile = () => {
+          if (sendFailed) return
           const state = messageStore.getSessionState(pullSessionId)
-          // 消息数量增加了，说明 SSE 已正常推送；新 session 尚无 state 时也必须拉取，
-          // 否则首次发送只能等实例初始化或手动刷新才能看到。
           if (state && state.messages.length > msgCountBeforeSend) return
-
+          if (attempts >= 8) return
+          attempts += 1
           getSessionMessages(pullSessionId, 5, pullDir)
             .then(apiMessages => {
               for (const msg of apiMessages) {
@@ -187,10 +190,14 @@ export function useChatMessageSender({
                 }
               }
             })
-            .catch(() => {
-              // 拉取失败不影响主流程，SSE 重连后仍可补齐
+            .catch(() => {})
+            .finally(() => {
+              if (sendFailed || attempts >= 8) return
+              const latest = messageStore.getSessionState(pullSessionId)
+              if (!latest || latest.messages.length <= msgCountBeforeSend) setTimeout(reconcile, 1500)
             })
-        }, 1500)
+        }
+        setTimeout(reconcile, 1500)
 
         await sendMessageAsync({
           sessionId,
@@ -204,6 +211,7 @@ export function useChatMessageSender({
 
         return true
       } catch (error) {
+        sendFailed = true
         handleError('send message', error)
         if (sessionId) {
           if (rollbackSnapshot) {

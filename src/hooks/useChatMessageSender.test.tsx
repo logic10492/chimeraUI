@@ -107,4 +107,50 @@ describe('useChatMessageSender fallback reconciliation', () => {
       expect(await sendPromise).toBe(true)
     })
   })
+
+  it('retries when the first pull is still empty', async () => {
+    getSessionMessagesMock.mockReset()
+    getSessionMessagesMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ info: { id: 'msg_user', role: 'user', sessionID: 'ses_new' }, parts: [] }])
+    handleMessageUpdatedMock.mockImplementation(() => getSessionStateMock.mockReturnValue({ messages: [{}] }))
+    const { result } = renderHook(() =>
+      useChatMessageSender({
+        routeSessionId: 'ses_new',
+        effectiveDirectory: '/repo',
+        currentModel: { providerId: 'test', id: 'model' } as never,
+        isSessionBusy: false,
+        queuedFollowups: [],
+        queuedFollowupSendingId: undefined,
+        queuedFollowupFailedId: undefined,
+        queueFollowupMessages: false,
+        navigateToSession: vi.fn(),
+        createSession: vi.fn(),
+        setRestoredContent: vi.fn(),
+      }),
+    )
+    let resolveSend!: () => void
+    sendMessageAsyncMock.mockImplementation(() => {
+      const { promise, resolve } = Promise.withResolvers<void>()
+      resolveSend = resolve
+      return promise
+    })
+    const sendPromise = result.current.handleSend('hello', [])
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500)
+    })
+    expect(getSessionMessagesMock).toHaveBeenCalledTimes(1)
+    expect(handleMessageUpdatedMock).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500)
+    })
+    expect(getSessionMessagesMock).toHaveBeenCalledTimes(2)
+    expect(handleMessageUpdatedMock).toHaveBeenCalledWith(expect.objectContaining({ id: 'msg_user' }))
+    await act(async () => {
+      resolveSend()
+      expect(await sendPromise).toBe(true)
+    })
+  })
 })
