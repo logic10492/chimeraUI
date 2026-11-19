@@ -68,6 +68,23 @@ describe('sdk request lifecycle', () => {
     expect(getSDKClient({ serverID: 'server-a', directory: '/same' })).toBe(serverA)
   })
 
+  it('sends the webui client header even when the server has no auth', async () => {
+    const { getSDKClient } = await import('./sdk')
+    const client = getSDKClient() as unknown as MockClient
+
+    expect(client.config.headers['x-chimera-client']).toBe('webui')
+    expect(client.config.headers.Authorization).toBeUndefined()
+  })
+
+  it('keeps basic auth alongside the webui client header', async () => {
+    const { getSDKClient } = await import('./sdk')
+    getServerAuthMock.mockReturnValue({ username: 'user', password: 'secret' })
+    const client = getSDKClient() as unknown as MockClient
+
+    expect(client.config.headers['x-chimera-client']).toBe('webui')
+    expect(client.config.headers.Authorization).toBe('Basic user:secret')
+  })
+
   it('aborts in-flight SDK requests when the server endpoint changes', async () => {
     const { abortInFlightApiRequests, getSDKClient } = await import('./sdk')
     let signal: AbortSignal | undefined

@@ -163,7 +163,7 @@ function buildCacheKey(serverID: string, baseUrl: string): string {
 }
 
 function buildHeaders(serverID: string): Record<string, string> {
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { 'x-chimera-client': 'webui' }
   const auth = serverStore.getServerAuth(serverID)
   if (auth?.password) {
     headers['Authorization'] = makeBasicAuthHeader(auth)

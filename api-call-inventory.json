@@ -923,7 +923,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": {
         "contentTypes": ["application/json"],
-        "fields": ["agent", "model", "parentID", "permission", "title", "workspaceID"],
+        "fields": ["agent", "client", "model", "parentID", "permission", "title", "workspaceID"],
         "required": []
       },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
