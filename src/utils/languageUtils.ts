@@ -77,6 +77,7 @@ export function detectLanguage(filePath?: string): string {
     yml: 'yaml',
     md: 'markdown',
     html: 'html',
+    htm: 'html',
     css: 'css',
     scss: 'scss',
     less: 'less',

@@ -17,6 +17,15 @@ export function isMarkdownPreview(language: string, mimeType?: string): boolean 
   return MARKDOWN_MIME_TYPES.has(mimeType.split(';', 1)[0].toLowerCase())
 }
 
+export const HTML_LANGUAGES = new Set(['html', 'htm'])
+export const HTML_MIME_TYPES = new Set(['text/html'])
+
+export function isHtmlPreview(language: string, mimeType?: string): boolean {
+  if (HTML_LANGUAGES.has(language.toLowerCase())) return true
+  if (!mimeType) return false
+  return HTML_MIME_TYPES.has(mimeType.split(';', 1)[0].toLowerCase())
+}
+
 export function byteOffsetToCodeUnitIndex(text: string, byteOffset: number): number {
   let bytes = 0
   let index = 0

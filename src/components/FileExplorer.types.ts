@@ -79,6 +79,14 @@ export interface MarkdownFilePreviewProps {
   targetRanges?: readonly TargetLineRange[]
 }
 
+export interface HtmlFilePreviewProps {
+  text: string
+  isResizing?: boolean
+  targetLine?: number
+  targetKey?: string
+  targetRanges?: readonly TargetLineRange[]
+}
+
 export interface BinaryPlaceholderProps {
   mimeType: string
   fileName: string

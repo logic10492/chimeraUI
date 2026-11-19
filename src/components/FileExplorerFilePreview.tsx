@@ -18,11 +18,12 @@ import {
 } from '../utils/mimeUtils'
 import { downloadFileContent } from '../utils/downloadUtils'
 import { DownloadIcon, MaximizeIcon, AlertCircleIcon } from './Icons'
-import { isMarkdownPreview } from './FileExplorer.utils'
+import { isHtmlPreview, isMarkdownPreview } from './FileExplorer.utils'
 import { MediaPreview } from './FileExplorerMediaPreview'
 import { BinaryPlaceholder } from './FileExplorerBinaryPlaceholder'
 import { TextMediaPreview } from './FileExplorerTextMediaPreview'
 import { MarkdownFilePreview } from './FileExplorerMarkdownFilePreview'
+import { HtmlFilePreview } from './FileExplorerHtmlFilePreview'
 import type { FilePreviewProps } from './FileExplorer.types'
 
 export function FilePreview({
@@ -76,6 +77,14 @@ export function FilePreview({
       const text = isBinaryContent(content.encoding) ? decodeBase64Text(content.content) : content.content
       return {
         type: 'markdown' as const,
+        text,
+      }
+    }
+
+    if (isHtmlPreview(language, content.mimeType)) {
+      const text = isBinaryContent(content.encoding) ? decodeBase64Text(content.content) : content.content
+      return {
+        type: 'html' as const,
         text,
       }
     }
@@ -162,6 +171,17 @@ export function FilePreview({
       case 'markdown':
         return (
           <MarkdownFilePreview
+            key={targetKey ?? path ?? fileName}
+            text={displayContent.text}
+            isResizing={false}
+            targetLine={targetLine}
+            targetKey={targetKey}
+            targetRanges={targetRanges}
+          />
+        )
+      case 'html':
+        return (
+          <HtmlFilePreview
             key={targetKey ?? path ?? fileName}
             text={displayContent.text}
             isResizing={false}
@@ -280,6 +300,15 @@ export function FilePreview({
           />
         ) : displayContent?.type === 'markdown' ? (
           <MarkdownFilePreview
+            key={targetKey ?? path ?? fileName}
+            text={displayContent.text}
+            isResizing={isResizing}
+            targetLine={targetLine}
+            targetKey={targetKey}
+            targetRanges={targetRanges}
+          />
+        ) : displayContent?.type === 'html' ? (
+          <HtmlFilePreview
             key={targetKey ?? path ?? fileName}
             text={displayContent.text}
             isResizing={isResizing}
