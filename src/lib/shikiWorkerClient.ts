@@ -7,8 +7,10 @@ import {
   normalizeCodeBlockTheme,
 } from './codeBlockThemes'
 
+type HighlightResponse = Extract<WorkerResponse, { type: 'highlight' }>
+
 type PendingRequest = {
-  resolve: (response: WorkerResponse) => void
+  resolve: (response: HighlightResponse) => void
   reject: (error: unknown) => void
 }
 
@@ -62,6 +64,7 @@ function getWorker(): Worker {
     workerReadyPromiseReject?.(error)
     pendingRequests.forEach(pending => pending.reject(error))
     pendingRequests.clear()
+    latestRequestByKey.clear()
     workerReady = null
     workerReadyPromiseResolve = null
     workerReadyPromiseReject = null
@@ -138,8 +141,21 @@ async function workerHighlight(params: {
 
   return new Promise<Extract<WorkerResponse, { type: 'highlight' }>>((resolve, reject) => {
     pendingRequests.set(id, {
-      resolve: resolve as (response: WorkerResponse) => void,
-      reject,
+      resolve: response => {
+        pendingRequests.delete(id)
+        // 只有仍然是该 key 的最新请求才允许完成；旧请求迟到完成时不能清掉新请求的记录。
+        if (latestRequestByKey.get(params.key) !== id) {
+          reject(new Error('superseded'))
+          return
+        }
+        latestRequestByKey.delete(params.key)
+        resolve(response)
+      },
+      reject: error => {
+        pendingRequests.delete(id)
+        if (latestRequestByKey.get(params.key) === id) latestRequestByKey.delete(params.key)
+        reject(error)
+      },
     })
     w.postMessage({ type: 'highlight', id, ...params } satisfies WorkerRequest)
   })
@@ -153,7 +169,6 @@ export async function highlightTokensInWorker(params: {
   complete?: boolean
 }): Promise<{ id: number; code: string; tokens: HighlightTokens }> {
   const result = await workerHighlight({ ...params, mode: 'tokens' })
-  if (result.id !== latestRequestByKey.get(params.key)) throw new Error('superseded')
   return {
     id: result.id,
     code: result.code,
@@ -168,7 +183,6 @@ export async function highlightHtmlInWorker(params: {
   theme: BundledTheme
 }): Promise<{ id: number; html: string }> {
   const result = await workerHighlight({ ...params, mode: 'html', complete: true })
-  if (result.id !== latestRequestByKey.get(params.key)) throw new Error('superseded')
   return { id: result.id, html: result.html ?? '' }
 }
 
@@ -177,4 +191,12 @@ export function disposeShikiWorkerKey(key: string) {
 
   worker.postMessage({ type: 'dispose', key } satisfies WorkerRequest)
   latestRequestByKey.delete(key)
+}
+
+/** 只读内省，供测试与诊断使用。 */
+export function getShikiWorkerState() {
+  return {
+    pendingRequests: pendingRequests.size,
+    latestRequestByKey: latestRequestByKey.size,
+  }
 }
