@@ -37,12 +37,14 @@ interface ReasoningPartViewProps {
   part: ReasoningPart
   groupedParts?: ReasoningPart[]
   isStreaming?: boolean
+  directory?: string
 }
 
 export const ReasoningPartView = memo(function ReasoningPartView({
   part,
   groupedParts = [part],
   isStreaming,
+  directory,
 }: ReasoningPartViewProps) {
   const { t } = useTranslation('message')
   const { reasoningDisplayMode } = useTheme()
@@ -197,7 +199,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({
             {shouldRenderBody &&
               (isMarkdownMode ? (
                 <div className="text-[length:var(--fs-sm)]">
-                  <MarkdownRenderer content={expandedText} variant="reasoning" isStreaming={isPartStreaming} />
+                  <MarkdownRenderer content={expandedText} variant="reasoning" isStreaming={isPartStreaming} directory={directory} />
                 </div>
               ) : (
                 <div className="text-[length:var(--fs-sm)] leading-6 italic whitespace-pre-wrap break-words overflow-x-hidden text-text-300">
@@ -210,7 +212,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({
     ) : (
       <div ref={summaryContainerRef} className="relative min-w-0 overflow-hidden text-[length:var(--fs-sm)]">
         {isMarkdownMode ? (
-          <MarkdownRenderer content={displayText} variant="reasoning" isStreaming={isPartStreaming} />
+          <MarkdownRenderer content={displayText} variant="reasoning" isStreaming={isPartStreaming} directory={directory} />
         ) : (
           <span className="block min-w-0 text-[length:var(--fs-sm)] leading-5 italic whitespace-pre-wrap break-words text-text-300">
             {displayText}

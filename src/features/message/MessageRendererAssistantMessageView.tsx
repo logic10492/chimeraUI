@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { CopyButton, SmoothHeight } from '../../components/ui'
 import { useTheme } from '../../hooks/useTheme'
 import type { Message, TextPart, AssistantMessageInfo } from '../../types/message'
+import { messageStore } from '../../store/messageStore'
 import { formatDuration, formatCompletedAt, formatDetailedDateTime } from '../../utils/formatUtils'
 import { TextPartView } from './parts/TextPartView'
 import { ReasoningPartView } from './parts/ReasoningPartView'
@@ -35,6 +36,7 @@ export const AssistantMessageView = memo(function AssistantMessageView({
 }: AssistantMessageViewProps) {
   const { t } = useTranslation('message')
   const { parts, isStreaming, info } = message
+  const directory = messageStore.getSessionDirectory(message.info.sessionID)
   const { stepFinishDisplay, completedAtFormat } = useTheme()
 
   const wrapperRef = useEntryGrowAnimation(info.time.created)
@@ -144,6 +146,7 @@ export const AssistantMessageView = memo(function AssistantMessageView({
                   part={latest}
                   isStreaming={isStreaming && !endedReasoningIds.has(latest.id)}
                   groupedParts={item.parts}
+                  directory={directory}
                 />
               )
             }
@@ -151,10 +154,10 @@ export const AssistantMessageView = memo(function AssistantMessageView({
             const part = item.part
             switch (part.type) {
               case 'text':
-                return <TextPartView key={part.id} part={part} isStreaming={isStreaming} />
+                return <TextPartView key={part.id} part={part} isStreaming={isStreaming} directory={directory} />
               case 'reasoning': {
                 const reasoningDone = endedReasoningIds.has(part.id)
-                return <ReasoningPartView key={part.id} part={part} isStreaming={isStreaming && !reasoningDone} />
+                return <ReasoningPartView key={part.id} part={part} isStreaming={isStreaming && !reasoningDone} directory={directory} />
               }
               case 'step-finish':
                 return (

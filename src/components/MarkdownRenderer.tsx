@@ -18,6 +18,8 @@ import { useTheme } from '../hooks/useTheme'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
 import { detectLanguage } from '../utils/languageUtils'
 import { isTauri } from '../utils/tauri'
+import { matchLocalFilePathAt, parseLocalFilePath } from '../utils/localFilePath'
+import { openFileInPanel } from '../utils/openFileInPanel'
 import { marked } from 'marked'
 import type { Tokens } from 'marked'
 import { projectMarkdownStream, stripLeadingHtmlComments, type MarkdownStreamProjection } from './markdownStream'
@@ -38,6 +40,7 @@ interface MarkdownRendererProps {
   className?: string
   isStreaming?: boolean
   variant?: 'default' | 'reasoning'
+  directory?: string
 }
 
 const MERMAID_MIN_SCALE = 0.5
@@ -180,6 +183,17 @@ function decodeLocalFileHref(href?: string): string | null {
 function openLocalFilePath(filePath: string) {
   if (!isTauri()) return
   import('@tauri-apps/plugin-opener').then(mod => mod.openPath(filePath)).catch(() => {})
+}
+
+function handleLocalFileLink(event: React.MouseEvent, filePath: string, directory?: string) {
+  event.preventDefault()
+  const selection = typeof window === 'undefined' ? null : window.getSelection()
+  if (selection && !selection.isCollapsed) return
+  if (event.metaKey || event.ctrlKey) {
+    openLocalFilePath(filePath)
+    return
+  }
+  if (!openFileInPanel(filePath, directory)) openLocalFilePath(filePath)
 }
 
 function getOrderedListPadding(start: number, itemCount: number): string {
@@ -547,7 +561,7 @@ function MarkdownTableHeader({ children, isReasoning }: { children: React.ReactN
   return <thead className={isReasoning ? 'text-text-400' : 'text-text-200'}>{children}</thead>
 }
 
-function renderTableFromSrc(src: string, isReasoning: boolean): React.ReactNode {
+function renderTableFromSrc(src: string, isReasoning: boolean, directory?: string): React.ReactNode {
   const tokens = marked.lexer(src)
   const tableToken = tokens.find(t => t.type === 'table') as Tokens.Table | undefined
   if (!tableToken) return null
@@ -571,7 +585,7 @@ function renderTableFromSrc(src: string, isReasoning: boolean): React.ReactNode 
                 {isLastHeader && copyText && !isReasoning ? (
                   <>
                     <span className="block pr-8">
-                      {cell.tokens ? renderInlineTokensToReact(cell.tokens, isReasoning) : cell.text}
+                      {cell.tokens ? renderInlineTokensToReact(cell.tokens, isReasoning, directory) : cell.text}
                     </span>
                     <span className="absolute inset-y-0 right-0 flex items-center px-2">
                       <CopyButton
@@ -582,7 +596,7 @@ function renderTableFromSrc(src: string, isReasoning: boolean): React.ReactNode 
                     </span>
                   </>
                 ) : cell.tokens ? (
-                  renderInlineTokensToReact(cell.tokens, isReasoning)
+                  renderInlineTokensToReact(cell.tokens, isReasoning, directory)
                 ) : (
                   cell.text
                 )}
@@ -596,7 +610,7 @@ function renderTableFromSrc(src: string, isReasoning: boolean): React.ReactNode 
           <MarkdownTableRow key={rowIndex} isReasoning={isReasoning}>
             {row.map((cell, cellIndex) => (
               <MarkdownTableCell key={cellIndex} isHeader={false} isReasoning={isReasoning}>
-                {cell.tokens ? renderInlineTokensToReact(cell.tokens, isReasoning) : cell.text}
+                {cell.tokens ? renderInlineTokensToReact(cell.tokens, isReasoning, directory) : cell.text}
               </MarkdownTableCell>
             ))}
           </MarkdownTableRow>
@@ -606,37 +620,54 @@ function renderTableFromSrc(src: string, isReasoning: boolean): React.ReactNode 
   )
 }
 
-function renderInlineTokensToReact(tokens: unknown[], _isReasoning: boolean): React.ReactNode {
+function renderInlineTokensToReact(
+  tokens: unknown[],
+  _isReasoning: boolean,
+  directory?: string,
+  allowFileLinks = true,
+): React.ReactNode {
+  const linkClassName = _isReasoning
+    ? 'text-[length:var(--fs-sm)] font-medium text-accent-main-200/80 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
+    : 'font-medium text-accent-main-100 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
   return tokens.map((token, index) => {
     const item = token as Record<string, unknown>
     if (item.type === 'text') {
       const nested = item.tokens as unknown[] | undefined
-      if (nested?.length) return <Fragment key={index}>{renderInlineTokensToReact(nested, _isReasoning)}</Fragment>
-      return renderTextExtensionsToReact(String(item.text ?? ''), `text-${index}`, _isReasoning)
+      if (nested?.length) return <Fragment key={index}>{renderInlineTokensToReact(nested, _isReasoning, directory, allowFileLinks)}</Fragment>
+      return renderTextExtensionsToReact(String(item.text ?? ''), `text-${index}`, _isReasoning, directory, allowFileLinks)
     }
-    if (item.type === 'strong') return <strong key={index} className={_isReasoning ? 'font-semibold text-text-300' : 'font-semibold text-text-100'}>{renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning)}</strong>
-    if (item.type === 'em') return <em key={index} className={_isReasoning ? 'italic text-text-300' : 'italic text-text-200'}>{renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning)}</em>
+    if (item.type === 'strong') return <strong key={index} className={_isReasoning ? 'font-semibold text-text-300' : 'font-semibold text-text-100'}>{renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning, directory, allowFileLinks)}</strong>
+    if (item.type === 'em') return <em key={index} className={_isReasoning ? 'italic text-text-300' : 'italic text-text-200'}>{renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning, directory, allowFileLinks)}</em>
     if (item.type === 'del') {
       const raw = typeof item.raw === 'string' ? item.raw : ''
-      if (raw.startsWith('~') && !raw.startsWith('~~') && !raw.endsWith('~~')) return <sub key={index}>{renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning)}</sub>
-      return <del key={index} className={_isReasoning ? 'text-text-500 line-through decoration-text-500/50' : 'text-text-400 line-through decoration-text-400/50'}>{renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning)}</del>
+      if (raw.startsWith('~') && !raw.startsWith('~~') && !raw.endsWith('~~')) return <sub key={index}>{renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning, directory, allowFileLinks)}</sub>
+      return <del key={index} className={_isReasoning ? 'text-text-500 line-through decoration-text-500/50' : 'text-text-400 line-through decoration-text-400/50'}>{renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning, directory, allowFileLinks)}</del>
     }
-    if (item.type === 'codespan') return <code key={index} className={_isReasoning ? 'font-mono text-accent-main-100 text-[0.9em] align-baseline break-words' : 'text-accent-main-100 text-[0.9em] font-mono align-baseline break-words'}>{String(item.text ?? '')}</code>
+    if (item.type === 'codespan') {
+      const codeClassName = _isReasoning ? 'font-mono text-accent-main-100 text-[0.9em] align-baseline break-words' : 'text-accent-main-100 text-[0.9em] font-mono align-baseline break-words'
+      const text = String(item.text ?? '')
+      const code = <code className={codeClassName}>{text}</code>
+      if (!allowFileLinks || text.trim() !== text) return <code key={index} className={codeClassName}>{text}</code>
+      const parsed = parseLocalFilePath(text, { allowBareFilename: true })
+      if (!parsed) return <code key={index} className={codeClassName}>{text}</code>
+      return (
+        <a key={index} href={encodeLocalFileHrefInline(parsed.raw)} title={parsed.path} className={linkClassName} onClick={e => handleLocalFileLink(e, parsed.raw, directory)}>
+          {code}
+        </a>
+      )
+    }
     if (item.type === 'link') {
       const href = typeof item.href === 'string' ? item.href : undefined
-      if (isUnsafeHrefInline(href)) return <span key={index}>{renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning)} [blocked]</span>
-      const localPath = decodeLocalFileHrefInline(href) ?? getWindowsAbsolutePathInline(href)
-      const className = _isReasoning
-        ? 'text-[length:var(--fs-sm)] font-medium text-accent-main-200/80 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
-        : 'font-medium text-accent-main-100 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
+      if (isUnsafeHrefInline(href)) return <span key={index}>{renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning, directory, false)} [blocked]</span>
+      const localPath = decodeLocalFileHrefInline(href) ?? getLocalFilePathFromHrefInline(href)
       if (localPath) {
         return (
-          <a key={index} href={encodeLocalFileHrefInline(localPath)} title={localPath} className={className} onClick={e => { e.preventDefault(); openLocalFilePath(localPath) }}>
-            {renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning)}
+          <a key={index} href={encodeLocalFileHrefInline(localPath)} title={localPath} className={linkClassName} onClick={e => handleLocalFileLink(e, localPath, directory)}>
+            {renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning, directory, false)}
           </a>
         )
       }
-      return <a key={index} href={href} target="_blank" rel="noopener noreferrer" className={className}>{renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning)}</a>
+      return <a key={index} href={href} target="_blank" rel="noopener noreferrer" className={linkClassName}>{renderInlineTokensToReact((item.tokens as unknown[]) ?? [], _isReasoning, directory, false)}</a>
     }
     if (item.type === 'image') {
       const src = typeof item.href === 'string' ? item.href : undefined
@@ -671,7 +702,16 @@ function getFootnoteIdInline(label: string): string {
   return normalized || 'note'
 }
 
-function renderTextExtensionsToReact(text: string, keyPrefix: string, isReasoning: boolean): React.ReactNode {
+function renderTextExtensionsToReact(
+  text: string,
+  keyPrefix: string,
+  isReasoning: boolean,
+  directory?: string,
+  allowFileLinks = true,
+): React.ReactNode {
+  const linkClassName = isReasoning
+    ? 'text-[length:var(--fs-sm)] font-medium text-accent-main-200/80 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
+    : 'font-medium text-accent-main-100 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
   const parts: React.ReactNode[] = []
   let cursor = 0
   let lastIndex = 0
@@ -714,7 +754,7 @@ function renderTextExtensionsToReact(text: string, keyPrefix: string, isReasonin
         pushText(cursor)
         parts.push(
           <mark key={`${keyPrefix}-mark-${cursor}`} className={className}>
-            {renderTextExtensionsToReact(content, `${keyPrefix}-mark-${cursor}`, isReasoning)}
+            {renderTextExtensionsToReact(content, `${keyPrefix}-mark-${cursor}`, isReasoning, directory, allowFileLinks)}
           </mark>,
         )
         cursor = close + 2
@@ -728,7 +768,7 @@ function renderTextExtensionsToReact(text: string, keyPrefix: string, isReasonin
       const content = close === -1 ? '' : text.slice(cursor + 1, close)
       if (content && !/\s/.test(content)) {
         pushText(cursor)
-        parts.push(<sup key={`${keyPrefix}-sup-${cursor}`}>{renderTextExtensionsToReact(content, `${keyPrefix}-sup-${cursor}`, isReasoning)}</sup>)
+        parts.push(<sup key={`${keyPrefix}-sup-${cursor}`}>{renderTextExtensionsToReact(content, `${keyPrefix}-sup-${cursor}`, isReasoning, directory, allowFileLinks)}</sup>)
         cursor = close + 1
         lastIndex = cursor
         continue
@@ -740,8 +780,23 @@ function renderTextExtensionsToReact(text: string, keyPrefix: string, isReasonin
       const content = close === -1 ? '' : text.slice(cursor + 1, close)
       if (content && !/\s/.test(content)) {
         pushText(cursor)
-        parts.push(<sub key={`${keyPrefix}-sub-${cursor}`}>{renderTextExtensionsToReact(content, `${keyPrefix}-sub-${cursor}`, isReasoning)}</sub>)
+        parts.push(<sub key={`${keyPrefix}-sub-${cursor}`}>{renderTextExtensionsToReact(content, `${keyPrefix}-sub-${cursor}`, isReasoning, directory, allowFileLinks)}</sub>)
         cursor = close + 1
+        lastIndex = cursor
+        continue
+      }
+    }
+
+    if (allowFileLinks) {
+      const fileMatch = matchLocalFilePathAt(text, cursor)
+      if (fileMatch) {
+        pushText(cursor)
+        parts.push(
+          <a key={`${keyPrefix}-file-${cursor}`} href={encodeLocalFileHrefInline(fileMatch.raw)} title={fileMatch.path} className={linkClassName} onClick={e => handleLocalFileLink(e, fileMatch.raw, directory)}>
+            {fileMatch.raw}
+          </a>,
+        )
+        cursor = fileMatch.end
         lastIndex = cursor
         continue
       }
@@ -768,9 +823,13 @@ function isUnsafeImageSrcInline(src?: string): boolean {
   return isUnsafeHrefInline(src)
 }
 
-function getWindowsAbsolutePathInline(value: string | undefined): string | null {
+function getLocalFilePathFromHrefInline(value: string | undefined): string | null {
   if (!value) return null
-  try { const decoded = decodeURIComponent(value); return /^[A-Za-z]:[\\/]/.test(decoded) ? decoded : null } catch { return value }
+  try {
+    return parseLocalFilePath(decodeURIComponent(value), { allowBareFilename: true })?.raw ?? null
+  } catch {
+    return parseLocalFilePath(value, { allowBareFilename: true })?.raw ?? null
+  }
 }
 
 function encodeLocalFileHrefInline(filePath: string): string {
@@ -1241,10 +1300,12 @@ const MarkdownDomBlock = memo(function MarkdownDomBlock({
   src,
   isReasoning,
   isLive,
+  directory,
 }: {
   src: string
   isReasoning: boolean
   isLive?: boolean
+  directory?: string
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const appliedHtmlRef = useRef<string | null>(null)
@@ -1316,11 +1377,8 @@ const MarkdownDomBlock = memo(function MarkdownDomBlock({
     // Local file link
     const anchor = target?.closest<HTMLAnchorElement>(`a[href^="${LOCAL_FILE_LINK_PREFIX}"]`)
     const localPath = decodeLocalFileHref(anchor?.getAttribute('href') ?? undefined)
-    if (anchor && localPath) {
-      event.preventDefault()
-      openLocalFilePath(localPath)
-    }
-  }, [])
+    if (anchor && localPath) handleLocalFileLink(event, localPath, directory)
+  }, [directory])
 
   const handleSubmit = useCallback((event: React.FormEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -1340,10 +1398,12 @@ function MarkdownHtmlIsland({
   src,
   isReasoning,
   isLive,
+  directory,
 }: {
   src: string
   isReasoning: boolean
   isLive: boolean
+  directory?: string
 }) {
   const [showSource, setShowSource] = useState(false)
   if (showSource) {
@@ -1371,7 +1431,7 @@ function MarkdownHtmlIsland({
 
   return (
     <HtmlPreviewSurface onViewSource={() => setShowSource(true)}>
-      <MarkdownDomBlock src={src} isReasoning={isReasoning} isLive={isLive} />
+      <MarkdownDomBlock src={src} isReasoning={isReasoning} isLive={isLive} directory={directory} />
     </HtmlPreviewSurface>
   )
 }
@@ -1387,6 +1447,7 @@ const MarkdownStreamBlock = memo(function MarkdownStreamBlock({
   isStreaming,
   isFirst,
   isLast,
+  directory,
 }: {
   src: string
   mode: 'full' | 'live' | 'code' | 'table'
@@ -1396,11 +1457,12 @@ const MarkdownStreamBlock = memo(function MarkdownStreamBlock({
   isStreaming: boolean
   isFirst: boolean
   isLast: boolean
+  directory?: string
 }) {
   if (mode === 'table') {
     return (
       <div className={`markdown-stream-block ${isFirst ? 'markdown-stream-block-first' : 'markdown-stream-block-not-first'} ${isLast ? 'markdown-stream-block-last' : 'markdown-stream-block-not-last'}`}>
-        <div className={MARKDOWN_BLOCK_CONTENT_CLASS}>{renderTableFromSrc(src, isReasoning)}</div>
+        <div className={MARKDOWN_BLOCK_CONTENT_CLASS}>{renderTableFromSrc(src, isReasoning, directory)}</div>
       </div>
     )
   }
@@ -1461,14 +1523,14 @@ const MarkdownStreamBlock = memo(function MarkdownStreamBlock({
   if (!isReasoning && BLOCK_HTML_SOURCE_PATTERN.test(htmlSourceStart)) {
     return (
       <div className={`markdown-stream-block ${isFirst ? 'markdown-stream-block-first' : 'markdown-stream-block-not-first'} ${isLast ? 'markdown-stream-block-last' : 'markdown-stream-block-not-last'}`}>
-        <MarkdownHtmlIsland src={src} isReasoning={false} isLive={mode === 'live'} />
+        <MarkdownHtmlIsland src={src} isReasoning={false} isLive={mode === 'live'} directory={directory} />
       </div>
     )
   }
 
   return (
     <div className={`markdown-stream-block ${isFirst ? 'markdown-stream-block-first' : 'markdown-stream-block-not-first'} ${isLast ? 'markdown-stream-block-last' : 'markdown-stream-block-not-last'}`}>
-      <MarkdownDomBlock src={src} isReasoning={isReasoning} isLive={mode === 'live'} />
+      <MarkdownDomBlock src={src} isReasoning={isReasoning} isLive={mode === 'live'} directory={directory} />
     </div>
   )
 })
@@ -1521,6 +1583,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   className = '',
   isStreaming = false,
   variant = 'default',
+  directory,
 }: MarkdownRendererProps) {
   const isReasoning = variant === 'reasoning'
   const projectionKey = useId()
@@ -1554,6 +1617,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
           isStreaming={isStreaming}
           isFirst={index === 0}
           isLast={index === streamBlocks.length - 1}
+          directory={directory}
         />
       ))}
     </div>

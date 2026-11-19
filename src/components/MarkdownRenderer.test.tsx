@@ -16,6 +16,11 @@ const useInputCapabilitiesMock = vi.hoisted(() =>
   })),
 )
 const themeMock = vi.hoisted(() => ({ resolvedTheme: 'light' as 'light' | 'dark' }))
+const openFileInPanelMock = vi.hoisted(() => vi.fn(() => true))
+const isTauriMock = vi.hoisted(() => vi.fn(() => false))
+
+vi.mock('../utils/openFileInPanel', () => ({ openFileInPanel: openFileInPanelMock }))
+vi.mock('../utils/tauri', () => ({ isTauri: isTauriMock }))
 
 vi.mock('./CodeBlock', () => ({
   CodeBlock: ({
@@ -72,6 +77,8 @@ vi.mock('./ui', () => ({
 describe('MarkdownRenderer', () => {
   beforeEach(() => {
     themeMock.resolvedTheme = 'light'
+    openFileInPanelMock.mockClear()
+    isTauriMock.mockReturnValue(false)
     clearMermaidRenderCache()
     useInputCapabilitiesMock.mockReset()
     useInputCapabilitiesMock.mockReturnValue({
@@ -1348,5 +1355,58 @@ $$`
 
     expect(screen.getByText('bad [blocked]')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'bad' })).not.toBeInTheDocument()
+  })
+
+  describe('local file path links', () => {
+    it('C1 opens a detected path through openFileInPanel with directory', () => {
+      render(<MarkdownRenderer content={'see src/foo.ts now'} directory="/repo" />)
+
+      fireEvent.click(screen.getByText('src/foo.ts'))
+
+      expect(openFileInPanelMock).toHaveBeenCalledWith('src/foo.ts', '/repo')
+    })
+
+    it('C1 does not open a path when the text selection is not collapsed', () => {
+      const selectionSpy = vi.spyOn(window, 'getSelection').mockReturnValue({ isCollapsed: false } as Selection)
+      render(<MarkdownRenderer content={'see src/foo.ts now'} />)
+
+      fireEvent.click(screen.getByText('src/foo.ts'))
+
+      expect(openFileInPanelMock).not.toHaveBeenCalled()
+      selectionSpy.mockRestore()
+    })
+
+    it('C1 falls back to the legacy opener on meta/ctrl click', () => {
+      isTauriMock.mockReturnValue(true)
+      render(<MarkdownRenderer content={'see src/foo.ts now'} />)
+
+      fireEvent.click(screen.getByText('src/foo.ts'), { ctrlKey: true })
+
+      expect(openFileInPanelMock).not.toHaveBeenCalled()
+    })
+
+    it('C5 opens a relative path without directory context', () => {
+      render(<MarkdownRenderer content={'see src/foo.ts now'} />)
+
+      fireEvent.click(screen.getByText('src/foo.ts'))
+
+      expect(openFileInPanelMock).toHaveBeenCalledWith('src/foo.ts', undefined)
+    })
+
+    it('C1 opens a codespan bare filename', () => {
+      render(<MarkdownRenderer content={'open `report.html` now'} />)
+
+      fireEvent.click(screen.getByText('report.html'))
+
+      expect(openFileInPanelMock).toHaveBeenCalledWith('report.html', undefined)
+    })
+
+    it('C1 opens a path inside a streaming table cell', () => {
+      render(<MarkdownRenderer content={'| a |\n| --- |\n| src/foo.ts |'} isStreaming />)
+
+      fireEvent.click(screen.getByText('src/foo.ts'))
+
+      expect(openFileInPanelMock).toHaveBeenCalledWith('src/foo.ts', undefined)
+    })
   })
 })

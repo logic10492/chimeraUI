@@ -5,14 +5,14 @@ import type { TextPart } from '../../../types/message'
 interface TextPartViewProps {
   part: TextPart
   isStreaming?: boolean
+  directory?: string
 }
 
 /**
  * TextPartView - 直接渲染后端推送的文本，无缓冲延迟
  */
-export const TextPartView = memo(function TextPartView({ part, isStreaming = false }: TextPartViewProps) {
+export const TextPartView = memo(function TextPartView({ part, isStreaming = false, directory }: TextPartViewProps) {
   const displayText = part.text || ''
-
   // 跳过空文本（除非正在 streaming）
   if (!displayText.trim() && !isStreaming) return null
 
@@ -21,7 +21,7 @@ export const TextPartView = memo(function TextPartView({ part, isStreaming = fal
 
   return (
     <div style={{ contain: 'layout' }}>
-      <MarkdownRenderer content={displayText} isStreaming={isStreaming} />
+      <MarkdownRenderer content={displayText} isStreaming={isStreaming} directory={directory} />
     </div>
   )
 })

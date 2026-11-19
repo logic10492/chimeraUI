@@ -3,8 +3,16 @@ import DOMPurify from 'dompurify'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { inferImageDimensions } from './imageDimensions'
+import { matchLocalFilePathAt, parseLocalFilePath } from '../utils/localFilePath'
 
 const LOCAL_FILE_LINK_PREFIX = '#opencode-local-file:'
+const LINK_LABEL_DEPTH_GUARD = { depth: 0 }
+
+function getLinkClassName(isReasoning: boolean): string {
+  return isReasoning
+    ? 'text-[length:var(--fs-sm)] font-medium text-accent-main-200/80 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
+    : 'font-medium text-accent-main-100 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -27,13 +35,17 @@ function decodeHref(value: string): string {
   }
 }
 
-function getWindowsAbsolutePath(value: string): string | null {
-  const decoded = decodeHref(value)
-  return /^[A-Za-z]:[\\/]/.test(decoded) ? decoded : null
+function getLocalFilePathFromHref(value: string): string | null {
+  const parsed = parseLocalFilePath(decodeHref(value), { allowBareFilename: true })
+  return parsed?.raw ?? null
 }
 
 function encodeLocalFileHref(filePath: string): string {
   return `${LOCAL_FILE_LINK_PREFIX}${encodeURIComponent(filePath)}`
+}
+
+function renderLocalFileLinkHtml(filePath: string, innerHtml: string, className: string): string {
+  return `<a href="${escapeAttribute(encodeLocalFileHref(filePath))}" title="${escapeAttribute(filePath)}" class="${className}">${innerHtml}</a>`
 }
 
 function decodeLocalFileHref(href?: string): string | null {
@@ -121,6 +133,7 @@ function renderFootnoteReferenceHtml(label: string, isReasoning: boolean): strin
 }
 
 function renderTextExtensionsHtml(text: string, isReasoning: boolean): string {
+  const linkClassName = getLinkClassName(isReasoning)
   const chunks: string[] = []
   let cursor = 0
   let lastIndex = 0
@@ -181,6 +194,17 @@ function renderTextExtensionsHtml(text: string, isReasoning: boolean): string {
         pushText(cursor)
         chunks.push(`<sub>${renderTextExtensionsHtml(content, isReasoning)}</sub>`)
         cursor = close + 1
+        lastIndex = cursor
+        continue
+      }
+    }
+
+    if (LINK_LABEL_DEPTH_GUARD.depth === 0) {
+      const fileMatch = matchLocalFilePathAt(text, cursor)
+      if (fileMatch) {
+        pushText(cursor)
+        chunks.push(renderLocalFileLinkHtml(fileMatch.raw, escapeHtml(fileMatch.raw), linkClassName))
+        cursor = fileMatch.end
         lastIndex = cursor
         continue
       }
@@ -313,7 +337,11 @@ function createMarkdownHtmlRenderer(isReasoning: boolean) {
     const className = isReasoning
       ? 'font-mono text-accent-main-100 text-[0.9em] align-baseline break-words'
       : 'text-accent-main-100 text-[0.9em] font-mono align-baseline break-words'
-    return `<code class="${className}">${escapeHtml(text)}</code>`
+    const code = `<code class="${className}">${escapeHtml(text)}</code>`
+    if (LINK_LABEL_DEPTH_GUARD.depth > 0 || text.trim() !== text) return code
+    const parsed = parseLocalFilePath(text, { allowBareFilename: true })
+    if (!parsed) return code
+    return renderLocalFileLinkHtml(parsed.raw, code, getLinkClassName(isReasoning))
   }
 
   renderer.strong = function ({ tokens }) {
@@ -338,22 +366,25 @@ function createMarkdownHtmlRenderer(isReasoning: boolean) {
   }
 
   renderer.link = function ({ href, title, tokens }) {
-    const content = this.parser.parseInline(tokens)
-    if (isUnsafeHref(href)) return `${content} [blocked]`
-    const localPath = decodeLocalFileHref(href) ?? getWindowsAbsolutePath(href)
-    const normalizedHref = localPath ? encodeLocalFileHref(localPath) : href
-    const className = isReasoning
-      ? 'text-[length:var(--fs-sm)] font-medium text-accent-main-200/80 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
-      : 'font-medium text-accent-main-100 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
-    const attrs = [
-      `href="${escapeAttribute(normalizedHref)}"`,
-      `class="${className}"`,
-      localPath ? `title="${escapeAttribute(localPath)}"` : 'target="_blank" rel="noopener noreferrer"',
-      title && !localPath ? `title="${escapeAttribute(title)}"` : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-    return `<a ${attrs}>${content}</a>`
+    LINK_LABEL_DEPTH_GUARD.depth += 1
+    try {
+      const content = this.parser.parseInline(tokens)
+      if (isUnsafeHref(href)) return `${content} [blocked]`
+      const localPath = decodeLocalFileHref(href) ?? getLocalFilePathFromHref(href)
+      const normalizedHref = localPath ? encodeLocalFileHref(localPath) : href
+      const className = getLinkClassName(isReasoning)
+      const attrs = [
+        `href="${escapeAttribute(normalizedHref)}"`,
+        `class="${className}"`,
+        localPath ? `title="${escapeAttribute(localPath)}"` : 'target="_blank" rel="noopener noreferrer"',
+        title && !localPath ? `title="${escapeAttribute(title)}"` : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+      return `<a ${attrs}>${content}</a>`
+    } finally {
+      LINK_LABEL_DEPTH_GUARD.depth -= 1
+    }
   }
 
   renderer.image = ({ href, title, text }) => {
@@ -442,7 +473,7 @@ function rewriteRawHtmlLocalLinks(html: string): string {
   template.innerHTML = html
   template.content.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(anchor => {
     const href = anchor.getAttribute('href') ?? ''
-    const localPath = decodeLocalFileHref(href) ?? getWindowsAbsolutePath(href)
+    const localPath = decodeLocalFileHref(href) ?? getLocalFilePathFromHref(href)
     if (!localPath) return
     anchor.setAttribute('href', encodeLocalFileHref(localPath))
     anchor.setAttribute('title', localPath)
@@ -582,7 +613,7 @@ function sanitizeHtml(html: string): string {
       return
     }
 
-    const localPath = decodeLocalFileHref(href) ?? getWindowsAbsolutePath(href)
+    const localPath = decodeLocalFileHref(href) ?? getLocalFilePathFromHref(href)
     if (localPath) {
       anchor.setAttribute('href', encodeLocalFileHref(localPath))
       anchor.setAttribute('title', localPath)
