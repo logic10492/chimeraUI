@@ -586,19 +586,6 @@ class MessageStore {
 
   handleMessageUpdated(apiMsg: ApiMessage) {
     const state = this.ensureSession(apiMsg.sessionID)
-    if (apiMsg.role === 'user') {
-      const optimisticIndex = state.messages.findIndex(m => m.info.id.startsWith('optimistic_'))
-      if (optimisticIndex >= 0) {
-        const optimistic = state.messages[optimisticIndex]
-        state.messages = [
-          ...state.messages.slice(0, optimisticIndex),
-          { ...optimistic, info: toUIMessageInfo(apiMsg), isStreaming: false },
-          ...state.messages.slice(optimisticIndex + 1),
-        ]
-        this.notify([apiMsg.sessionID])
-        return
-      }
-    }
     const existingIndex = state.messages.findIndex(m => m.info.id === apiMsg.id)
 
     if (existingIndex >= 0) {
@@ -628,10 +615,26 @@ class MessageStore {
     const state = this.sessions.get(apiPart.sessionID)
     if (!state) return
 
-    const msgIndex = state.messages.findIndex(m => m.info.id === apiPart.messageID)
+    const target = state.messages.find(m => m.info.id === apiPart.messageID)
+    if (!target) return
+
+    // user info 无法区分真实 prompt 与 runtime-context 等 synthetic user 消息。
+    // 等首个非 synthetic part 到达再关联乐观消息，避免 synthetic user 抢走其身份。
+    const optimisticIndex =
+      target.info.role === 'user' && (apiPart.type !== 'text' || !apiPart.synthetic)
+        ? state.messages.findIndex(message => {
+            if (!message.info.id.startsWith('optimistic_')) return false
+            if (message.info.time.created > target.info.time.created) return false
+            if (apiPart.type !== 'text') return true
+            return this.extractUserText(message) === apiPart.text
+          })
+        : -1
+    const messages =
+      optimisticIndex >= 0 ? state.messages.filter((_, index) => index !== optimisticIndex) : state.messages
+    const msgIndex = messages.findIndex(m => m.info.id === apiPart.messageID)
     if (msgIndex === -1) return
 
-    const oldMessage = state.messages[msgIndex]
+    const oldMessage = messages[msgIndex]
     const newParts = [...oldMessage.parts]
     const existingPartIndex = newParts.findIndex(p => p.id === apiPart.id)
     const incoming = toUIPart(apiPart)
@@ -648,7 +651,7 @@ class MessageStore {
     }
 
     const newMessage = { ...oldMessage, parts: newParts }
-    state.messages = [...state.messages.slice(0, msgIndex), newMessage, ...state.messages.slice(msgIndex + 1)]
+    state.messages = [...messages.slice(0, msgIndex), newMessage, ...messages.slice(msgIndex + 1)]
     this.notify([apiPart.sessionID])
   }
 

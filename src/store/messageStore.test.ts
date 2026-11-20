@@ -59,19 +59,48 @@ describe('messageStore', () => {
     messageStore.clearAll()
   })
 
-  it('replaces an optimistic user message with the server message in place', () => {
+  it('replaces an optimistic user message when the real user part arrives', () => {
     messageStore.upsertLocalMessage({
       info: { id: 'optimistic_1', sessionID: 'session-1', role: 'user', time: { created: 1 } },
       parts: [{ id: 'local-text', type: 'text', text: 'hello', sessionID: 'session-1', messageID: 'optimistic_1' }],
       isStreaming: false,
     })
 
-    messageStore.handleMessageUpdated({ ...createAssistantMessage('server-user'), role: 'user' })
+    messageStore.handleMessageUpdated({ ...createAssistantMessage('server-user'), role: 'user', time: { created: 2 } })
+    messageStore.handlePartUpdated(createTextPart('server-text', 'server-user', 'hello'))
 
     const state = messageStore.getSessionState('session-1')
     expect(state?.messages).toHaveLength(1)
     expect(state?.messages[0].info.id).toBe('server-user')
-    expect(state?.messages[0].parts[0]).toMatchObject({ id: 'local-text', text: 'hello' })
+    expect(state?.messages[0].parts[0]).toMatchObject({ id: 'server-text', text: 'hello' })
+  })
+
+  it('does not let runtime context steal an optimistic user message', () => {
+    messageStore.upsertLocalMessage({
+      info: { id: 'optimistic_1', sessionID: 'session-1', role: 'user', time: { created: 1 } },
+      parts: [{ id: 'local-text', type: 'text', text: 'hello', sessionID: 'session-1', messageID: 'optimistic_1' }],
+      isStreaming: false,
+    })
+
+    messageStore.handleMessageUpdated({
+      ...createAssistantMessage('runtime-context'),
+      role: 'user',
+      time: { created: 2 },
+    })
+    messageStore.handlePartUpdated({
+      ...createTextPart('runtime-part', 'runtime-context', '<system-reminder>context</system-reminder>'),
+      synthetic: true,
+    })
+
+    expect(messageStore.getSessionState('session-1')?.messages[0].info.id).toBe('optimistic_1')
+
+    messageStore.handleMessageUpdated({ ...createAssistantMessage('server-user'), role: 'user', time: { created: 3 } })
+    messageStore.handlePartUpdated(createTextPart('server-text', 'server-user', 'hello'))
+
+    const state = messageStore.getSessionState('session-1')
+    expect(state?.messages.map(message => message.info.id)).toEqual(['runtime-context', 'server-user'])
+    expect(state?.messages[0].parts[0]).toMatchObject({ id: 'runtime-part', synthetic: true })
+    expect(state?.messages[1].parts[0]).toMatchObject({ id: 'server-text', text: 'hello' })
   })
 
   it('applies a part update when the message already exists', () => {
