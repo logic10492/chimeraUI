@@ -4,7 +4,7 @@ import { CloseIcon, SearchIcon } from '../../../components/Icons'
 import { useModels } from '../../../hooks/useModels'
 import { modelVisibilityStore, useHiddenModelKeys } from '../../../store/modelVisibilityStore'
 import { groupModelsByProvider, getModelKey } from '../../../utils/modelUtils'
-import { SettingsSection, Toggle } from './SettingsUI'
+import { SettingsSection, SettingRow, Toggle } from './SettingsUI'
 
 function formatContext(limit: number): string {
   if (!limit) return ''
@@ -15,7 +15,7 @@ function formatContext(limit: number): string {
 
 export function ModelsSettings() {
   const { t } = useTranslation('settings')
-  const { models, isLoading } = useModels()
+  const { models, isLoading, showPrerelease, setShowPrerelease } = useModels()
   const hiddenModelKeys = useHiddenModelKeys()
   const [query, setQuery] = useState('')
   const hiddenModelKeySet = useMemo(() => new Set(hiddenModelKeys), [hiddenModelKeys])
@@ -45,7 +45,17 @@ export function ModelsSettings() {
     <div>
       <SettingsSection title={t('models.visibility')}>
         <p className="text-[length:var(--fs-sm)] text-text-400 leading-relaxed">{t('models.visibilityDesc')}</p>
-
+        <SettingRow
+          label={t('models.showPrerelease')}
+          description={t('models.showPrereleaseDesc')}
+          onClick={() => setShowPrerelease(!showPrerelease)}
+        >
+          <Toggle
+            enabled={showPrerelease}
+            ariaLabel={t('models.showPrerelease')}
+            onChange={() => setShowPrerelease(!showPrerelease)}
+          />
+        </SettingRow>
         <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-border-200/50 bg-bg-100/50 transition-colors focus-within:border-border-200">
           <SearchIcon className="w-3.5 h-3.5 text-text-400 shrink-0" />
           <input

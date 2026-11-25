@@ -85,12 +85,12 @@
       "method": "GET",
       "path": "/config/providers",
       "pathParameters": [],
-      "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
+      "query": { "openapi": ["directory", "include_experimental", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
       "sources": [
-        { "file": "src/api/client.ts", "line": 34 },
-        { "file": "src/api/client.ts", "line": 80 },
+        { "file": "src/api/client.ts", "line": 35 },
+        { "file": "src/api/client.ts", "line": 85 },
         { "file": "src/api/config.ts", "line": 57 }
       ]
     },
@@ -575,7 +575,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/client.ts", "line": 154 }]
+      "sources": [{ "file": "src/api/client.ts", "line": 159 }]
     },
     {
       "operationId": "permission.list",
@@ -635,7 +635,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/client.ts", "line": 105 }]
+      "sources": [{ "file": "src/api/client.ts", "line": 110 }]
     },
     {
       "operationId": "project.initGit",
@@ -647,7 +647,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/client.ts", "line": 124 }]
+      "sources": [{ "file": "src/api/client.ts", "line": 129 }]
     },
     {
       "operationId": "project.list",
@@ -659,7 +659,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/client.ts", "line": 114 }]
+      "sources": [{ "file": "src/api/client.ts", "line": 119 }]
     },
     {
       "operationId": "project.update",
@@ -671,7 +671,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": { "contentTypes": ["application/json"], "fields": ["commands", "icon", "name"], "required": [] },
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/client.ts", "line": 140 }]
+      "sources": [{ "file": "src/api/client.ts", "line": 145 }]
     },
     {
       "operationId": "provider.auth",
@@ -695,7 +695,7 @@
       "query": { "openapi": ["directory", "workspace"], "raw": [], "middleware": [] },
       "body": null,
       "scope": { "kind": "instance", "query": ["directory", "workspace"] },
-      "sources": [{ "file": "src/api/client.ts", "line": 91 }]
+      "sources": [{ "file": "src/api/client.ts", "line": 96 }]
     },
     {
       "operationId": "provider.list",

@@ -28,10 +28,15 @@ function requireArray<T = unknown>(value: unknown, message: string): T[] {
 // 基于 SDK: config.providers()
 // ============================================
 
-export async function getActiveModels(directory?: string): Promise<ModelInfo[]> {
+export async function getActiveModels(directory?: string, includePrerelease = false): Promise<ModelInfo[]> {
   const sdk = getSDKClient()
   const data = requireRecord(
-    unwrap(await sdk.config.providers({ directory: formatPathForApi(directory) })),
+    unwrap(
+      await sdk.config.providers({
+        directory: formatPathForApi(directory),
+        include_experimental: includePrerelease ? 'true' : undefined,
+      }),
+    ),
     'Invalid OpenCode providers response',
   )
   const providers = requireArray<Record<string, unknown>>(data.providers, 'Invalid OpenCode providers response')
@@ -42,8 +47,8 @@ export async function getActiveModels(directory?: string): Promise<ModelInfo[]> 
     for (const [, rawModel] of Object.entries(providerModels)) {
       if (!isRecord(rawModel)) continue
       const model = rawModel
-      // Only drop explicitly non-active models; a missing status is treated as active.
-      if (model.status !== undefined && model.status !== 'active') continue
+      if (model.status === 'deprecated') continue
+      if (!includePrerelease && model.status !== undefined && model.status !== 'active') continue
       const limit = isRecord(model.limit) ? model.limit : {}
       const capabilities = isRecord(model.capabilities) ? model.capabilities : {}
       const inputCapabilities = isRecord(capabilities.input) ? capabilities.input : {}

@@ -171,6 +171,7 @@ export type {
 export type {
   MCPStatus,
   MCPStatusConnected,
+  MCPStatusConnecting,
   MCPStatusDisabled,
   MCPStatusFailed,
   MCPStatusNeedsAuth,

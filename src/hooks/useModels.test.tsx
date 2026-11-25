@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelInfo } from '../types/ui'
 
@@ -18,6 +18,7 @@ vi.mock('../api/sdk', () => ({
 
 vi.mock('../store/serverStore', () => ({
   serverStore: {
+    getActiveServerId: () => 'local',
     onServerChange: onServerChangeMock,
   },
 }))
@@ -60,6 +61,7 @@ describe('useModels bounded retry', () => {
     getActiveModelsMock.mockReset()
     getSDKClientAsyncMock.mockReset()
     getSDKClientAsyncMock.mockResolvedValue({})
+    localStorage.removeItem('srv:local:show-prerelease-models')
   })
 
   afterEach(() => {
@@ -112,4 +114,22 @@ describe('useModels bounded retry', () => {
     expect(result.current.error?.message).toBe('still down')
     expect(result.current.isLoading).toBe(false)
   })
+  it('persists the prerelease preference and refetches with experimental models', async () => {
+    vi.useRealTimers()
+    getActiveModelsMock.mockResolvedValue([MODEL])
+    const mod = await loadUseModels()
+    const { result } = renderHook(() => mod.useModels())
+
+    expect(result.current.showPrerelease).toBe(false)
+
+    await act(async () => {
+      result.current.setShowPrerelease(true)
+    })
+
+    expect(result.current.showPrerelease).toBe(true)
+    expect(localStorage.getItem('srv:local:show-prerelease-models')).toBe('true')
+    await waitFor(() => expect(getActiveModelsMock).toHaveBeenLastCalledWith(undefined, true))
+  })
+
+
 })

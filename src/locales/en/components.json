@@ -200,6 +200,7 @@
     "urlRequired": "URL is required",
     "failedToAdd": "Failed to add server",
     "connected": "Connected",
+    "connecting": "Connecting...",
     "disabled": "Disabled",
     "needsAuth": "Needs Auth",
     "needsRegistration": "Needs Registration",

@@ -3,11 +3,12 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { ModelsSettings } from './ModelsSettings'
 import type { ModelInfo } from '../../../types/ui'
 
-const { useModelsMock, useHiddenModelKeysMock, setVisibleMock, setManyVisibleMock } = vi.hoisted(() => ({
+const { useModelsMock, useHiddenModelKeysMock, setVisibleMock, setManyVisibleMock, setShowPrereleaseMock } = vi.hoisted(() => ({
   useModelsMock: vi.fn(),
   useHiddenModelKeysMock: vi.fn(),
   setVisibleMock: vi.fn(),
   setManyVisibleMock: vi.fn(),
+  setShowPrereleaseMock: vi.fn(),
 }))
 
 vi.mock('../../../hooks/useModels', () => ({
@@ -69,23 +70,32 @@ const MODELS: ModelInfo[] = [
 
 describe('ModelsSettings', () => {
   beforeEach(() => {
-    useModelsMock.mockReturnValue({ models: MODELS, isLoading: false })
+    useModelsMock.mockReturnValue({
+      models: MODELS,
+      isLoading: false,
+      showPrerelease: false,
+      setShowPrerelease: setShowPrereleaseMock,
+    })
     useHiddenModelKeysMock.mockReturnValue([])
     setVisibleMock.mockReset()
     setManyVisibleMock.mockReset()
+    setShowPrereleaseMock.mockReset()
   })
 
   it('renders model rows with semantic buttons and labeled switches', () => {
     render(<ModelsSettings />)
 
     const modelButton = screen.getByRole('button', { name: /GPT-4.1/i })
-    const switches = screen.getAllByRole('switch')
+    const providerSwitch = screen.getByRole('switch', { name: 'Model Visibility: OpenAI' })
 
     fireEvent.click(modelButton)
 
     expect(modelButton).toHaveAttribute('aria-pressed', 'true')
-    expect(switches[0]).toHaveAttribute('aria-label', 'Model Visibility: OpenAI')
-    expect(switches[1]).toHaveAttribute('aria-label', 'Model Visibility: GPT-4.1')
+    expect(providerSwitch).toHaveAttribute('aria-label', 'Model Visibility: OpenAI')
+    expect(screen.getByRole('switch', { name: 'Model Visibility: GPT-4.1' })).toHaveAttribute(
+      'aria-label',
+      'Model Visibility: GPT-4.1',
+    )
     expect(setVisibleMock).toHaveBeenCalledWith(MODELS[0], false)
   })
 
@@ -107,11 +117,21 @@ describe('ModelsSettings', () => {
 
     render(<ModelsSettings />)
 
-    const switches = screen.getAllByRole('switch')
-
-    expect(switches[0]).toHaveAttribute('aria-label', 'Model Visibility: OpenAI')
-    expect(switches[0]).toHaveAttribute('aria-checked', 'true')
-    expect(switches[1]).toHaveAttribute('aria-checked', 'false')
-    expect(switches[2]).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('switch', { name: 'Model Visibility: OpenAI' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('switch', { name: 'Model Visibility: GPT-4.1' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('switch', { name: 'Model Visibility: GPT-4o Mini' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
   })
+
+  it('enables alpha and beta models from the prerelease switch', () => {
+    render(<ModelsSettings />)
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Show alpha and beta models' }))
+
+    expect(setShowPrereleaseMock).toHaveBeenCalledWith(true)
+  })
+
+
 })

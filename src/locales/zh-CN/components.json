@@ -198,6 +198,7 @@
     "urlRequired": "URL 必填",
     "failedToAdd": "添加服务器失败",
     "connected": "已连接",
+    "connecting": "连接中...",
     "disabled": "已禁用",
     "needsAuth": "需要认证",
     "needsRegistration": "需要注册",

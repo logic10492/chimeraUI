@@ -4,7 +4,7 @@
 // 支持添加新服务器
 // ============================================
 
-import { memo, useState, useEffect, useCallback } from 'react'
+import { memo, useState, useEffect, useCallback, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   PlugIcon,
@@ -33,6 +33,10 @@ import type { MCPResource, MCPStatus, McpServerConfig } from '../types/api/mcp'
 import { useDirectory } from '../contexts/useDirectory'
 import { logger } from '../utils/logger'
 import { apiErrorHandler } from '../utils'
+
+// While any server reports the backend's non-blocking `connecting` snapshot,
+// re-check status on this bounded interval so the row settles on its own.
+const MCP_CONNECTING_POLL_MS = 1500
 
 // ============================================
 // Types
@@ -101,6 +105,31 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing }: McpP
   useEffect(() => {
     loadStatus()
   }, [loadStatus])
+
+  // 有界轮询：仅在存在 connecting 服务器时刷新，settled 或卸载/切换 scope 时停止
+  const hasConnecting = servers.some(server => server.status.status === 'connecting')
+
+  useEffect(() => {
+    if (!hasConnecting) return
+
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const schedule = () => {
+      timer = setTimeout(async () => {
+        if (cancelled) return
+        await loadStatus()
+        if (!cancelled) schedule()
+      }, MCP_CONNECTING_POLL_MS)
+    }
+
+    schedule()
+
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [hasConnecting, loadStatus])
 
   // 刷新
   const handleRefresh = useCallback(() => {
@@ -500,20 +529,27 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
   const canExpand = Boolean(errorMessage) || server.resources.length > 0
 
   // 状态颜色和标签
-  const getStatusInfo = () => {
+  const getStatusInfo = (): {
+    color: string
+    label: string
+    icon: ComponentType<{ size?: number; className?: string }> | null
+    spin: boolean
+  } => {
     switch (status.status) {
       case 'connected':
-        return { color: 'text-success-100', label: t('mcpPanel.connected'), icon: CheckIcon }
+        return { color: 'text-success-100', label: t('mcpPanel.connected'), icon: CheckIcon, spin: false }
+      case 'connecting':
+        return { color: 'text-accent-main-100', label: t('mcpPanel.connecting'), icon: SpinnerIcon, spin: true }
       case 'disabled':
-        return { color: 'text-text-400', label: t('mcpPanel.disabled'), icon: null }
+        return { color: 'text-text-400', label: t('mcpPanel.disabled'), icon: null, spin: false }
       case 'failed':
-        return { color: 'text-danger-100', label: t('common:failed'), icon: AlertCircleIcon }
+        return { color: 'text-danger-100', label: t('common:failed'), icon: AlertCircleIcon, spin: false }
       case 'needs_auth':
-        return { color: 'text-warning-100', label: t('mcpPanel.needsAuth'), icon: KeyIcon }
+        return { color: 'text-warning-100', label: t('mcpPanel.needsAuth'), icon: KeyIcon, spin: false }
       case 'needs_client_registration':
-        return { color: 'text-warning-100', label: t('mcpPanel.needsRegistration'), icon: KeyIcon }
+        return { color: 'text-warning-100', label: t('mcpPanel.needsRegistration'), icon: KeyIcon, spin: false }
       default:
-        return { color: 'text-text-400', label: t('common:unknown'), icon: null }
+        return { color: 'text-text-400', label: t('common:unknown'), icon: null, spin: false }
     }
   }
 
@@ -527,6 +563,10 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
     }
 
     switch (status.status) {
+      case 'connecting':
+        // The backend reports this non-blocking snapshot while its MCP state is
+        // still settling; wait for a terminal status instead of offering an action.
+        return null
       case 'connected':
         return (
           <button
@@ -574,6 +614,8 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
   // 状态指示器颜色
   const getStatusDotColor = () => {
     switch (status.status) {
+      case 'connecting':
+        return 'bg-accent-main-100 animate-pulse'
       case 'connected':
         return 'bg-success-100'
       case 'disabled':
@@ -611,7 +653,7 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
         <div className="flex-1 min-w-0">
           <div className="text-[length:var(--fs-base)] text-text-100 truncate">{name}</div>
           <div className={`text-[length:var(--fs-sm)] ${statusInfo.color} flex items-center gap-1`}>
-            {StatusIcon && <StatusIcon size={10} />}
+            {StatusIcon && <StatusIcon size={10} className={statusInfo.spin ? 'animate-spin' : undefined} />}
             <span>{statusInfo.label}</span>
             {server.resources.length > 0 && (
               <span className="text-text-500 ml-1">

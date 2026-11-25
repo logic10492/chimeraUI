@@ -318,6 +318,8 @@
   "models": {
     "visibility": "Model Visibility",
     "visibilityDesc": "Disable models you do not want to appear in the selector. Disabled models stay hidden across sessions on this server.",
+    "showPrerelease": "Show alpha and beta models",
+    "showPrereleaseDesc": "Include preview and experimental models in the model selector. Deprecated models stay hidden.",
     "searchPlaceholder": "Search models",
     "clearSearch": "Clear search",
     "keepOneEnabled": "At least one model stays enabled so the chat can still send messages.",

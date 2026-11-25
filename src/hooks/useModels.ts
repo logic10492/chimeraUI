@@ -3,6 +3,7 @@ import { getActiveModels } from '../api/client'
 import type { ModelInfo } from '../types/ui'
 import { getSDKClientAsync } from '../api/sdk'
 import { serverStore } from '../store/serverStore'
+import { serverStorage } from '../utils/perServerStorage'
 
 // ============================================
 // Global singleton so every ChatPane shares one models array.
@@ -15,11 +16,15 @@ interface ModelsState {
   models: ModelInfo[]
   isLoading: boolean
   error: Error | null
+  showPrerelease: boolean
 }
 
 type Listener = () => void
 
-let _state: ModelsState = { models: [], isLoading: true, error: null }
+const STORAGE_KEY_SHOW_PRERELEASE = 'show-prerelease-models'
+const loadShowPrerelease = () => serverStorage.getJSON<boolean>(STORAGE_KEY_SHOW_PRERELEASE) === true
+
+let _state: ModelsState = { models: [], isLoading: true, error: null, showPrerelease: loadShowPrerelease() }
 let _fetchPromise: Promise<void> | null = null
 let _fetchGeneration = 0
 const _listeners = new Set<Listener>()
@@ -51,12 +56,13 @@ async function _fetchModels(force = false, isRetry = false) {
   if (_fetchPromise && !force) return _fetchPromise
 
   const generation = ++_fetchGeneration
+  const showPrerelease = _state.showPrerelease
 
   _fetchPromise = (async () => {
     _setState({ isLoading: true, error: null })
     try {
       await getSDKClientAsync()
-      const data = await getActiveModels()
+      const data = await getActiveModels(undefined, showPrerelease)
       if (generation === _fetchGeneration) {
         _setState({ models: data, isLoading: false })
         if (data.length === 0 && !isRetry) _scheduleRetry()
@@ -84,10 +90,18 @@ export function refreshModels() {
   return _fetchModels(true)
 }
 
+export function setShowPrereleaseModels(showPrerelease: boolean) {
+  if (_state.showPrerelease === showPrerelease) return
+  serverStorage.setJSON(STORAGE_KEY_SHOW_PRERELEASE, showPrerelease)
+  _setState({ showPrerelease })
+  void refreshModels()
+}
+
 // First fetch on module load — models are ready before any component mounts.
 _fetchModels()
 
 serverStore.onServerChange(() => {
+  _setState({ showPrerelease: loadShowPrerelease() })
   void refreshModels()
 })
 
@@ -108,6 +122,8 @@ interface UseModelsResult {
   models: ModelInfo[]
   isLoading: boolean
   error: Error | null
+  showPrerelease: boolean
+  setShowPrerelease: (showPrerelease: boolean) => void
   refetch: () => Promise<void>
 }
 
@@ -119,6 +135,8 @@ export function useModels(): UseModelsResult {
     models: state.models,
     isLoading: state.isLoading,
     error: state.error,
+    showPrerelease: state.showPrerelease,
+    setShowPrerelease: setShowPrereleaseModels,
     refetch,
   }
 }

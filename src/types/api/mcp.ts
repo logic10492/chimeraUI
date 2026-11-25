@@ -6,6 +6,7 @@ import type {
   McpStatusResponse as SDKMcpStatusResponse,
   McpStatus as SDKMcpStatus,
   McpStatusConnected as SDKMcpStatusConnected,
+  McpStatusConnecting as SDKMcpStatusConnecting,
   McpStatusDisabled as SDKMcpStatusDisabled,
   McpStatusFailed as SDKMcpStatusFailed,
   McpStatusNeedsAuth as SDKMcpStatusNeedsAuth,
@@ -13,6 +14,8 @@ import type {
 } from '@opencode-ai/sdk/v2/client'
 
 export type MCPStatusConnected = SDKMcpStatusConnected
+
+export type MCPStatusConnecting = SDKMcpStatusConnecting
 
 export type MCPStatusDisabled = SDKMcpStatusDisabled
 

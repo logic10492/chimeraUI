@@ -318,6 +318,8 @@
   "models": {
     "visibility": "模型可见性",
     "visibilityDesc": "禁用你不想出现在选择器里的模型。禁用状态会按当前服务器保存。",
+    "showPrerelease": "显示 Alpha 和 Beta 模型",
+    "showPrereleaseDesc": "在模型选择器中包含预览和实验模型，弃用模型仍保持隐藏。",
     "searchPlaceholder": "搜索模型",
     "clearSearch": "清空搜索",
     "keepOneEnabled": "至少保留一个启用模型，这样对话还能继续发送消息。",
